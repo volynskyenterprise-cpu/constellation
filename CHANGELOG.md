@@ -83,3 +83,11 @@ All notable changes to Constellation will be recorded here.
 - Added complete professional doctrine folders for all founding crew members.
 - Added organization-wide collaboration, escalation, org chart, and hiring standard documents.
 - Updated project documentation to distinguish runtime agent YAML from durable professional role doctrine.
+
+## 0.8.0 - Context Engine
+
+- Added Crew Loader for professional role doctrine in `crew/<role>/`.
+- Added immutable `ExecutionContext` assembly for workflow runs.
+- Added context assembly from workflow state, workflow definition, crew doctrine, messages, events, memory, provider routing, and approval state.
+- Added `python -m constellation context show RUN_ID`.
+- Added Context Engine tests and documentation.

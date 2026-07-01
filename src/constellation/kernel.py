@@ -5,6 +5,8 @@ from pathlib import Path
 
 from .approvals import ApprovalManager
 from .config import ConfigurationLoader
+from .context import ContextAssembler, ExecutionContext
+from .crew import CrewLoader
 from .events import EventBus
 from .lifecycle import LifecycleResult, PruneAction, RunLifecycleManager
 from .memory import MemoryManager
@@ -36,6 +38,7 @@ class ConstellationKernel:
         self.workflow_loader = WorkflowLoader(self.registry)
         self.state_store = WorkflowStateStore(root)
         self.provider_registry = ProviderRegistry.load_from(root / "config" / "providers.yaml")
+        self.crew_loader = CrewLoader(root)
 
     def run_workflow(self, workflow_path: Path) -> KernelRunResult:
         workflow = self.workflow_loader.load(self._resolve_path(workflow_path))
@@ -149,6 +152,9 @@ class ConstellationKernel:
 
     def provider_health(self) -> list[dict[str, object]]:
         return self.provider_registry.health()
+
+    def show_context(self, workflow_run_id: str) -> ExecutionContext:
+        return ContextAssembler(self.root, self.workflow_loader, self.crew_loader).assemble(workflow_run_id)
 
     def _execute_from(
         self,

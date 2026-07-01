@@ -6,6 +6,8 @@
 - Add validation that every crew member folder contains the required seven files.
 - Map `agents/*.yaml` definitions to `crew/*` doctrine documents.
 - Design a crew-aware prompt assembly layer.
+- Add prompt assembly from `ExecutionContext` with explicit token/context budgeting.
+- Add context redaction policy before provider calls.
 - Add future expert role template generation based on `crew/HIRING_STANDARD.md`.
 - Formalize the canonical schema for agent definition YAML from the Kernel v0.1 validator.
 - Formalize the canonical schema for workflow definition YAML from the Kernel v0.1 validator.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from .kernel import ConstellationKernel
@@ -49,6 +50,12 @@ def main(argv: list[str] | None = None) -> int:
     provider_show_parser = providers_subparsers.add_parser("show", help="Show one provider.")
     provider_show_parser.add_argument("provider_name", help="Provider name from config/providers.yaml.")
     providers_subparsers.add_parser("health", help="Check provider health.")
+
+    context_parser = subparsers.add_parser("context", help="Inspect assembled execution context.")
+    context_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    context_subparsers = context_parser.add_subparsers(dest="context_command", required=True)
+    context_show_parser = context_subparsers.add_parser("show", help="Show assembled context for a run.")
+    context_show_parser.add_argument("workflow_run_id", help="Actual workflow run ID.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -167,6 +174,16 @@ def main(argv: list[str] | None = None) -> int:
                     f"{result.get('provider_name')} status={result.get('status')} "
                     f"enabled={result.get('enabled')}"
                 )
+            return 0
+    if args.command == "context":
+        kernel = ConstellationKernel(args.root.resolve())
+        if args.context_command == "show":
+            try:
+                context = kernel.show_context(args.workflow_run_id)
+            except Exception as exc:
+                print(f"error: {exc}")
+                return 1
+            print(json.dumps(context.to_dict(), indent=2, sort_keys=True))
             return 0
     return 2
 
