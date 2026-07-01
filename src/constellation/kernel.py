@@ -6,6 +6,7 @@ from pathlib import Path
 from .approvals import ApprovalManager
 from .config import ConfigurationLoader
 from .events import EventBus
+from .lifecycle import LifecycleResult, PruneAction, RunLifecycleManager
 from .memory import MemoryManager
 from .messages import MessageBus
 from .models import Party, WorkflowDefinition, new_id
@@ -128,6 +129,15 @@ class ConstellationKernel:
 
     def show_run(self, workflow_run_id: str) -> RunDetails:
         return RunInspector(self.root, self.workflow_loader).show_run(workflow_run_id)
+
+    def archive_run(self, workflow_run_id: str) -> LifecycleResult:
+        return RunLifecycleManager(self.root).archive(workflow_run_id)
+
+    def delete_run(self, workflow_run_id: str) -> LifecycleResult:
+        return RunLifecycleManager(self.root).delete(workflow_run_id)
+
+    def prune_runs(self, older_than_days: int, action: PruneAction = "archive") -> list[LifecycleResult]:
+        return RunLifecycleManager(self.root).prune(older_than_days, action)
 
     def _execute_from(
         self,

@@ -20,3 +20,5 @@ approvals/rejected/*.json
 memory/project/kernel-project-memory.json
 memory/knowledge/kernel-knowledge-memory.json
 memory/long-term/
+archive/runs/
+logs/lifecycle.jsonl

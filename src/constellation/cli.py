@@ -32,6 +32,15 @@ def main(argv: list[str] | None = None) -> int:
     runs_subparsers.add_parser("list", help="List known workflow runs.")
     show_parser = runs_subparsers.add_parser("show", help="Show one workflow run.")
     show_parser.add_argument("workflow_run_id", help="Actual workflow run ID.")
+    archive_parser = runs_subparsers.add_parser("archive", help="Archive one workflow run.")
+    archive_parser.add_argument("workflow_run_id", help="Actual workflow run ID.")
+    delete_parser = runs_subparsers.add_parser("delete", help="Delete one workflow run after confirmation.")
+    delete_parser.add_argument("workflow_run_id", help="Actual workflow run ID.")
+    delete_parser.add_argument("--yes", action="store_true", help="Confirm deletion without prompting.")
+    prune_parser = runs_subparsers.add_parser("prune", help="Archive or delete old workflow runs.")
+    prune_parser.add_argument("--older-than", type=int, required=True, help="Age threshold in days.")
+    prune_parser.add_argument("--delete", action="store_true", help="Delete instead of archiving old runs.")
+    prune_parser.add_argument("--yes", action="store_true", help="Confirm prune deletion without prompting.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -89,6 +98,39 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             _print_run_details(details)
             return 0
+        if args.runs_command == "archive":
+            try:
+                result = kernel.archive_run(args.workflow_run_id)
+            except WorkflowStateError as exc:
+                print(f"error: {exc}")
+                return 1
+            _print_lifecycle_result(result)
+            return 0
+        if args.runs_command == "delete":
+            if not args.yes and not _confirm_delete(args.workflow_run_id):
+                print("delete_aborted")
+                return 1
+            try:
+                result = kernel.delete_run(args.workflow_run_id)
+            except WorkflowStateError as exc:
+                print(f"error: {exc}")
+                return 1
+            _print_lifecycle_result(result)
+            return 0
+        if args.runs_command == "prune":
+            action = "delete" if args.delete else "archive"
+            if action == "delete" and not args.yes and not _confirm_delete(f"runs older than {args.older_than} days"):
+                print("prune_aborted")
+                return 1
+            try:
+                results = kernel.prune_runs(args.older_than, action)
+            except ValueError as exc:
+                print(f"error: {exc}")
+                return 1
+            print(f"pruned_count: {len(results)}")
+            for result in results:
+                _print_lifecycle_result(result)
+            return 0
     return 2
 
 
@@ -126,3 +168,16 @@ def _print_run_details(details) -> None:
             f"  {message.get('timestamp', 'unknown')} {message.get('requested_action', 'unknown')} "
             f"receiver={receiver_name} status={message.get('status', 'unknown')}"
         )
+
+
+def _print_lifecycle_result(result) -> None:
+    print(f"workflow_run_id: {result.workflow_run_id}")
+    print(f"action: {result.action}")
+    print(f"status: {result.status}")
+    if result.location:
+        print(f"location: {result.location}")
+
+
+def _confirm_delete(target: str) -> bool:
+    response = input(f"Type DELETE to confirm deletion of {target}: ")
+    return response == "DELETE"

@@ -46,3 +46,15 @@ All notable changes to Constellation will be recorded here.
 - Added graceful handling for missing and corrupt state files.
 - Added workflow state inspection tests.
 - Added workflow state inspection documentation.
+
+## 0.5.0 - Run Cleanup And Lifecycle Management
+
+- Added `python -m constellation runs archive RUN_ID`.
+- Added `python -m constellation runs delete RUN_ID`.
+- Added `python -m constellation runs prune --older-than DAYS`.
+- Added explicit prune deletion via `--delete`.
+- Added confirmation prompts for delete operations, with `--yes` for automation.
+- Added file-based archive storage under `archive/runs/`.
+- Added lifecycle event logging under `logs/lifecycle.jsonl`.
+- Added run lifecycle tests.
+- Added run lifecycle documentation.
