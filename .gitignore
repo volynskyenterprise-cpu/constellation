@@ -5,3 +5,18 @@ __pycache__/
 .ruff_cache/
 .venv/
 *.egg-info/
+
+# Constellation runtime artifacts
+logs/runs/*
+!logs/runs/README.md
+
+memory/runs/*
+!memory/runs/README.md
+
+approvals/accepted/*.json
+approvals/pending/*.json
+approvals/rejected/*.json
+
+memory/project/kernel-project-memory.json
+memory/knowledge/kernel-knowledge-memory.json
+memory/long-term/
