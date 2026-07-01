@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from .io import write_json
+from .io import read_json, write_json
 from .models import ApprovalGate, new_id, utc_now_iso
 
 
@@ -63,3 +63,37 @@ class ApprovalManager:
         )
         write_json(path, request.to_dict())
         return request
+
+    def list_pending(self) -> list[dict[str, object]]:
+        pending_dir = self.root / "approvals" / "pending"
+        if not pending_dir.exists():
+            return []
+        approvals = [read_json(path) for path in sorted(pending_dir.glob("*.json"))]
+        return approvals
+
+    def approval_path(self, approval_id: str, status: str = "pending") -> Path:
+        return self.root / "approvals" / status / f"{approval_id}.json"
+
+    def is_approved(self, approval_id: str) -> bool:
+        path = self.approval_path(approval_id, "accepted")
+        if not path.exists():
+            return False
+        data = read_json(path)
+        return data.get("status") == "approved"
+
+    def approve(self, approval_id: str) -> dict[str, object]:
+        pending_path = self.approval_path(approval_id, "pending")
+        accepted_path = self.approval_path(approval_id, "accepted")
+        if accepted_path.exists():
+            return read_json(accepted_path)
+        if not pending_path.exists():
+            raise FileNotFoundError(f"Pending approval not found: {approval_id}")
+
+        data = read_json(pending_path)
+        data["status"] = "approved"
+        data["approved_at"] = utc_now_iso()
+        data["explicit_human_approval"] = True
+        data["path"] = str(accepted_path)
+        write_json(accepted_path, data)
+        pending_path.unlink()
+        return data

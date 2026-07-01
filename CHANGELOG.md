@@ -25,3 +25,14 @@ All notable changes to Constellation will be recorded here.
 - Added CLI command: `python -m constellation run workflows/examples/ceo-research-qa-docs.yaml`.
 - Added unit tests for registry, workflow loading, messages, events, memory, and kernel execution.
 - Added Kernel v0.1 developer documentation.
+
+## 0.3.0 - Approval Continuation
+
+- Added persisted workflow run state under `logs/runs/<workflow_run_id>/state.json`.
+- Added `python -m constellation approvals list`.
+- Added `python -m constellation approvals approve APPROVAL_ID`.
+- Added `python -m constellation resume WORKFLOW_RUN_ID`.
+- Added explicit approval continuation with no automatic bypass.
+- Added `ApprovalGranted` and `WorkflowResumed` event logging.
+- Added approval continuation tests.
+- Added approval continuation developer documentation.

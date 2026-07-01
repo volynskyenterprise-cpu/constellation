@@ -16,6 +16,7 @@ Constellation Kernel v0.1 is the smallest file-based runtime that can exercise t
 - Creates stubs for Knowledge Memory and Long-Term Memory
 - Detects approval gates
 - Stops execution when human approval is required
+- Persists workflow run state for approval continuation in Kernel v0.3
 
 ## What It Does Not Do
 
@@ -43,6 +44,10 @@ The run will stop at the approval gate and print:
 - Event log path
 - Working memory path
 - Pending approval path
+
+## Continue After Approval
+
+Kernel v0.3 adds explicit approval continuation. See `approval-continuation-v0.3.md`.
 
 ## Persistence
 
