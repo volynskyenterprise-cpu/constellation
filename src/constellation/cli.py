@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from .artifacts import ArtifactError
 from .kernel import ConstellationKernel
 from .prompts import PromptUnavailable
 from .state import WorkflowStateError
@@ -64,6 +65,15 @@ def main(argv: list[str] | None = None) -> int:
     prompt_show_parser = prompt_subparsers.add_parser("show", help="Show prompt package for a run.")
     prompt_show_parser.add_argument("workflow_run_id", help="Actual workflow run ID.")
     prompt_show_parser.add_argument("--step", help="Optional workflow step ID.")
+
+    artifacts_parser = subparsers.add_parser("artifacts", help="Inspect structured agent artifacts.")
+    artifacts_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    artifacts_subparsers = artifacts_parser.add_subparsers(dest="artifacts_command", required=True)
+    artifacts_list_parser = artifacts_subparsers.add_parser("list", help="List artifacts for a workflow run.")
+    artifacts_list_parser.add_argument("workflow_run_id", help="Actual workflow run ID.")
+    artifacts_show_parser = artifacts_subparsers.add_parser("show", help="Show one structured artifact.")
+    artifacts_show_parser.add_argument("workflow_run_id", help="Actual workflow run ID.")
+    artifacts_show_parser.add_argument("artifact_id", help="Actual artifact ID.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -205,6 +215,28 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"error: {exc}")
                 return 1
             print(json.dumps(prompt.to_dict(), indent=2, sort_keys=True))
+            return 0
+    if args.command == "artifacts":
+        kernel = ConstellationKernel(args.root.resolve())
+        if args.artifacts_command == "list":
+            artifacts = kernel.list_artifacts(args.workflow_run_id)
+            if not artifacts:
+                print("No artifacts found.")
+                return 0
+            for artifact in artifacts:
+                print(
+                    f"{artifact.get('artifact_id')} step_id={artifact.get('step_id')} "
+                    f"agent_id={artifact.get('agent_id')} status={artifact.get('status')} "
+                    f"title={artifact.get('title')}"
+                )
+            return 0
+        if args.artifacts_command == "show":
+            try:
+                artifact = kernel.show_artifact(args.workflow_run_id, args.artifact_id)
+            except ArtifactError as exc:
+                print(f"error: {exc}")
+                return 1
+            print(json.dumps(artifact, indent=2, sort_keys=True))
             return 0
     return 2
 

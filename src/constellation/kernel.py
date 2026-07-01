@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .approvals import ApprovalManager
+from .artifacts import ArtifactParser, ArtifactStore
 from .config import ConfigurationLoader
 from .context import ContextAssembler, ExecutionContext
 from .crew import CrewLoader
@@ -160,6 +161,12 @@ class ConstellationKernel:
     def show_prompt(self, workflow_run_id: str, step_id: str | None = None) -> PromptPackage:
         return PromptAssembler(self.root, self.workflow_loader, self.crew_loader).assemble(workflow_run_id, step_id)
 
+    def list_artifacts(self, workflow_run_id: str) -> list[dict[str, object]]:
+        return ArtifactStore(self.root).list(workflow_run_id)
+
+    def show_artifact(self, workflow_run_id: str, artifact_id: str) -> dict[str, object]:
+        return ArtifactStore(self.root).show(workflow_run_id, artifact_id)
+
     def _execute_from(
         self,
         *,
@@ -233,6 +240,17 @@ class ConstellationKernel:
                 workflow_id=workflow.id,
                 workflow_run_id=workflow_run_id,
             )
+            agent_artifact = self._maybe_create_agent_artifact(
+                provider_result=provider_result,
+                prompt_package=prompt_package,
+                message_id=message.id,
+                step_id=step.id,
+                agent_id=agent.id,
+                workflow_id=workflow.id,
+                workflow_run_id=workflow_run_id,
+                event_bus=event_bus,
+                message_bus=message_bus,
+            )
             step_status = "provider_backed" if provider_result else "placeholder"
             if provider_result and provider_result.get("status") == "failed":
                 step_status = "failed"
@@ -246,6 +264,8 @@ class ConstellationKernel:
                     "message_id": message.id,
                     "provider_result": provider_result,
                     "prompt_package_id": prompt_package.prompt_id if prompt_package else None,
+                    "provider_result_id": provider_result.get("provider_result_id") if provider_result else None,
+                    "agent_artifact": agent_artifact,
                     "output_text": provider_result.get("output_text") if provider_result else None,
                     "note": "Kernel v0.1 placeholder path." if provider_result is None else "Provider-backed deterministic output.",
                 },
@@ -265,7 +285,7 @@ class ConstellationKernel:
                     actor={"type": "system", "id": "kernel", "name": "Constellation Kernel"},
                     subject={"type": "workflow_run", "id": workflow_run_id, "name": workflow.name},
                     summary=f"Workflow failed at step {step.id}.",
-                    data={"step_id": step.id, "provider_result": provider_result},
+                    data={"step_id": step.id, "provider_result": provider_result, "agent_artifact": agent_artifact},
                     correlation_id=workflow_run_id,
                     causation_id=message.id,
                     severity="error",
@@ -284,7 +304,14 @@ class ConstellationKernel:
                 actor=receiver.to_dict(),
                 subject={"type": "artifact", "id": step.output, "name": step.output},
                 summary=f"Recorded {step_status} output {step.output}.",
-                data={"step_id": step.id, "message_id": message.id, "provider_result": provider_result},
+                data={
+                    "step_id": step.id,
+                    "message_id": message.id,
+                    "provider_result": provider_result,
+                    "provider_result_id": provider_result.get("provider_result_id") if provider_result else None,
+                    "prompt_package_id": prompt_package.prompt_id if prompt_package else None,
+                    "agent_artifact": agent_artifact,
+                },
                 references=[{"type": "message", "id": message.id}],
                 correlation_id=workflow_run_id,
                 causation_id=message.id,
@@ -564,7 +591,60 @@ class ConstellationKernel:
             "error": error,
             "metadata": {"fallback": fallback},
             "created_at": utc_now_iso(),
+            "provider_result_id": f"provider_result_{message_id}_{provider_name}",
         }
+
+    def _maybe_create_agent_artifact(
+        self,
+        *,
+        provider_result: dict[str, object] | None,
+        prompt_package: PromptPackage | None,
+        message_id: str,
+        step_id: str,
+        agent_id: str,
+        workflow_id: str,
+        workflow_run_id: str,
+        event_bus: EventBus,
+        message_bus: MessageBus,
+    ) -> dict[str, object] | None:
+        if provider_result is None or prompt_package is None:
+            return None
+        store = ArtifactStore(self.root)
+        artifact = ArtifactParser().parse(
+            provider_result=provider_result,
+            prompt_package=prompt_package.to_dict(),
+        )
+        artifact_path = store.persist(artifact)
+        artifact_dict = artifact.to_dict()
+        artifact_ref = {
+            "artifact_id": artifact.artifact_id,
+            "path": str(artifact_path),
+            "status": artifact.status,
+            "prompt_package_id": artifact.prompt_package_id,
+            "provider_result_id": artifact.provider_result_id,
+        }
+        message_bus.persist_artifact_metadata(
+            message_id=message_id,
+            step_id=step_id,
+            agent_id=agent_id,
+            artifact=artifact_dict,
+        )
+        event_bus.emit(
+            "AgentArtifactCreated" if artifact.status != "failed" else "AgentArtifactFailed",
+            workflow_id=workflow_id,
+            actor={"type": "system", "id": "kernel", "name": "Constellation Kernel"},
+            subject={"type": "artifact", "id": artifact.artifact_id, "name": artifact.title},
+            summary=f"Persisted structured artifact {artifact.artifact_id}.",
+            data={
+                "artifact": artifact_ref,
+                "prompt_package_id": artifact.prompt_package_id,
+                "provider_result_id": artifact.provider_result_id,
+            },
+            correlation_id=workflow_run_id,
+            causation_id=message_id,
+            severity="error" if artifact.status == "failed" else "info",
+        )
+        return artifact_ref
 
     @staticmethod
     def _gate_after_step(workflow: WorkflowDefinition, step_id: str):

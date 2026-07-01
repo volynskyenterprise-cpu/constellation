@@ -88,3 +88,26 @@ class MessageBus:
                 "prompt_package_id": prompt_package_id,
             },
         )
+
+    def persist_artifact_metadata(
+        self,
+        *,
+        message_id: str,
+        step_id: str,
+        agent_id: str,
+        artifact: dict[str, Any],
+    ) -> None:
+        append_jsonl(
+            self.log_path,
+            {
+                "record_type": "agent_artifact",
+                "workflow_run_id": self.workflow_run_id,
+                "message_id": message_id,
+                "step_id": step_id,
+                "agent_id": agent_id,
+                "artifact_id": artifact.get("artifact_id"),
+                "status": artifact.get("status"),
+                "prompt_package_id": artifact.get("prompt_package_id"),
+                "provider_result_id": artifact.get("provider_result_id"),
+            },
+        )

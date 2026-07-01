@@ -102,3 +102,15 @@ All notable changes to Constellation will be recorded here.
 - Added provider integration so enabled providers receive prompt packages.
 - Added prompt package metadata to message/event logs and working memory when provider-backed execution is enabled.
 - Added Prompt Assembly tests and documentation.
+
+## 1.0.0 - First Executable AI Organization Workflow
+
+- Added `AgentArtifact` schema for structured provider-backed crew outputs.
+- Added deterministic provider-result parsing into structured artifacts.
+- Added artifact persistence under `logs/runs/<run_id>/artifacts/`.
+- Added artifact references to Working Memory for provider-backed workflow steps.
+- Added artifact metadata records to message logs and artifact lifecycle events to event logs.
+- Added `python -m constellation artifacts list RUN_ID`.
+- Added `python -m constellation artifacts show RUN_ID ARTIFACT_ID`.
+- Preserved disabled-by-default provider invocation and placeholder behavior.
+- Added Executable Organization v1.0 documentation and tests.

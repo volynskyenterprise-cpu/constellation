@@ -25,6 +25,7 @@ class ProviderDefinition:
 
 @dataclass(frozen=True)
 class ProviderResult:
+    provider_result_id: str
     provider_name: str
     model: str
     input_message_id: str
@@ -36,6 +37,7 @@ class ProviderResult:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "provider_result_id": self.provider_result_id,
             "provider_name": self.provider_name,
             "model": self.model,
             "input_message_id": self.input_message_id,
@@ -103,6 +105,7 @@ class BaseProvider:
         metadata: dict[str, Any] | None = None,
     ) -> ProviderResult:
         return ProviderResult(
+            provider_result_id=f"provider_result_{message.id}_{self.name}",
             provider_name=self.name,
             model=self.definition.model,
             input_message_id=message.id,
