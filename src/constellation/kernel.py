@@ -10,6 +10,7 @@ from .memory import MemoryManager
 from .messages import MessageBus
 from .models import Party, WorkflowDefinition, new_id
 from .registry import AgentRegistry
+from .runs import RunDetails, RunInspector, RunSummary
 from .state import WorkflowStateError, WorkflowStateStore
 from .workflows import WorkflowLoader
 
@@ -121,6 +122,12 @@ class ConstellationKernel:
 
     def list_pending_approvals(self) -> list[dict[str, object]]:
         return ApprovalManager(self.root, "").list_pending()
+
+    def list_runs(self) -> list[RunSummary]:
+        return RunInspector(self.root, self.workflow_loader).list_runs()
+
+    def show_run(self, workflow_run_id: str) -> RunDetails:
+        return RunInspector(self.root, self.workflow_loader).show_run(workflow_run_id)
 
     def _execute_from(
         self,

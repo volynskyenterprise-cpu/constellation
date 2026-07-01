@@ -20,6 +20,7 @@ class WorkflowRunState:
     status: str
     next_step_index: int
     pending_approval_id: str | None
+    created_at: str
     updated_at: str
 
     def to_dict(self) -> dict[str, Any]:
@@ -30,6 +31,7 @@ class WorkflowRunState:
             "status": self.status,
             "next_step_index": self.next_step_index,
             "pending_approval_id": self.pending_approval_id,
+            "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
 
@@ -51,6 +53,14 @@ class WorkflowStateStore:
         next_step_index: int,
         pending_approval_id: str | None,
     ) -> WorkflowRunState:
+        now = utc_now_iso()
+        created_at = now
+        path = self.path_for(workflow_run_id)
+        if path.exists():
+            try:
+                created_at = _optional_str(read_json(path), "created_at") or now
+            except Exception:
+                created_at = now
         state = WorkflowRunState(
             workflow_run_id=workflow_run_id,
             workflow_id=workflow_id,
@@ -58,9 +68,10 @@ class WorkflowStateStore:
             status=status,
             next_step_index=next_step_index,
             pending_approval_id=pending_approval_id,
-            updated_at=utc_now_iso(),
+            created_at=created_at,
+            updated_at=now,
         )
-        write_json(self.path_for(workflow_run_id), state.to_dict())
+        write_json(path, state.to_dict())
         return state
 
     def load(self, workflow_run_id: str) -> WorkflowRunState:
@@ -75,6 +86,7 @@ class WorkflowStateStore:
             status=_require_str(data, "status"),
             next_step_index=_require_int(data, "next_step_index"),
             pending_approval_id=_optional_str(data, "pending_approval_id"),
+            created_at=_optional_str(data, "created_at") or _require_str(data, "updated_at"),
             updated_at=_require_str(data, "updated_at"),
         )
 

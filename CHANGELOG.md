@@ -36,3 +36,13 @@ All notable changes to Constellation will be recorded here.
 - Added `ApprovalGranted` and `WorkflowResumed` event logging.
 - Added approval continuation tests.
 - Added approval continuation developer documentation.
+
+## 0.4.0 - Workflow State Inspection
+
+- Added `python -m constellation runs list`.
+- Added `python -m constellation runs show RUN_ID`.
+- Added run inspection from persisted file-based workflow state.
+- Added current step, created timestamp, updated timestamp, approval status, recent events, and recent messages display.
+- Added graceful handling for missing and corrupt state files.
+- Added workflow state inspection tests.
+- Added workflow state inspection documentation.
