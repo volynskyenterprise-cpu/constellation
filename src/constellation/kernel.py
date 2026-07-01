@@ -10,6 +10,7 @@ from .lifecycle import LifecycleResult, PruneAction, RunLifecycleManager
 from .memory import MemoryManager
 from .messages import MessageBus
 from .models import Party, WorkflowDefinition, new_id
+from .providers import ProviderRegistry
 from .registry import AgentRegistry
 from .runs import RunDetails, RunInspector, RunSummary
 from .state import WorkflowStateError, WorkflowStateStore
@@ -34,6 +35,7 @@ class ConstellationKernel:
         self.registry = AgentRegistry.load_from(root / "agents")
         self.workflow_loader = WorkflowLoader(self.registry)
         self.state_store = WorkflowStateStore(root)
+        self.provider_registry = ProviderRegistry.load_from(root / "config" / "providers.yaml")
 
     def run_workflow(self, workflow_path: Path) -> KernelRunResult:
         workflow = self.workflow_loader.load(self._resolve_path(workflow_path))
@@ -139,6 +141,15 @@ class ConstellationKernel:
     def prune_runs(self, older_than_days: int, action: PruneAction = "archive") -> list[LifecycleResult]:
         return RunLifecycleManager(self.root).prune(older_than_days, action)
 
+    def list_providers(self):
+        return self.provider_registry.all()
+
+    def show_provider(self, provider_name: str):
+        return self.provider_registry.get_definition(provider_name)
+
+    def provider_health(self) -> list[dict[str, object]]:
+        return self.provider_registry.health()
+
     def _execute_from(
         self,
         *,
@@ -195,6 +206,7 @@ class ConstellationKernel:
                 receiver=receiver,
                 context=memory.context_for_step(step.id),
             )
+            provider_result = self._maybe_invoke_provider(message)
             last_message_id = message.id
             memory.set_artifact(
                 step.output,
@@ -203,6 +215,7 @@ class ConstellationKernel:
                     "produced_by": agent.id,
                     "step_id": step.id,
                     "message_id": message.id,
+                    "provider_result": provider_result,
                     "note": "Kernel v0.1 does not call AI providers; this is a lifecycle placeholder.",
                 },
             )
@@ -295,6 +308,17 @@ class ConstellationKernel:
         if path.is_absolute():
             return path
         return self.root / path
+
+    def _maybe_invoke_provider(self, message) -> dict[str, object] | None:
+        providers_config = self.config.files.get("providers", {})
+        routing = providers_config.get("routing", {}) if isinstance(providers_config, dict) else {}
+        if not isinstance(routing, dict) or routing.get("invoke_provider_during_kernel_run") is not True:
+            return None
+        provider_name = routing.get("default_provider", "null")
+        if not isinstance(provider_name, str):
+            provider_name = "null"
+        result = self.provider_registry.get(provider_name).generate(message)
+        return result.to_dict()
 
     @staticmethod
     def _gate_after_step(workflow: WorkflowDefinition, step_id: str):

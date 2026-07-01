@@ -34,7 +34,33 @@ providers:
     capabilities:
       - reasoning
       - structured_output
+  - id: echo
+    enabled: true
+    role: deterministic_stub_provider
+    provider_type: echo
+    model: echo-v0
+    capabilities:
+      - reasoning
+      - structured_output
+  - id: "null"
+    enabled: true
+    role: deterministic_noop_provider
+    provider_type: "null"
+    model: null-v0
+    capabilities:
+      - reasoning
+      - structured_output
+  - id: failure
+    enabled: false
+    role: deterministic_failure_provider
+    provider_type: failure
+    model: failure-v0
+    capabilities:
+      - reasoning
+      - structured_output
 
 routing:
   strategy: capability_based
   fallback_policy: require_human_confirmation
+  invoke_provider_during_kernel_run: false
+  default_provider: null

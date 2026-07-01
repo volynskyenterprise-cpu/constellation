@@ -58,3 +58,12 @@ All notable changes to Constellation will be recorded here.
 - Added lifecycle event logging under `logs/lifecycle.jsonl`.
 - Added run lifecycle tests.
 - Added run lifecycle documentation.
+
+## 0.6.0 - Provider Interface Stub
+
+- Added provider protocol and deterministic provider result schema.
+- Added provider registry loading from `config/providers.yaml`.
+- Added `EchoProvider`, `NullProvider`, and `FailureProvider`.
+- Added provider CLI commands: `providers list`, `providers show PROVIDER_NAME`, and `providers health`.
+- Added optional provider invocation hook behind a disabled-by-default config flag.
+- Added provider tests and documentation.

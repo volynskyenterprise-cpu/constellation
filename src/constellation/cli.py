@@ -42,6 +42,14 @@ def main(argv: list[str] | None = None) -> int:
     prune_parser.add_argument("--delete", action="store_true", help="Delete instead of archiving old runs.")
     prune_parser.add_argument("--yes", action="store_true", help="Confirm prune deletion without prompting.")
 
+    providers_parser = subparsers.add_parser("providers", help="Inspect configured model providers.")
+    providers_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    providers_subparsers = providers_parser.add_subparsers(dest="providers_command", required=True)
+    providers_subparsers.add_parser("list", help="List configured providers.")
+    provider_show_parser = providers_subparsers.add_parser("show", help="Show one provider.")
+    provider_show_parser.add_argument("provider_name", help="Provider name from config/providers.yaml.")
+    providers_subparsers.add_parser("health", help="Check provider health.")
+
     args = parser.parse_args(argv)
     if args.command == "run":
         kernel = ConstellationKernel(args.root.resolve())
@@ -130,6 +138,35 @@ def main(argv: list[str] | None = None) -> int:
             print(f"pruned_count: {len(results)}")
             for result in results:
                 _print_lifecycle_result(result)
+            return 0
+    if args.command == "providers":
+        kernel = ConstellationKernel(args.root.resolve())
+        if args.providers_command == "list":
+            for provider in kernel.list_providers():
+                print(
+                    f"{provider.id} enabled={provider.enabled} type={provider.provider_type} "
+                    f"model={provider.model} capabilities={','.join(provider.capabilities)}"
+                )
+            return 0
+        if args.providers_command == "show":
+            try:
+                provider = kernel.show_provider(args.provider_name)
+            except Exception as exc:
+                print(f"error: {exc}")
+                return 1
+            print(f"name: {provider.id}")
+            print(f"enabled: {provider.enabled}")
+            print(f"type: {provider.provider_type}")
+            print(f"model: {provider.model}")
+            print(f"role: {provider.role}")
+            print(f"capabilities: {','.join(provider.capabilities)}")
+            return 0
+        if args.providers_command == "health":
+            for result in kernel.provider_health():
+                print(
+                    f"{result.get('provider_name')} status={result.get('status')} "
+                    f"enabled={result.get('enabled')}"
+                )
             return 0
     return 2
 

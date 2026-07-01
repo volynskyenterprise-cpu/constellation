@@ -14,7 +14,9 @@
 - Add retention policy configuration for prune defaults.
 - Add sample memory curation after an example workflow.
 - Decide whether Phase 2 should keep the current standard-library YAML subset parser or adopt a full YAML dependency.
-- Add provider capability mapping for Codex, GPT, Claude, Gemini, and local models.
+- Add real provider adapters for Codex, GPT, Claude, Gemini, and local models.
+- Add provider selection policies based on workflow capabilities.
+- Add provider result logs when provider invocation is enabled.
 - Write acceptance criteria for the first end-to-end guided workflow.
 
 ## Deferred
