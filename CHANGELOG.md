@@ -91,3 +91,14 @@ All notable changes to Constellation will be recorded here.
 - Added context assembly from workflow state, workflow definition, crew doctrine, messages, events, memory, provider routing, and approval state.
 - Added `python -m constellation context show RUN_ID`.
 - Added Context Engine tests and documentation.
+
+## 0.9.0 - Prompt Assembly Engine
+
+- Added deterministic `PromptPackage` schema.
+- Added Prompt Assembler from crew doctrine, workflow step, messages, memory, and provider routing.
+- Added `python -m constellation prompt show RUN_ID`.
+- Added optional `--step STEP_ID` prompt inspection.
+- Added prompt package persistence under `logs/runs/<run_id>/prompts/`.
+- Added provider integration so enabled providers receive prompt packages.
+- Added prompt package metadata to message/event logs and working memory when provider-backed execution is enabled.
+- Added Prompt Assembly tests and documentation.

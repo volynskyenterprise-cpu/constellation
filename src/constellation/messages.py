@@ -68,3 +68,23 @@ class MessageBus:
                 "provider_result": provider_result,
             },
         )
+
+    def persist_prompt_package_metadata(
+        self,
+        *,
+        message_id: str,
+        step_id: str,
+        agent_id: str,
+        prompt_package_id: str,
+    ) -> None:
+        append_jsonl(
+            self.log_path,
+            {
+                "record_type": "prompt_package",
+                "workflow_run_id": self.workflow_run_id,
+                "message_id": message_id,
+                "step_id": step_id,
+                "agent_id": agent_id,
+                "prompt_package_id": prompt_package_id,
+            },
+        )

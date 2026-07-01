@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from .kernel import ConstellationKernel
+from .prompts import PromptUnavailable
 from .state import WorkflowStateError
 
 
@@ -56,6 +57,13 @@ def main(argv: list[str] | None = None) -> int:
     context_subparsers = context_parser.add_subparsers(dest="context_command", required=True)
     context_show_parser = context_subparsers.add_parser("show", help="Show assembled context for a run.")
     context_show_parser.add_argument("workflow_run_id", help="Actual workflow run ID.")
+
+    prompt_parser = subparsers.add_parser("prompt", help="Assemble provider-ready prompt packages.")
+    prompt_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    prompt_subparsers = prompt_parser.add_subparsers(dest="prompt_command", required=True)
+    prompt_show_parser = prompt_subparsers.add_parser("show", help="Show prompt package for a run.")
+    prompt_show_parser.add_argument("workflow_run_id", help="Actual workflow run ID.")
+    prompt_show_parser.add_argument("--step", help="Optional workflow step ID.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -184,6 +192,19 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"error: {exc}")
                 return 1
             print(json.dumps(context.to_dict(), indent=2, sort_keys=True))
+            return 0
+    if args.command == "prompt":
+        kernel = ConstellationKernel(args.root.resolve())
+        if args.prompt_command == "show":
+            try:
+                prompt = kernel.show_prompt(args.workflow_run_id, args.step)
+            except PromptUnavailable as exc:
+                print(str(exc))
+                return 0
+            except Exception as exc:
+                print(f"error: {exc}")
+                return 1
+            print(json.dumps(prompt.to_dict(), indent=2, sort_keys=True))
             return 0
     return 2
 

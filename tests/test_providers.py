@@ -178,7 +178,7 @@ def _message(message_id: str) -> Message:
 
 
 def _copy_runtime_tree(temp_root: Path) -> Path:
-    for name in ["agents", "workflows", "config", "memory", "logs", "approvals"]:
+    for name in ["agents", "workflows", "config", "memory", "logs", "approvals", "crew"]:
         shutil.copytree(ROOT / name, temp_root / name)
     for path in (temp_root / "approvals" / "pending").glob("*.json"):
         path.unlink()

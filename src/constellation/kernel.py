@@ -13,6 +13,7 @@ from .memory import MemoryManager
 from .messages import MessageBus
 from .models import Party, WorkflowDefinition, new_id
 from .providers import ProviderError, ProviderRegistry
+from .prompts import PromptAssembler, PromptPackage
 from .registry import AgentRegistry
 from .runs import RunDetails, RunInspector, RunSummary
 from .state import WorkflowStateError, WorkflowStateStore
@@ -156,6 +157,9 @@ class ConstellationKernel:
     def show_context(self, workflow_run_id: str) -> ExecutionContext:
         return ContextAssembler(self.root, self.workflow_loader, self.crew_loader).assemble(workflow_run_id)
 
+    def show_prompt(self, workflow_run_id: str, step_id: str | None = None) -> PromptPackage:
+        return PromptAssembler(self.root, self.workflow_loader, self.crew_loader).assemble(workflow_run_id, step_id)
+
     def _execute_from(
         self,
         *,
@@ -212,8 +216,16 @@ class ConstellationKernel:
                 receiver=receiver,
                 context=memory.context_for_step(step.id),
             )
+            prompt_package = self._maybe_assemble_prompt_package(
+                workflow_run_id=workflow_run_id,
+                step_id=step.id,
+                message_id=message.id,
+                agent_id=agent.id,
+                message_bus=message_bus,
+            )
             provider_result = self._maybe_invoke_provider(
                 message=message,
+                prompt_package=prompt_package,
                 step_id=step.id,
                 agent_id=agent.id,
                 event_bus=event_bus,
@@ -233,6 +245,7 @@ class ConstellationKernel:
                     "step_id": step.id,
                     "message_id": message.id,
                     "provider_result": provider_result,
+                    "prompt_package_id": prompt_package.prompt_id if prompt_package else None,
                     "output_text": provider_result.get("output_text") if provider_result else None,
                     "note": "Kernel v0.1 placeholder path." if provider_result is None else "Provider-backed deterministic output.",
                 },
@@ -355,10 +368,33 @@ class ConstellationKernel:
             return path
         return self.root / path
 
+    def _maybe_assemble_prompt_package(
+        self,
+        *,
+        workflow_run_id: str,
+        step_id: str,
+        message_id: str,
+        agent_id: str,
+        message_bus: MessageBus,
+    ) -> PromptPackage | None:
+        providers_config = self.config.files.get("providers", {})
+        routing = providers_config.get("routing", {}) if isinstance(providers_config, dict) else {}
+        if not isinstance(routing, dict) or routing.get("invoke_provider_during_kernel_run") is not True:
+            return None
+        prompt_package = self.show_prompt(workflow_run_id, step_id)
+        message_bus.persist_prompt_package_metadata(
+            message_id=message_id,
+            step_id=step_id,
+            agent_id=agent_id,
+            prompt_package_id=prompt_package.prompt_id,
+        )
+        return prompt_package
+
     def _maybe_invoke_provider(
         self,
         *,
         message,
+        prompt_package: PromptPackage | None,
         step_id: str,
         agent_id: str,
         event_bus: EventBus,
@@ -374,6 +410,7 @@ class ConstellationKernel:
         provider_result = self._invoke_selected_provider(
             provider_name=provider_name,
             message=message,
+            prompt_package=prompt_package,
             step_id=step_id,
             agent_id=agent_id,
             event_bus=event_bus,
@@ -392,6 +429,7 @@ class ConstellationKernel:
         fallback_result = self._invoke_selected_provider(
             provider_name=fallback_provider,
             message=message,
+            prompt_package=prompt_package,
             step_id=step_id,
             agent_id=agent_id,
             event_bus=event_bus,
@@ -417,6 +455,7 @@ class ConstellationKernel:
         *,
         provider_name: str,
         message,
+        prompt_package: PromptPackage | None,
         step_id: str,
         agent_id: str,
         event_bus: EventBus,
@@ -429,6 +468,8 @@ class ConstellationKernel:
         definition = self.provider_registry.get_definition(provider_name)
         if not definition.enabled:
             result = self._failed_provider_result(provider_name, definition.model, message.id, "Provider is disabled", fallback)
+            if prompt_package and isinstance(result.get("metadata"), dict):
+                result["metadata"]["prompt_package_id"] = prompt_package.prompt_id
             self._record_provider_failure(event_bus, message_bus, workflow_id, workflow_run_id, step_id, agent_id, message.id, result)
             return result
         event_bus.emit(
@@ -442,9 +483,14 @@ class ConstellationKernel:
             causation_id=message.id,
         )
         try:
-            result = self.provider_registry.get(provider_name).generate(message).to_dict()
+            result = self.provider_registry.get(provider_name).generate(
+                message,
+                prompt_package.to_dict() if prompt_package else None,
+            ).to_dict()
         except ProviderError as exc:
             result = self._failed_provider_result(provider_name, definition.model, message.id, str(exc), fallback)
+            if prompt_package and isinstance(result.get("metadata"), dict):
+                result["metadata"]["prompt_package_id"] = prompt_package.prompt_id
             self._record_provider_failure(event_bus, message_bus, workflow_id, workflow_run_id, step_id, agent_id, message.id, result)
             return result
         if isinstance(result.get("metadata"), dict):
@@ -453,6 +499,8 @@ class ConstellationKernel:
             result["metadata"]["step_id"] = step_id
             if fallback_from:
                 result["metadata"]["fallback_from"] = fallback_from
+            if prompt_package:
+                result["metadata"]["prompt_package_id"] = prompt_package.prompt_id
         message_bus.persist_provider_result(
             message_id=message.id,
             step_id=step_id,
@@ -465,7 +513,10 @@ class ConstellationKernel:
             actor={"type": "provider", "id": provider_name, "name": provider_name},
             subject={"type": "message", "id": message.id, "name": step_id},
             summary=f"Provider {provider_name} completed step {step_id}.",
-            data={"provider_result": result},
+            data={
+                "provider_result": result,
+                "prompt_package_id": prompt_package.prompt_id if prompt_package else None,
+            },
             correlation_id=workflow_run_id,
             causation_id=message.id,
         )

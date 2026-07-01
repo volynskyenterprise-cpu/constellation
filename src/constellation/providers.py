@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator, Protocol
 
-from .models import Message, utc_now_iso
+from .models import JsonMap, Message, utc_now_iso
 from .simple_yaml import load_yaml
 
 
@@ -59,10 +59,10 @@ class Provider(Protocol):
     def validate_config(self) -> None:
         ...
 
-    def generate(self, message: Message) -> ProviderResult:
+    def generate(self, message: Message, prompt_package: JsonMap | None = None) -> ProviderResult:
         ...
 
-    def stream(self, message: Message) -> Iterator[str]:
+    def stream(self, message: Message, prompt_package: JsonMap | None = None) -> Iterator[str]:
         ...
 
     def health_check(self) -> dict[str, Any]:
@@ -87,8 +87,8 @@ class BaseProvider:
         if not self.definition.model:
             raise ProviderError(f"Provider model is required: {self.definition.id}")
 
-    def stream(self, message: Message) -> Iterator[str]:
-        yield self.generate(message).output_text
+    def stream(self, message: Message, prompt_package: JsonMap | None = None) -> Iterator[str]:
+        yield self.generate(message, prompt_package).output_text
 
     def health_check(self) -> dict[str, Any]:
         return {"provider_name": self.name, "status": "ok", "enabled": self.definition.enabled}
@@ -115,7 +115,23 @@ class BaseProvider:
 
 
 class EchoProvider(BaseProvider):
-    def generate(self, message: Message) -> ProviderResult:
+    def generate(self, message: Message, prompt_package: JsonMap | None = None) -> ProviderResult:
+        if prompt_package is not None:
+            output_text = (
+                f"echo:{message.id}:{message.requested_action}:"
+                f"prompt={prompt_package.get('prompt_id')}:"
+                f"role={prompt_package.get('crew_role')}:"
+                f"step={prompt_package.get('step_id')}"
+            )
+            metadata = {
+                "stub": "echo",
+                "deterministic": True,
+                "received_prompt_package": True,
+                "prompt_id": prompt_package.get("prompt_id"),
+                "crew_role": prompt_package.get("crew_role"),
+                "step_id": prompt_package.get("step_id"),
+            }
+            return self._result(message, output_text=output_text, metadata=metadata)
         return self._result(
             message,
             output_text=f"echo:{message.id}:{message.requested_action}",
@@ -124,17 +140,22 @@ class EchoProvider(BaseProvider):
 
 
 class NullProvider(BaseProvider):
-    def generate(self, message: Message) -> ProviderResult:
+    def generate(self, message: Message, prompt_package: JsonMap | None = None) -> ProviderResult:
         return self._result(
             message,
             output_text="",
             status="completed",
-            metadata={"stub": "null", "deterministic": True},
+            metadata={
+                "stub": "null",
+                "deterministic": True,
+                "received_prompt_package": prompt_package is not None,
+                "prompt_id": prompt_package.get("prompt_id") if prompt_package else None,
+            },
         )
 
 
 class FailureProvider(BaseProvider):
-    def generate(self, message: Message) -> ProviderResult:
+    def generate(self, message: Message, prompt_package: JsonMap | None = None) -> ProviderResult:
         raise ProviderError(f"FailureProvider intentional failure for message {message.id}")
 
     def health_check(self) -> dict[str, Any]:
