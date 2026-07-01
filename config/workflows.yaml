@@ -1,0 +1,24 @@
+workflows:
+  - id: product_definition
+    file: workflows/product-definition.yaml
+    enabled: true
+  - id: architecture_review
+    file: workflows/architecture-review.yaml
+    enabled: true
+  - id: implementation_planning
+    file: workflows/implementation-planning.yaml
+    enabled: true
+  - id: qa_review
+    file: workflows/qa-review.yaml
+    enabled: true
+  - id: release_readiness
+    file: workflows/release-readiness.yaml
+    enabled: true
+  - id: example_ceo_research_qa_docs
+    file: workflows/examples/ceo-research-qa-docs.yaml
+    enabled: true
+
+defaults:
+  approval_required_for_completion: true
+  log_every_agent_invocation: true
+  propose_memory_updates: true

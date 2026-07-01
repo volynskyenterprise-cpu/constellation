@@ -1,0 +1,40 @@
+id: product_definition
+name: Product Definition
+version: 0.1.0
+purpose: Clarify product goals, principles, users, scope, risks, and approval needs.
+agents:
+  - ceo
+  - research_lead
+  - designer
+  - documentation_engineer
+steps:
+  - id: frame_objective
+    agent: ceo
+    type: frame_objective
+    output: objective_brief
+  - id: research_context
+    agent: research_lead
+    type: retrieve_context
+    output: research_brief
+  - id: define_experience
+    agent: designer
+    type: produce_artifact
+    output: ux_brief
+  - id: document_definition
+    agent: documentation_engineer
+    type: produce_artifact
+    output: product_definition_doc
+approval_gates:
+  - id: approve_product_scope
+    after_step: document_definition
+    required_by: human
+validation:
+  required_artifacts:
+    - objective_brief
+    - research_brief
+    - ux_brief
+    - product_definition_doc
+memory_updates:
+  - project/facts.md
+  - project/constraints.md
+  - project/decisions.md

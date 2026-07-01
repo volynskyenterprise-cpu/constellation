@@ -1,0 +1,30 @@
+agents:
+  - id: ceo
+    file: agents/ceo.yaml
+    enabled: true
+  - id: research_lead
+    file: agents/research-lead.yaml
+    enabled: true
+  - id: knowledge_engineer
+    file: agents/knowledge-engineer.yaml
+    enabled: true
+  - id: engineering_manager
+    file: agents/engineering-manager.yaml
+    enabled: true
+  - id: designer
+    file: agents/designer.yaml
+    enabled: true
+  - id: documentation_engineer
+    file: agents/documentation-engineer.yaml
+    enabled: true
+  - id: qa_lead
+    file: agents/qa-lead.yaml
+    enabled: true
+  - id: release_manager
+    file: agents/release-manager.yaml
+    enabled: true
+
+defaults:
+  provider_preference: capability_based
+  require_structured_output: true
+  require_escalation_on_uncertainty: true

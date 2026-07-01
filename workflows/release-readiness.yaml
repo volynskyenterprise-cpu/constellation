@@ -1,0 +1,39 @@
+id: release_readiness
+name: Release Readiness
+version: 0.1.0
+purpose: Determine whether a candidate release is ready for human approval.
+agents:
+  - ceo
+  - qa_lead
+  - documentation_engineer
+  - release_manager
+steps:
+  - id: validate_candidate
+    agent: qa_lead
+    type: validate_artifact
+    output: validation_summary
+  - id: prepare_release_notes
+    agent: documentation_engineer
+    type: produce_artifact
+    output: release_notes
+  - id: assess_readiness
+    agent: release_manager
+    type: produce_artifact
+    output: readiness_report
+  - id: request_go_no_go
+    agent: ceo
+    type: request_human_approval
+    output: go_no_go_request
+approval_gates:
+  - id: approve_release
+    after_step: request_go_no_go
+    required_by: human
+validation:
+  required_artifacts:
+    - validation_summary
+    - release_notes
+    - readiness_report
+    - go_no_go_request
+memory_updates:
+  - project/decisions.md
+  - knowledge/lessons-learned.md

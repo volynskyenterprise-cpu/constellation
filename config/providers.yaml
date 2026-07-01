@@ -1,0 +1,40 @@
+providers:
+  - id: codex
+    enabled: true
+    role: default_v1_execution_environment
+    capabilities:
+      - reasoning
+      - file_inspection
+      - file_editing
+      - shell_execution
+      - structured_output
+  - id: openai
+    enabled: false
+    role: future_model_provider
+    capabilities:
+      - reasoning
+      - structured_output
+      - multimodal_understanding
+  - id: anthropic
+    enabled: false
+    role: future_model_provider
+    capabilities:
+      - reasoning
+      - structured_output
+  - id: google
+    enabled: false
+    role: future_model_provider
+    capabilities:
+      - reasoning
+      - structured_output
+      - multimodal_understanding
+  - id: local
+    enabled: false
+    role: future_local_model_provider
+    capabilities:
+      - reasoning
+      - structured_output
+
+routing:
+  strategy: capability_based
+  fallback_policy: require_human_confirmation

@@ -1,0 +1,39 @@
+id: architecture_review
+name: Architecture Review
+version: 0.1.0
+purpose: Review technical architecture options, risks, and approval needs.
+agents:
+  - ceo
+  - knowledge_engineer
+  - engineering_manager
+  - qa_lead
+steps:
+  - id: load_context
+    agent: knowledge_engineer
+    type: retrieve_context
+    output: context_packet
+  - id: propose_architecture
+    agent: engineering_manager
+    type: produce_artifact
+    output: architecture_recommendation
+  - id: validate_architecture
+    agent: qa_lead
+    type: validate_artifact
+    output: validation_summary
+  - id: synthesize_decision
+    agent: ceo
+    type: request_human_approval
+    output: decision_memo
+approval_gates:
+  - id: approve_architecture_direction
+    after_step: synthesize_decision
+    required_by: human
+validation:
+  required_artifacts:
+    - context_packet
+    - architecture_recommendation
+    - validation_summary
+    - decision_memo
+memory_updates:
+  - project/decisions.md
+  - knowledge/patterns.md

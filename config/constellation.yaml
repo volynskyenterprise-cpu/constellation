@@ -1,0 +1,26 @@
+project:
+  name: Constellation
+  version: 0.0.0
+  description: AI Operating System for Professional Judgment
+
+runtime:
+  default_environment: codex
+  orchestration_mode: manual
+  state_store: filesystem
+
+paths:
+  agents: agents
+  workflows: workflows
+  memory: memory
+  approvals: approvals
+  logs: logs
+  tests: tests
+
+principles:
+  - experts_not_assistants
+  - judgment_before_generation
+  - methodology_over_prompting
+  - knowledge_compounds
+  - human_remains_ceo
+  - model_agnostic_architecture
+  - start_simple_extensible

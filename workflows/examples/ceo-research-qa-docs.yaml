@@ -1,0 +1,54 @@
+id: example_ceo_research_qa_docs
+name: Example: CEO to Research Lead to QA Lead to Documentation Engineer
+version: 0.1.0
+purpose: Demonstrate a simple sequential expert workflow without requiring an orchestration engine.
+trigger: Human requests a researched, validated, documented recommendation.
+agents:
+  - ceo
+  - research_lead
+  - qa_lead
+  - documentation_engineer
+steps:
+  - id: frame_request
+    agent: ceo
+    type: frame_objective
+    instructions: Clarify the objective, constraints, and decision needed.
+    output: objective_brief
+  - id: research_evidence
+    agent: research_lead
+    type: retrieve_context
+    instructions: Gather and summarize evidence relevant to the objective.
+    input_from:
+      - frame_request
+    output: research_brief
+  - id: validate_findings
+    agent: qa_lead
+    type: validate_artifact
+    instructions: Review the research brief for unsupported claims, missing acceptance criteria, and residual risk.
+    input_from:
+      - research_evidence
+    output: validation_summary
+  - id: produce_documentation
+    agent: documentation_engineer
+    type: produce_artifact
+    instructions: Turn the approved findings and validation notes into clear documentation.
+    input_from:
+      - research_evidence
+      - validate_findings
+    output: documented_recommendation
+approval_gates:
+  - id: approve_documented_recommendation
+    after_step: produce_documentation
+    required_by: human
+    question: Does the documented recommendation satisfy the objective and preserve the stated caveats?
+validation:
+  required_artifacts:
+    - objective_brief
+    - research_brief
+    - validation_summary
+    - documented_recommendation
+memory_updates:
+  proposed:
+    - project/decisions.md
+    - knowledge/references.md
+    - knowledge/lessons-learned.md

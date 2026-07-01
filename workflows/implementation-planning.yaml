@@ -1,0 +1,38 @@
+id: implementation_planning
+name: Implementation Planning
+version: 0.1.0
+purpose: Convert an approved objective into an engineering plan with risks and acceptance criteria.
+agents:
+  - ceo
+  - engineering_manager
+  - qa_lead
+  - documentation_engineer
+steps:
+  - id: confirm_scope
+    agent: ceo
+    type: frame_objective
+    output: objective_brief
+  - id: plan_work
+    agent: engineering_manager
+    type: produce_artifact
+    output: technical_plan
+  - id: define_validation
+    agent: qa_lead
+    type: validate_artifact
+    output: acceptance_criteria
+  - id: prepare_docs_plan
+    agent: documentation_engineer
+    type: produce_artifact
+    output: documentation_plan
+approval_gates:
+  - id: approve_implementation_plan
+    after_step: prepare_docs_plan
+    required_by: human
+validation:
+  required_artifacts:
+    - technical_plan
+    - acceptance_criteria
+    - documentation_plan
+memory_updates:
+  - project/decisions.md
+  - project/constraints.md

@@ -1,0 +1,24 @@
+human_approval:
+  required_for:
+    - strategic_decision
+    - architecture_decision
+    - release_decision
+    - destructive_operation
+    - external_communication
+    - policy_change
+    - disputed_memory_promotion
+
+memory:
+  durable_updates_require_knowledge_engineer_review: true
+  preserve_provenance: true
+  mark_obsolete_entries_instead_of_deleting: true
+
+logging:
+  record_workflow_runs: true
+  record_agent_invocations: true
+  record_approval_decisions: true
+  preserve_final_artifacts: true
+
+tools:
+  destructive_actions_require_human_approval: true
+  provider_substitution_requires_note: true

@@ -1,0 +1,32 @@
+id: qa_review
+name: QA Review
+version: 0.1.0
+purpose: Validate an artifact or planned change against quality criteria.
+agents:
+  - qa_lead
+  - engineering_manager
+  - documentation_engineer
+steps:
+  - id: define_quality_bar
+    agent: qa_lead
+    type: validate_artifact
+    output: qa_plan
+  - id: technical_response
+    agent: engineering_manager
+    type: critique_plan
+    output: risk_response
+  - id: docs_check
+    agent: documentation_engineer
+    type: validate_artifact
+    output: documentation_validation
+approval_gates:
+  - id: approve_residual_risk
+    after_step: docs_check
+    required_by: human
+validation:
+  required_artifacts:
+    - qa_plan
+    - risk_response
+    - documentation_validation
+memory_updates:
+  - knowledge/lessons-learned.md

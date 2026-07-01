@@ -1,0 +1,24 @@
+invocation_id: example-invocation-001
+workflow_run_id: example-run-001
+agent_id: research_lead
+requested_by: ceo
+objective: Produce a researched, validated, documented recommendation.
+task: Gather and summarize evidence relevant to the objective.
+context:
+  summary: Example context packet for future validation tests.
+constraints:
+  - stay_model_agnostic
+  - cite_evidence_when_available
+assumptions: []
+evidence: []
+memory_references: []
+tools_available:
+  - file_inspection
+approval_state:
+  status: not_required_for_this_step
+expected_output:
+  - research_brief
+  - source_list
+quality_criteria:
+  - uncertainty_is_explicit
+  - sources_are_named
