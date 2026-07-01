@@ -101,7 +101,39 @@ Exit criteria:
 - Memory updates are proposed and curated
 - Logs can reconstruct what happened
 
-## Phase 2: Guided Codex Runtime
+## Phase 2: The Organization
+
+Goal:
+
+Define Constellation as a durable professional organization before adding more runtime automation.
+
+Deliverables:
+
+- `crew/` organizational layer
+- Professional role profiles
+- Responsibility and authority definitions
+- Communication and challenge protocols
+- Role-specific methodologies
+- Role-specific memory policies
+- Prompt templates derived from professional doctrine
+- Organization-wide collaboration and escalation rules
+
+Capabilities:
+
+- Treat agents as professionals, not prompt wrappers
+- Add future domain experts through a hiring standard
+- Preserve human authority in organizational design
+- Make cross-role disagreement explicit and useful
+- Connect future runtime behavior to role doctrine
+
+Exit criteria:
+
+- Every founding role has a complete crew folder
+- Collaboration and escalation rules are documented
+- Future domain experts can be added without changing core architecture
+- Runtime implementation can later consume crew doctrine intentionally
+
+## Phase 2b: Guided Codex Runtime
 
 Goal:
 
@@ -116,21 +148,6 @@ Deliverables:
 - Context packet generation process
 - Memory curation process
 - Validation checklists
-
-Capabilities:
-
-- Start a workflow from a defined template
-- Invoke agents in a repeatable order
-- Capture outputs consistently
-- Track pending approvals
-- Produce final run summaries
-
-Exit criteria:
-
-- Repeated workflows produce comparable logs and artifacts
-- Agents can be swapped or skipped intentionally
-- Human approvals are captured consistently
-- Knowledge Engineer can curate memory after each run
 
 ## Phase 3: Lightweight Orchestration
 

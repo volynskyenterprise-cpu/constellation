@@ -67,3 +67,19 @@ All notable changes to Constellation will be recorded here.
 - Added provider CLI commands: `providers list`, `providers show PROVIDER_NAME`, and `providers health`.
 - Added optional provider invocation hook behind a disabled-by-default config flag.
 - Added provider tests and documentation.
+
+## 0.7.0 - Provider-Backed Agent Outputs
+
+- Added opt-in provider-backed workflow step output.
+- Added provider routing through `default_provider` and `per_agent_provider`.
+- Added provider result metadata persistence in message logs, event logs, and working memory.
+- Added provider failure handling with `ProviderFailed` events and failed workflow status.
+- Added explicit fallback behavior controlled by `allow_fallback` and `fallback_provider`.
+- Added provider-backed agent tests and documentation.
+
+## Phase II Foundation - The Organization
+
+- Added the `crew/` organizational layer.
+- Added complete professional doctrine folders for all founding crew members.
+- Added organization-wide collaboration, escalation, org chart, and hiring standard documents.
+- Updated project documentation to distinguish runtime agent YAML from durable professional role doctrine.

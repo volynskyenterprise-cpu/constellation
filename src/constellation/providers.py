@@ -194,6 +194,9 @@ class ProviderRegistry:
         except KeyError as exc:
             raise ProviderError(f"Unknown provider: {provider_name}") from exc
 
+    def is_enabled(self, provider_name: str) -> bool:
+        return self.get_definition(provider_name).enabled
+
     def health(self) -> list[dict[str, Any]]:
         results = []
         for provider in self._providers.values():

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from .io import append_jsonl
 from .models import Message, Party, WorkflowDefinition, WorkflowStep, new_id, utc_now_iso
@@ -47,3 +48,23 @@ class MessageBus:
 
     def persist(self, message: Message) -> None:
         append_jsonl(self.log_path, {**message.to_dict(), "workflow_run_id": self.workflow_run_id})
+
+    def persist_provider_result(
+        self,
+        *,
+        message_id: str,
+        step_id: str,
+        agent_id: str,
+        provider_result: dict[str, Any],
+    ) -> None:
+        append_jsonl(
+            self.log_path,
+            {
+                "record_type": "provider_result",
+                "workflow_run_id": self.workflow_run_id,
+                "message_id": message_id,
+                "step_id": step_id,
+                "agent_id": agent_id,
+                "provider_result": provider_result,
+            },
+        )

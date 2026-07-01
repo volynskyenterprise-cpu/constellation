@@ -63,4 +63,7 @@ routing:
   strategy: capability_based
   fallback_policy: require_human_confirmation
   invoke_provider_during_kernel_run: false
-  default_provider: null
+  default_provider: echo
+  per_agent_provider: {}
+  allow_fallback: false
+  fallback_provider: "null"

@@ -56,6 +56,14 @@ Constellation turns professional AI work from a chat transcript into an operatin
 - QA Lead
 - Release Manager
 
+## Constellation Crew
+
+Phase II introduces the [Constellation Crew](crew/README.md): a durable organizational layer that defines agents as professional roles rather than prompt wrappers.
+
+The existing `agents/` YAML files remain the runtime registry. The `crew/` directory defines each role's mission, responsibilities, authority, communication style, methodologies, memory rules, and prompt templates.
+
+Crew doctrine is intentionally broader than runtime configuration. It is the professional standard future workflows and agent implementations should satisfy.
+
 ## Proposed Documentation Set
 
 - [VISION.md](VISION.md): Product philosophy, strategic intent, and guiding beliefs

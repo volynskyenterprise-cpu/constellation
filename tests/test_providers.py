@@ -86,6 +86,78 @@ class ProviderTests(unittest.TestCase):
             artifacts = memory["artifacts"]
             self.assertIsNone(artifacts["objective_brief"]["provider_result"])
 
+    def test_provider_enabled_agent_output_uses_echo(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = _copy_runtime_tree(Path(temp_dir))
+            _write_provider_config(temp_root, invoke=True, default_provider="echo")
+
+            result = ConstellationKernel(temp_root).run_workflow(Path("workflows/examples/ceo-research-qa-docs.yaml"))
+            memory = json.loads(result.working_memory.read_text(encoding="utf-8"))
+            events = _jsonl(result.event_log)
+            messages = _jsonl(result.message_log)
+
+            artifact = memory["artifacts"]["objective_brief"]
+            provider_result = artifact["provider_result"]
+            self.assertEqual(artifact["status"], "provider_backed")
+            self.assertEqual(provider_result["provider_name"], "echo")
+            self.assertTrue(provider_result["output_text"].startswith("echo:"))
+            self.assertIn("ProviderRequestCompleted", [event["type"] for event in events])
+            self.assertTrue(any(record.get("record_type") == "provider_result" for record in messages))
+
+    def test_per_agent_provider_override(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = _copy_runtime_tree(Path(temp_dir))
+            _write_provider_config(
+                temp_root,
+                invoke=True,
+                default_provider="echo",
+                per_agent={"qa_lead": "null"},
+            )
+
+            result = ConstellationKernel(temp_root).run_workflow(Path("workflows/examples/ceo-research-qa-docs.yaml"))
+            memory = json.loads(result.working_memory.read_text(encoding="utf-8"))
+
+            self.assertEqual(memory["artifacts"]["objective_brief"]["provider_result"]["provider_name"], "echo")
+            self.assertEqual(memory["artifacts"]["validation_summary"]["provider_result"]["provider_name"], "null")
+            self.assertEqual(memory["artifacts"]["validation_summary"]["provider_result"]["output_text"], "")
+
+    def test_provider_failure_marks_workflow_failed_without_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = _copy_runtime_tree(Path(temp_dir))
+            _write_provider_config(temp_root, invoke=True, default_provider="failure", failure_enabled=True)
+
+            result = ConstellationKernel(temp_root).run_workflow(Path("workflows/examples/ceo-research-qa-docs.yaml"))
+            memory = json.loads(result.working_memory.read_text(encoding="utf-8"))
+            events = _jsonl(result.event_log)
+
+            self.assertEqual(result.status, "failed")
+            self.assertEqual(memory["artifacts"]["objective_brief"]["status"], "failed")
+            self.assertEqual(memory["artifacts"]["objective_brief"]["provider_result"]["status"], "failed")
+            self.assertIn("ProviderFailed", [event["type"] for event in events])
+
+    def test_provider_failure_can_fallback_when_enabled(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = _copy_runtime_tree(Path(temp_dir))
+            _write_provider_config(
+                temp_root,
+                invoke=True,
+                default_provider="failure",
+                failure_enabled=True,
+                allow_fallback=True,
+                fallback_provider="null",
+            )
+
+            result = ConstellationKernel(temp_root).run_workflow(Path("workflows/examples/ceo-research-qa-docs.yaml"))
+            memory = json.loads(result.working_memory.read_text(encoding="utf-8"))
+            events = _jsonl(result.event_log)
+
+            self.assertEqual(result.status, "needs_approval")
+            provider_result = memory["artifacts"]["objective_brief"]["provider_result"]
+            self.assertEqual(provider_result["provider_name"], "null")
+            self.assertEqual(provider_result["status"], "completed")
+            self.assertEqual(provider_result["metadata"]["fallback_from"], "failure")
+            self.assertIn("ProviderFailed", [event["type"] for event in events])
+
 
 def _message(message_id: str) -> Message:
     return Message(
@@ -117,6 +189,62 @@ def _copy_runtime_tree(temp_root: Path) -> Path:
     for path in (temp_root / "memory" / "runs").glob("run_*-working.json"):
         path.unlink()
     return temp_root
+
+
+def _write_provider_config(
+    root: Path,
+    *,
+    invoke: bool,
+    default_provider: str,
+    per_agent: dict[str, str] | None = None,
+    failure_enabled: bool = False,
+    allow_fallback: bool = False,
+    fallback_provider: str = "null",
+) -> None:
+    per_agent = per_agent or {}
+    per_agent_lines = ["  per_agent_provider:"]
+    if per_agent:
+        per_agent_lines.extend([f"    {agent}: \"{provider}\"" for agent, provider in per_agent.items()])
+    else:
+        per_agent_lines.append("    none: none")
+    content = f"""providers:
+  - id: echo
+    enabled: true
+    role: deterministic_stub_provider
+    provider_type: echo
+    model: echo-v0
+    capabilities:
+      - reasoning
+      - structured_output
+  - id: "null"
+    enabled: true
+    role: deterministic_noop_provider
+    provider_type: "null"
+    model: null-v0
+    capabilities:
+      - reasoning
+      - structured_output
+  - id: failure
+    enabled: {str(failure_enabled).lower()}
+    role: deterministic_failure_provider
+    provider_type: failure
+    model: failure-v0
+    capabilities:
+      - reasoning
+      - structured_output
+
+routing:
+  invoke_provider_during_kernel_run: {str(invoke).lower()}
+  default_provider: {default_provider}
+{chr(10).join(per_agent_lines)}
+  allow_fallback: {str(allow_fallback).lower()}
+  fallback_provider: "{fallback_provider}"
+"""
+    (root / "config" / "providers.yaml").write_text(content, encoding="utf-8")
+
+
+def _jsonl(path: Path) -> list[dict[str, object]]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 if __name__ == "__main__":
