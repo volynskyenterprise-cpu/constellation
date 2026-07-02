@@ -11,10 +11,17 @@ providers:
   - id: openai
     enabled: false
     role: future_model_provider
+    provider_type: openai
+    model: gpt-4.1-mini
     capabilities:
       - reasoning
       - structured_output
       - multimodal_understanding
+    config:
+      api_key_env: OPENAI_API_KEY
+      timeout_seconds: 30
+      max_output_tokens: 2000
+      health_check_mode: config_only
   - id: anthropic
     enabled: false
     role: future_model_provider

@@ -3,7 +3,7 @@
 ## Next Engineering Milestones
 
 - Add explicit token/context budgeting for prompt packages.
-- Add context redaction policy before provider calls.
+- Add context redaction policy before real provider calls.
 - Add prompt package validation and schema version migration.
 - Add structured artifact schema validation and schema version migration.
 - Add artifact diffing between runs.
@@ -26,7 +26,8 @@
 - Add retention policy configuration for prune defaults.
 - Add sample memory curation after an example workflow.
 - Decide whether Phase 2 should keep the current standard-library YAML subset parser or adopt a full YAML dependency.
-- Add real provider adapters for Codex, GPT, Claude, Gemini, and local models.
+- Add integration-test harness for live OpenAI calls gated behind explicit environment flags.
+- Add real provider adapters for Codex, Claude, Gemini, and local models.
 - Add provider selection policies based on workflow capabilities.
 - Add provider result schema validation for logs, memory records, and artifacts.
 - Add provider retry policy separate from fallback policy.

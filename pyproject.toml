@@ -4,11 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "constellation-kernel"
-version = "1.1.0"
+version = "1.2.0"
 description = "Minimal file-based runtime kernel for Constellation."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
+
+[project.optional-dependencies]
+openai = ["openai>=1.0.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

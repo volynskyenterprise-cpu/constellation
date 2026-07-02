@@ -123,3 +123,13 @@ All notable changes to Constellation will be recorded here.
 - Added system health checks for constitution, config, agents, workflows, crew, providers, runtime directories, and provider invocation defaults.
 - Added `python -m constellation health`.
 - Added validation and health tests and documentation.
+
+## 1.2.0 - OpenAI Provider Adapter
+
+- Added `OpenAIProvider` behind the existing provider interface.
+- Added OpenAI prompt-package request conversion with system prompt, task prompt, output contract, evidence requirements, uncertainty requirements, and context sections.
+- Added disabled-by-default OpenAI config with `api_key_env`, timeout, output token limit, and config-only health mode.
+- Added optional `openai` package extra.
+- Added OpenAI provider health behavior for disabled, missing API key, missing SDK, configured, and optional API probe states.
+- Preserved disabled-by-default provider execution and EchoProvider default routing.
+- Added mocked OpenAI provider tests and documentation.
