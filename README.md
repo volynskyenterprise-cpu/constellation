@@ -75,6 +75,17 @@ python -m constellation research run research_inputs/sample-brief.md
 python -m constellation research export RUN_ID
 ```
 
+## PKOS Knowledge Organization
+
+v2.1 introduces the [PKOS Knowledge Organization](docs/pkos-knowledge-organization-v2.1.md), a proposal-first workflow for turning markdown or text sources into reviewable PKOS update packages.
+
+It writes proposed files under `outputs/pkos/RUN_ID/` and never mutates an external Obsidian vault by default.
+
+```bash
+python -m constellation pkos ingest pkos_inputs/source-note.md
+python -m constellation pkos package RUN_ID
+```
+
 ## Proposed Documentation Set
 
 - [VISION.md](VISION.md): Product philosophy, strategic intent, and guiding beliefs

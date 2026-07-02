@@ -13,6 +13,10 @@
 - Add PDF parsing for research inputs.
 - Add web retrieval for research workflows.
 - Add research export variants for brief, memo, and appendix formats.
+- Add PKOS package preview summaries and diff views.
+- Add PKOS proposed-file schema validation.
+- Add manual acceptance tracking for PKOS package files.
+- Add future guarded Obsidian connector that requires explicit user approval before writing.
 - Add prompt preview summaries for large crew doctrine sections.
 - Add future expert role template generation based on `crew/HIRING_STANDARD.md`.
 - Formalize the canonical schema for agent definition YAML from the Kernel v0.1 validator.

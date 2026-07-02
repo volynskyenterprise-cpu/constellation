@@ -1,0 +1,83 @@
+id: pkos_ingestion
+name: PKOS Ingestion Workflow
+version: 2.1.0
+purpose: Ingest a raw source document and produce a proposed PKOS update package.
+trigger: Human provides a markdown or text PKOS source input.
+agents:
+  - ceo
+  - research_lead
+  - knowledge_engineer
+  - qa_lead
+  - documentation_engineer
+  - release_manager
+steps:
+  - id: classify_source
+    agent: ceo
+    type: classify_source
+    instructions: Classify the source type, purpose, trust level, scope, and recommended PKOS handling.
+    output: source_classification
+  - id: extract_core_claims
+    agent: research_lead
+    type: extract_core_claims
+    instructions: Extract core claims, supporting evidence, uncertainty, and contradictions from the source.
+    input_from:
+      - classify_source
+    output: core_claims
+  - id: map_existing_knowledge
+    agent: knowledge_engineer
+    type: map_existing_knowledge
+    instructions: Map claims to existing knowledge concepts, synthesis candidates, maps, and source records.
+    input_from:
+      - extract_core_claims
+    output: knowledge_mapping
+  - id: propose_knowledge_updates
+    agent: knowledge_engineer
+    type: propose_knowledge_updates
+    instructions: Propose PKOS knowledge updates without mutating any external vault.
+    input_from:
+      - map_existing_knowledge
+    output: proposed_updates
+  - id: challenge_update_quality
+    agent: qa_lead
+    type: challenge_update_quality
+    instructions: Challenge the proposed updates for evidence quality, contradictions, overclaiming, and unsafe knowledge actions.
+    input_from:
+      - propose_knowledge_updates
+    output: validation_review
+  - id: produce_pkos_package
+    agent: documentation_engineer
+    type: produce_pkos_package
+    instructions: Produce a review package that organizes proposed PKOS files for manual review.
+    input_from:
+      - classify_source
+      - extract_core_claims
+      - map_existing_knowledge
+      - propose_knowledge_updates
+      - challenge_update_quality
+    output: pkos_review_package
+  - id: prepare_release_notes
+    agent: release_manager
+    type: prepare_release_notes
+    instructions: Prepare release notes describing proposed files, knowledge actions, limitations, and approval requirements.
+    input_from:
+      - produce_pkos_package
+    output: pkos_release_notes
+approval_gates:
+  - id: approve_pkos_update_package
+    after_step: prepare_release_notes
+    required_by: human
+    question: Should these proposed PKOS updates be accepted for manual review or application?
+validation:
+  required_artifacts:
+    - source_classification
+    - core_claims
+    - knowledge_mapping
+    - proposed_updates
+    - validation_review
+    - pkos_review_package
+    - pkos_release_notes
+memory_updates:
+  proposed:
+    - knowledge/pkos-source-records.md
+    - knowledge/pkos-concepts.md
+    - knowledge/pkos-synthesis.md

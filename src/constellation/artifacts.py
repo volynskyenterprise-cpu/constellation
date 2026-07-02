@@ -38,6 +38,8 @@ class AgentArtifact:
     contradictions: list[str] = field(default_factory=list)
     open_questions: list[str] = field(default_factory=list)
     implications: list[str] = field(default_factory=list)
+    proposed_files: list[str] = field(default_factory=list)
+    knowledge_actions: list[str] = field(default_factory=list)
 
     def to_dict(self) -> JsonMap:
         return {
@@ -65,6 +67,8 @@ class AgentArtifact:
             "contradictions": self.contradictions,
             "open_questions": self.open_questions,
             "implications": self.implications,
+            "proposed_files": self.proposed_files,
+            "knowledge_actions": self.knowledge_actions,
         }
 
 
@@ -101,6 +105,8 @@ class ArtifactParser:
             contradictions=[error],
             open_questions=["What caused the provider output parsing failure?"],
             implications=["This artifact should not be used for professional judgment until repaired."],
+            proposed_files=[],
+            knowledge_actions=[],
         )
 
     def _parse(self, *, provider_result: JsonMap, prompt_package: JsonMap) -> AgentArtifact:
@@ -124,6 +130,8 @@ class ArtifactParser:
             f"{crew_role} completed {expected_output}.",
             "Output was generated through the configured provider path.",
         ]
+        proposed_files = _proposed_files(expected_output)
+        knowledge_actions = _knowledge_actions(expected_output)
         return AgentArtifact(
             artifact_id=_artifact_id(prompt_package),
             workflow_run_id=workflow_run_id,
@@ -177,6 +185,8 @@ class ArtifactParser:
             contradictions=[],
             open_questions=["What evidence should be verified by a human reviewer before relying on this output?"],
             implications=[f"{expected_output} is available for downstream workflow steps."],
+            proposed_files=proposed_files,
+            knowledge_actions=knowledge_actions,
         )
 
 
@@ -228,6 +238,12 @@ def _artifact_type(prompt_package: JsonMap) -> str:
         "knowledge_implications",
         "validation_challenge",
         "executive_research_report",
+        "source_classification",
+        "core_claims",
+        "knowledge_mapping",
+        "proposed_updates",
+        "pkos_review_package",
+        "pkos_release_notes",
     }
     if expected_output in research_types:
         return expected_output
@@ -260,6 +276,32 @@ def _provider_result_id(provider_result: JsonMap) -> str | None:
     if isinstance(provider_name, str) and isinstance(message_id, str):
         return f"provider_result_{message_id}_{provider_name}"
     return None
+
+
+def _proposed_files(expected_output: str) -> list[str]:
+    files_by_output = {
+        "source_classification": ["source-summary.md"],
+        "core_claims": ["evidence-table.md"],
+        "knowledge_mapping": ["proposed-map.md"],
+        "proposed_updates": ["proposed-concepts.md", "proposed-synthesis.md", "proposed-map.md", "proposed-source-record.md"],
+        "validation_review": ["validation-review.md"],
+        "pkos_review_package": ["review-package.md"],
+        "pkos_release_notes": ["release-notes.md"],
+    }
+    return files_by_output.get(expected_output, [])
+
+
+def _knowledge_actions(expected_output: str) -> list[str]:
+    actions_by_output = {
+        "source_classification": ["add_source_record"],
+        "core_claims": ["strengthen_concept"],
+        "knowledge_mapping": ["update_map"],
+        "proposed_updates": ["create_concept", "update_concept", "create_synthesis", "create_map", "add_source_record"],
+        "validation_review": ["strengthen_concept", "weaken_concept"],
+        "pkos_review_package": ["create_concept", "create_synthesis", "create_map", "add_source_record"],
+        "pkos_release_notes": ["add_source_record"],
+    }
+    return actions_by_output.get(expected_output, [])
 
 
 def _required_string(mapping: JsonMap, key: str) -> str:

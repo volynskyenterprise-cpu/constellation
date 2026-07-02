@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .artifacts import ArtifactError
 from .kernel import ConstellationKernel
+from .pkos import PKOSError, PKOSKnowledgeOrganization
 from .prompts import PromptUnavailable
 from .research import ResearchError, ResearchOrganization
 from .state import WorkflowStateError
@@ -92,6 +93,15 @@ def main(argv: list[str] | None = None) -> int:
     research_run_parser.add_argument("input_path", type=Path, help="Path to a .md or .txt research input.")
     research_export_parser = research_subparsers.add_parser("export", help="Export an executive research report for a run.")
     research_export_parser.add_argument("workflow_run_id", help="Actual workflow run ID.")
+
+    pkos_parser = subparsers.add_parser("pkos", help="Run and package PKOS knowledge update proposals.")
+    pkos_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    pkos_subparsers = pkos_parser.add_subparsers(dest="pkos_command", required=True)
+    pkos_ingest_parser = pkos_subparsers.add_parser("ingest", help="Run PKOS ingestion on a markdown or text file.")
+    pkos_ingest_parser.add_argument("input_path", type=Path, help="Path to a .md or .txt PKOS input.")
+    pkos_package_parser = pkos_subparsers.add_parser("package", help="Export a PKOS review package for a run.")
+    pkos_package_parser.add_argument("workflow_run_id", help="Actual workflow run ID.")
+    pkos_package_parser.add_argument("--overwrite", action="store_true", help="Overwrite existing package files.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -284,6 +294,24 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"error: {exc}")
                 return 1
             print(f"report: {output_path}")
+            return 0
+    if args.command == "pkos":
+        organization = PKOSKnowledgeOrganization(args.root.resolve())
+        if args.pkos_command == "ingest":
+            try:
+                result = organization.ingest(args.input_path)
+            except PKOSError as exc:
+                print(f"error: {exc}")
+                return 1
+            _print_result(result)
+            return 0
+        if args.pkos_command == "package":
+            try:
+                output_dir = organization.package(args.workflow_run_id, overwrite=args.overwrite)
+            except (PKOSError, WorkflowStateError) as exc:
+                print(f"error: {exc}")
+                return 1
+            print(f"package: {output_dir}")
             return 0
     return 2
 

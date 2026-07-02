@@ -145,3 +145,16 @@ All notable changes to Constellation will be recorded here.
 - Added markdown report export under `outputs/research/`.
 - Preserved disabled-by-default provider execution and human approval gates.
 - Added Research Organization tests and documentation.
+
+## 2.1.0 - PKOS Knowledge Organization
+
+- Added PKOS ingestion workflow under `workflows/pkos/pkos-ingestion.yaml`.
+- Added `pkos_inputs/` for markdown and text source documents.
+- Added `python -m constellation pkos ingest PATH_TO_MD_OR_TXT`.
+- Added PKOS source ingestion into Working Memory before workflow execution.
+- Extended artifacts with `proposed_files` and `knowledge_actions`.
+- Added `python -m constellation pkos package RUN_ID`.
+- Added PKOS proposal package export under `outputs/pkos/RUN_ID/`.
+- Added overwrite protection with optional `--overwrite`.
+- Preserved disabled-by-default provider execution and human approval gates.
+- Added PKOS Knowledge Organization tests and documentation.
