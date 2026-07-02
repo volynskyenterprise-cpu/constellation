@@ -1,0 +1,66 @@
+id: institutional_research
+name: Institutional Research Workflow
+version: 2.0.0
+purpose: Convert a source document or research brief into a structured, evidence-aware executive research report.
+trigger: Human provides a markdown or text research input.
+agents:
+  - ceo
+  - research_lead
+  - knowledge_engineer
+  - qa_lead
+  - documentation_engineer
+steps:
+  - id: frame_research_objective
+    agent: ceo
+    type: frame_research_objective
+    instructions: Clarify the research objective, source scope, executive decision need, and constraints.
+    output: research_objective_brief
+  - id: extract_evidence
+    agent: research_lead
+    type: extract_evidence
+    instructions: Extract evidence from the source input, separating observed claims from interpretation.
+    input_from:
+      - frame_research_objective
+    output: evidence_table
+  - id: map_knowledge_implications
+    agent: knowledge_engineer
+    type: map_knowledge_implications
+    instructions: Map the evidence into project knowledge implications, reusable concepts, and memory candidates.
+    input_from:
+      - extract_evidence
+    output: knowledge_implications
+  - id: challenge_findings
+    agent: qa_lead
+    type: challenge_findings
+    instructions: Challenge the evidence and implications for unsupported claims, contradictions, uncertainty, and missing context.
+    input_from:
+      - extract_evidence
+      - map_knowledge_implications
+    output: validation_challenge
+  - id: produce_research_report
+    agent: documentation_engineer
+    type: produce_research_report
+    instructions: Produce an executive research report that reflects the evidence, uncertainty, implications, recommendations, and next actions.
+    input_from:
+      - frame_research_objective
+      - extract_evidence
+      - map_knowledge_implications
+      - challenge_findings
+    output: executive_research_report
+approval_gates:
+  - id: approve_executive_research_report
+    after_step: produce_research_report
+    required_by: human
+    question: Does this research report accurately reflect the evidence, uncertainty, and recommended next actions?
+validation:
+  required_artifacts:
+    - research_objective_brief
+    - evidence_table
+    - knowledge_implications
+    - validation_challenge
+    - executive_research_report
+memory_updates:
+  proposed:
+    - project/research-decisions.md
+    - knowledge/research-evidence.md
+    - knowledge/research-lessons-learned.md

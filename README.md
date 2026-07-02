@@ -64,6 +64,17 @@ The existing `agents/` YAML files remain the runtime registry. The `crew/` direc
 
 Crew doctrine is intentionally broader than runtime configuration. It is the professional standard future workflows and agent implementations should satisfy.
 
+## Research Organization
+
+v2.0 introduces the [Research Organization](docs/research-organization-v2.0.md), the first professional capability built on the Constellation kernel.
+
+It runs an institutional research workflow over markdown or text inputs, coordinates the CEO, Research Lead, Knowledge Engineer, QA Lead, and Documentation Engineer, and exports an evidence-aware executive research report.
+
+```bash
+python -m constellation research run research_inputs/sample-brief.md
+python -m constellation research export RUN_ID
+```
+
 ## Proposed Documentation Set
 
 - [VISION.md](VISION.md): Product philosophy, strategic intent, and guiding beliefs

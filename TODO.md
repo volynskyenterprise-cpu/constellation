@@ -8,6 +8,11 @@
 - Add structured artifact schema validation and schema version migration.
 - Add artifact diffing between runs.
 - Add artifact promotion rules from Working Memory to Project Memory.
+- Add research report templates for different audiences.
+- Add citation extraction and source-span tracking for research artifacts.
+- Add PDF parsing for research inputs.
+- Add web retrieval for research workflows.
+- Add research export variants for brief, memo, and appendix formats.
 - Add prompt preview summaries for large crew doctrine sections.
 - Add future expert role template generation based on `crew/HIRING_STANDARD.md`.
 - Formalize the canonical schema for agent definition YAML from the Kernel v0.1 validator.
@@ -33,7 +38,7 @@
 - Add provider retry policy separate from fallback policy.
 - Add machine-readable output mode for artifact list/show commands.
 - Add approval notes and artifact review metadata.
-- Write acceptance criteria for the first real non-stub provider workflow.
+- Write acceptance criteria for the first real non-stub research workflow.
 
 ## Deferred
 

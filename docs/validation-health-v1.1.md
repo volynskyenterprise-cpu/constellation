@@ -72,7 +72,7 @@ health: ok
 ok: constitution: Constitution folder exists.
 ok: config: Required config files exist.
 ok: agents: Loaded 8 agents.
-ok: workflows: Loaded 6 workflows.
+ok: workflows: Loaded 7 workflows.
 ok: crew: Crew validation passed.
 ok: providers: Loaded 8 providers.
 ok: runtime_directories: Runtime directories exist or were created.

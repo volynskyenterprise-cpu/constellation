@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +34,10 @@ class AgentArtifact:
     provider_result_id: str | None
     prompt_package_id: str | None
     created_at: str
+    key_findings: list[str] = field(default_factory=list)
+    contradictions: list[str] = field(default_factory=list)
+    open_questions: list[str] = field(default_factory=list)
+    implications: list[str] = field(default_factory=list)
 
     def to_dict(self) -> JsonMap:
         return {
@@ -57,6 +61,10 @@ class AgentArtifact:
             "provider_result_id": self.provider_result_id,
             "prompt_package_id": self.prompt_package_id,
             "created_at": self.created_at,
+            "key_findings": self.key_findings,
+            "contradictions": self.contradictions,
+            "open_questions": self.open_questions,
+            "implications": self.implications,
         }
 
 
@@ -89,6 +97,10 @@ class ArtifactParser:
             provider_result_id=_provider_result_id(provider_result),
             prompt_package_id=_string_or_none(prompt_package.get("prompt_id")),
             created_at=utc_now_iso(),
+            key_findings=[],
+            contradictions=[error],
+            open_questions=["What caused the provider output parsing failure?"],
+            implications=["This artifact should not be used for professional judgment until repaired."],
         )
 
     def _parse(self, *, provider_result: JsonMap, prompt_package: JsonMap) -> AgentArtifact:
@@ -108,6 +120,10 @@ class ArtifactParser:
         workflow_id = _required_string(prompt_package, "workflow_id")
         prompt_id = _required_string(prompt_package, "prompt_id")
         expected_output = _expected_output(prompt_package)
+        key_findings = [
+            f"{crew_role} completed {expected_output}.",
+            "Output was generated through the configured provider path.",
+        ]
         return AgentArtifact(
             artifact_id=_artifact_id(prompt_package),
             workflow_run_id=workflow_run_id,
@@ -157,6 +173,10 @@ class ArtifactParser:
             provider_result_id=_provider_result_id(provider_result),
             prompt_package_id=prompt_id,
             created_at=utc_now_iso(),
+            key_findings=key_findings,
+            contradictions=[],
+            open_questions=["What evidence should be verified by a human reviewer before relying on this output?"],
+            implications=[f"{expected_output} is available for downstream workflow steps."],
         )
 
 
@@ -201,6 +221,16 @@ def _artifact_id(prompt_package: JsonMap) -> str:
 
 
 def _artifact_type(prompt_package: JsonMap) -> str:
+    expected_output = _expected_output(prompt_package)
+    research_types = {
+        "research_objective_brief",
+        "evidence_table",
+        "knowledge_implications",
+        "validation_challenge",
+        "executive_research_report",
+    }
+    if expected_output in research_types:
+        return expected_output
     metadata = prompt_package.get("metadata")
     if isinstance(metadata, dict):
         step_type = metadata.get("step_type")

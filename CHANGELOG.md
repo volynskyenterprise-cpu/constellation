@@ -133,3 +133,15 @@ All notable changes to Constellation will be recorded here.
 - Added OpenAI provider health behavior for disabled, missing API key, missing SDK, configured, and optional API probe states.
 - Preserved disabled-by-default provider execution and EchoProvider default routing.
 - Added mocked OpenAI provider tests and documentation.
+
+## 2.0.0 - Research Organization
+
+- Added institutional research workflow under `workflows/research/institutional-research.yaml`.
+- Added `research_inputs/` for markdown and text source documents.
+- Added `python -m constellation research run PATH_TO_MD_OR_TXT`.
+- Added research source ingestion into Working Memory before workflow execution.
+- Added research artifact support fields for key findings, contradictions, open questions, and implications.
+- Added `python -m constellation research export RUN_ID`.
+- Added markdown report export under `outputs/research/`.
+- Preserved disabled-by-default provider execution and human approval gates.
+- Added Research Organization tests and documentation.

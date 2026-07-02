@@ -44,7 +44,7 @@ class ConstellationKernel:
         self.provider_registry = ProviderRegistry.load_from(root / "config" / "providers.yaml")
         self.crew_loader = CrewLoader(root)
 
-    def run_workflow(self, workflow_path: Path) -> KernelRunResult:
+    def run_workflow(self, workflow_path: Path, initial_working_entries: list[dict[str, object]] | None = None) -> KernelRunResult:
         workflow = self.workflow_loader.load(self._resolve_path(workflow_path))
         workflow_run_id = new_id("run")
         relative_workflow_path = str(workflow_path)
@@ -54,6 +54,10 @@ class ConstellationKernel:
         approvals = ApprovalManager(self.root, workflow_run_id)
 
         memory.initialize(workflow.purpose)
+        for entry in initial_working_entries or []:
+            key = entry.get("key")
+            if isinstance(key, str):
+                memory.add_working_entry(key, entry.get("value"))
         self.state_store.save(
             workflow_run_id=workflow_run_id,
             workflow_id=workflow.id,

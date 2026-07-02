@@ -7,6 +7,7 @@ from pathlib import Path
 from .artifacts import ArtifactError
 from .kernel import ConstellationKernel
 from .prompts import PromptUnavailable
+from .research import ResearchError, ResearchOrganization
 from .state import WorkflowStateError
 
 
@@ -83,6 +84,14 @@ def main(argv: list[str] | None = None) -> int:
 
     health_parser = subparsers.add_parser("health", help="Run deterministic system health checks.")
     health_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+
+    research_parser = subparsers.add_parser("research", help="Run and export institutional research workflows.")
+    research_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    research_subparsers = research_parser.add_subparsers(dest="research_command", required=True)
+    research_run_parser = research_subparsers.add_parser("run", help="Run institutional research on a markdown or text file.")
+    research_run_parser.add_argument("input_path", type=Path, help="Path to a .md or .txt research input.")
+    research_export_parser = research_subparsers.add_parser("export", help="Export an executive research report for a run.")
+    research_export_parser.add_argument("workflow_run_id", help="Actual workflow run ID.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -258,6 +267,24 @@ def main(argv: list[str] | None = None) -> int:
         report = kernel.health()
         _print_health_report(report)
         return 0 if report.ok else 1
+    if args.command == "research":
+        organization = ResearchOrganization(args.root.resolve())
+        if args.research_command == "run":
+            try:
+                result = organization.run(args.input_path)
+            except ResearchError as exc:
+                print(f"error: {exc}")
+                return 1
+            _print_result(result)
+            return 0
+        if args.research_command == "export":
+            try:
+                output_path = organization.export(args.workflow_run_id)
+            except (ResearchError, WorkflowStateError) as exc:
+                print(f"error: {exc}")
+                return 1
+            print(f"report: {output_path}")
+            return 0
     return 2
 
 
