@@ -114,3 +114,12 @@ All notable changes to Constellation will be recorded here.
 - Added `python -m constellation artifacts show RUN_ID ARTIFACT_ID`.
 - Preserved disabled-by-default provider invocation and placeholder behavior.
 - Added Executable Organization v1.0 documentation and tests.
+
+## 1.1.0 - Crew Validation And Health Check
+
+- Added deterministic crew validation for founding folders, required doctrine files, agent mappings, and orphan crew folders.
+- Added `python -m constellation validate crew`.
+- Added optional `--allow-orphans` validation mode for planned future roles.
+- Added system health checks for constitution, config, agents, workflows, crew, providers, runtime directories, and provider invocation defaults.
+- Added `python -m constellation health`.
+- Added validation and health tests and documentation.

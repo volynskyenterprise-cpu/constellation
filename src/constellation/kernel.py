@@ -9,6 +9,7 @@ from .config import ConfigurationLoader
 from .context import ContextAssembler, ExecutionContext
 from .crew import CrewLoader
 from .events import EventBus
+from .health import HealthReport, SystemHealthChecker
 from .lifecycle import LifecycleResult, PruneAction, RunLifecycleManager
 from .memory import MemoryManager
 from .messages import MessageBus
@@ -18,6 +19,7 @@ from .prompts import PromptAssembler, PromptPackage
 from .registry import AgentRegistry
 from .runs import RunDetails, RunInspector, RunSummary
 from .state import WorkflowStateError, WorkflowStateStore
+from .validation import ValidationReport, CrewValidator
 from .workflows import WorkflowLoader
 
 
@@ -166,6 +168,12 @@ class ConstellationKernel:
 
     def show_artifact(self, workflow_run_id: str, artifact_id: str) -> dict[str, object]:
         return ArtifactStore(self.root).show(workflow_run_id, artifact_id)
+
+    def validate_crew(self, *, allow_orphans: bool = False) -> ValidationReport:
+        return CrewValidator(self.root).validate(allow_orphans=allow_orphans)
+
+    def health(self) -> HealthReport:
+        return SystemHealthChecker(self.root).check()
 
     def _execute_from(
         self,

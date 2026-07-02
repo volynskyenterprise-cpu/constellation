@@ -75,6 +75,15 @@ def main(argv: list[str] | None = None) -> int:
     artifacts_show_parser.add_argument("workflow_run_id", help="Actual workflow run ID.")
     artifacts_show_parser.add_argument("artifact_id", help="Actual artifact ID.")
 
+    validate_parser = subparsers.add_parser("validate", help="Validate Constellation configuration and doctrine.")
+    validate_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    validate_subparsers = validate_parser.add_subparsers(dest="validate_command", required=True)
+    validate_crew_parser = validate_subparsers.add_parser("crew", help="Validate crew doctrine and agent mappings.")
+    validate_crew_parser.add_argument("--allow-orphans", action="store_true", help="Allow crew folders without matching agents.")
+
+    health_parser = subparsers.add_parser("health", help="Run deterministic system health checks.")
+    health_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+
     args = parser.parse_args(argv)
     if args.command == "run":
         kernel = ConstellationKernel(args.root.resolve())
@@ -238,6 +247,17 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             print(json.dumps(artifact, indent=2, sort_keys=True))
             return 0
+    if args.command == "validate":
+        kernel = ConstellationKernel(args.root.resolve())
+        if args.validate_command == "crew":
+            report = kernel.validate_crew(allow_orphans=args.allow_orphans)
+            _print_validation_report(report)
+            return 0 if report.ok else 1
+    if args.command == "health":
+        kernel = ConstellationKernel(args.root.resolve())
+        report = kernel.health()
+        _print_health_report(report)
+        return 0 if report.ok else 1
     return 2
 
 
@@ -288,3 +308,19 @@ def _print_lifecycle_result(result) -> None:
 def _confirm_delete(target: str) -> bool:
     response = input(f"Type DELETE to confirm deletion of {target}: ")
     return response == "DELETE"
+
+
+def _print_validation_report(report) -> None:
+    print(f"{report.name}: {report.status}")
+    if report.ok:
+        print(f"checked: {len(report.checked)}")
+        return
+    for issue in report.issues:
+        location = f" path={issue.path}" if issue.path else ""
+        print(f"error: {issue.code}: {issue.message}{location}")
+
+
+def _print_health_report(report) -> None:
+    print(f"health: {report.status}")
+    for check in report.checks:
+        print(f"{check.status}: {check.name}: {check.message}")

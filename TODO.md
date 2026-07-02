@@ -12,7 +12,11 @@
 - Add future expert role template generation based on `crew/HIRING_STANDARD.md`.
 - Formalize the canonical schema for agent definition YAML from the Kernel v0.1 validator.
 - Formalize the canonical schema for workflow definition YAML from the Kernel v0.1 validator.
-- Add stricter validation for config registries and provider capability declarations.
+- Add stricter schema validation for config registries and provider capability declarations.
+- Add workflow-to-crew capability validation before execution.
+- Add `validate workflows`, `validate config`, and `validate providers` commands.
+- Add machine-readable JSON output for validation and health commands.
+- Add CI-friendly preflight command that runs validation, health, and tests.
 - Add approval rejection commands.
 - Add richer approval metadata, including approver identity and notes.
 - Add run summary generation from message and event logs.
