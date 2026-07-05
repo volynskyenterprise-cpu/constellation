@@ -21,6 +21,10 @@
 - Add accepted/rejected state for cross-document findings.
 - Add cross-document finding comparison across analysis versions.
 - Add deterministic contradiction review workflows.
+- Add human-reviewed thesis acceptance, rejection, and supersession commands.
+- Add thesis comparison across cross-document analysis versions.
+- Add thesis-driven workflow recommendations.
+- Add evidence-weighted thesis confidence refinement.
 - Add Institutional Reasoning Engine design over accepted evidence and graph findings.
 - Add PDF parsing for research inputs.
 - Add web retrieval for research workflows.

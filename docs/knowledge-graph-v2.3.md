@@ -134,6 +134,13 @@ Export markdown:
 python -m constellation graph export
 ```
 
+After graph entries exist for multiple runs, cross-document analysis and thesis generation can be run explicitly:
+
+```bash
+python -m constellation graph analyze
+python -m constellation thesis generate
+```
+
 The export is written to:
 
 ```text

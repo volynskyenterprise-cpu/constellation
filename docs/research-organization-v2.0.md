@@ -104,7 +104,11 @@ python -m constellation graph build RUN_ID_1
 python -m constellation graph build RUN_ID_2
 python -m constellation graph analyze
 python -m constellation graph findings
+python -m constellation thesis generate
+python -m constellation thesis list
 ```
+
+Thesis generation is a separate v2.5 step. It creates proposed institutional theses from cross-document findings and does not accept them automatically.
 
 ## Approval
 

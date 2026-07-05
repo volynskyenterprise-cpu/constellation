@@ -13,6 +13,7 @@ from .pkos import PKOSError, PKOSKnowledgeOrganization
 from .prompts import PromptUnavailable
 from .research import ResearchError, ResearchOrganization
 from .state import WorkflowStateError
+from .thesis import ThesisError, ThesisStore
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -132,6 +133,16 @@ def main(argv: list[str] | None = None) -> int:
     graph_findings_show_parser = graph_findings_subparsers.add_parser("show", help="Show one finding.")
     graph_findings_show_parser.add_argument("finding_id", help="Actual finding ID.")
     graph_findings_subparsers.add_parser("export", help="Export findings markdown.")
+
+    thesis_parser = subparsers.add_parser("thesis", help="Generate and inspect institutional theses.")
+    thesis_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    thesis_subparsers = thesis_parser.add_subparsers(dest="thesis_command", required=True)
+    thesis_generate_parser = thesis_subparsers.add_parser("generate", help="Generate theses from cross-document analysis.")
+    thesis_generate_parser.add_argument("--overwrite", action="store_true", help="Overwrite existing thesis outputs.")
+    thesis_subparsers.add_parser("list", help="List generated theses.")
+    thesis_show_parser = thesis_subparsers.add_parser("show", help="Show one thesis.")
+    thesis_show_parser.add_argument("thesis_id", help="Actual thesis ID.")
+    thesis_subparsers.add_parser("export", help="Export theses markdown.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -447,6 +458,45 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             for finding in findings:
                 print(f"{finding.finding_id} type={finding.finding_type} confidence={finding.confidence} title={finding.title}")
+            return 0
+    if args.command == "thesis":
+        store = ThesisStore(args.root.resolve())
+        if args.thesis_command == "generate":
+            try:
+                theses = store.generate(overwrite=args.overwrite)
+            except ThesisError as exc:
+                print(f"error: {exc}")
+                return 1
+            print(f"theses: {store.json_path}")
+            print(f"count: {len(theses)}")
+            return 0
+        if args.thesis_command == "list":
+            try:
+                theses = store.list_theses()
+            except ThesisError as exc:
+                print(f"error: {exc}")
+                return 1
+            if not theses:
+                print("No theses found.")
+                return 0
+            for thesis in theses:
+                print(f"{thesis.thesis_id} type={thesis.thesis_type} status={thesis.status} confidence={thesis.confidence} title={thesis.title}")
+            return 0
+        if args.thesis_command == "show":
+            try:
+                thesis = store.show(args.thesis_id)
+            except ThesisError as exc:
+                print(f"error: {exc}")
+                return 1
+            print(json.dumps(thesis.to_dict(), indent=2, sort_keys=True))
+            return 0
+        if args.thesis_command == "export":
+            try:
+                output_path = store.export()
+            except ThesisError as exc:
+                print(f"error: {exc}")
+                return 1
+            print(f"thesis_export: {output_path}")
             return 0
     return 2
 

@@ -123,6 +123,19 @@ python -m constellation graph findings
 python -m constellation graph findings show FINDING_ID
 ```
 
+## Thesis Engine
+
+v2.5 introduces the [Thesis Engine](docs/thesis-engine-v2.5.md), deterministic conversion of cross-document findings into proposed institutional theses.
+
+Thesis generation is opt-in and never accepts a thesis automatically:
+
+```bash
+python -m constellation thesis generate
+python -m constellation thesis list
+python -m constellation thesis show THESIS_ID
+python -m constellation thesis export
+```
+
 ## Proposed Documentation Set
 
 - [VISION.md](VISION.md): Product philosophy, strategic intent, and guiding beliefs

@@ -125,6 +125,13 @@ Export findings:
 python -m constellation graph findings export
 ```
 
+Generate proposed institutional theses from the analysis:
+
+```bash
+python -m constellation thesis generate
+python -m constellation thesis list
+```
+
 ## Example
 
 Two source documents that both contain:
@@ -148,6 +155,8 @@ Cross-document analysis reads `memory/graph/graph.json`. It does not build the g
 ## Relationship To Research And PKOS
 
 Research and PKOS workflows create evidence and artifacts. After building graph entries from multiple runs, cross-document analysis can identify repeated explicit labels and source clusters across those runs.
+
+The Thesis Engine can then convert selected findings into proposed institutional theses. This is not automatic; run `python -m constellation thesis generate` after graph analysis.
 
 ## Why No LLM Inference Yet
 

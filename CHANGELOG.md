@@ -198,3 +198,16 @@ All notable changes to Constellation will be recorded here.
 - Added `python -m constellation graph findings show FINDING_ID`.
 - Added `python -m constellation graph findings export`.
 - Preserved opt-in graph analysis and disabled-by-default provider execution.
+
+## 2.5.0 - Thesis Engine
+
+- Added deterministic `Thesis` model and Thesis Engine.
+- Added thesis generation from cross-document findings without provider calls.
+- Added thesis store under `outputs/theses/`.
+- Added overwrite protection for thesis generation.
+- Added `python -m constellation thesis generate`.
+- Added `python -m constellation thesis list`.
+- Added `python -m constellation thesis show THESIS_ID`.
+- Added `python -m constellation thesis export`.
+- Added documentation for the Evidence, Knowledge Graph, Cross-Document, and Thesis relationship.
+- Preserved proposed-by-default thesis status and human authority over acceptance.
