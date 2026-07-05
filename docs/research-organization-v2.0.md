@@ -95,6 +95,17 @@ The export includes:
 - Next steps
 - Approval status
 
+## Cross-Document Analysis
+
+Cross-document analysis is not automatic. After running multiple research workflows, build graph entries for each run and then analyze:
+
+```bash
+python -m constellation graph build RUN_ID_1
+python -m constellation graph build RUN_ID_2
+python -m constellation graph analyze
+python -m constellation graph findings
+```
+
 ## Approval
 
 Research workflows still require explicit human approval:

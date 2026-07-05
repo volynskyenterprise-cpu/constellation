@@ -111,6 +111,18 @@ python -m constellation graph edges
 python -m constellation graph export
 ```
 
+## Cross-Document Reasoning
+
+v2.4 introduces [Cross-Document Reasoning](docs/cross-document-reasoning-v2.4.md), deterministic analysis across the Knowledge Graph.
+
+After building graph entries from multiple runs, Constellation can identify repeated explicit concepts, themes, risks, assumptions, recommendations, source clusters, and explicitly marked possible contradictions:
+
+```bash
+python -m constellation graph analyze
+python -m constellation graph findings
+python -m constellation graph findings show FINDING_ID
+```
+
 ## Proposed Documentation Set
 
 - [VISION.md](VISION.md): Product philosophy, strategic intent, and guiding beliefs

@@ -184,3 +184,17 @@ All notable changes to Constellation will be recorded here.
 - Added `python -m constellation graph show NODE_OR_EDGE_ID`.
 - Added `python -m constellation graph export`.
 - Added graph health directory checks, tests, and documentation.
+
+## 2.4.0 - Cross-Document Reasoning
+
+- Added deterministic `CrossDocumentFinding` and `CrossDocumentAnalysis` models.
+- Added cross-document analysis store under `outputs/analysis/`.
+- Added repeated concept, theme, risk, assumption, and recommendation detection.
+- Added source cluster detection.
+- Added explicit-marker-only possible contradiction detection.
+- Added missing evidence and confidence signal findings.
+- Added `python -m constellation graph analyze`.
+- Added `python -m constellation graph findings`.
+- Added `python -m constellation graph findings show FINDING_ID`.
+- Added `python -m constellation graph findings export`.
+- Preserved opt-in graph analysis and disabled-by-default provider execution.

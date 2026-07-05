@@ -18,6 +18,10 @@
 - Add graph validation for unsupported artifact claims.
 - Add human-reviewed graph promotion and rejection workflows.
 - Add graph-backed PKOS package previews.
+- Add accepted/rejected state for cross-document findings.
+- Add cross-document finding comparison across analysis versions.
+- Add deterministic contradiction review workflows.
+- Add Institutional Reasoning Engine design over accepted evidence and graph findings.
 - Add PDF parsing for research inputs.
 - Add web retrieval for research workflows.
 - Add research export variants for brief, memo, and appendix formats.

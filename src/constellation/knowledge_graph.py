@@ -379,11 +379,11 @@ def _deterministic_nodes_from_evidence(evidence: JsonMap, workflow_run_id: str, 
     quote = str(evidence.get("supporting_quote", "")).strip()
     evidence_id = _require_str(evidence, "evidence_id")
     source_identifier = str(evidence.get("source_identifier", ""))
-    extracted: list[tuple[str, str]] = []
+    extracted: list[tuple[str, str, JsonMap]] = []
     if quote.startswith("#"):
         label = quote.lstrip("#").strip()
         if label:
-            extracted.append(("topic", label))
+            extracted.append(("topic", label, {"extraction_rule": "markdown_heading"}))
     prefixes = {
         "Concept:": "concept",
         "Theme:": "theme",
@@ -395,9 +395,26 @@ def _deterministic_nodes_from_evidence(evidence: JsonMap, workflow_run_id: str, 
         if quote.startswith(prefix):
             label = quote.removeprefix(prefix).strip()
             if label:
-                extracted.append((node_type, label))
+                extracted.append((node_type, label, {"extraction_rule": "explicit_prefix", "prefix": prefix}))
+    contradiction_prefixes = ["Contradiction:", "Conflicts with:", "Opposes:", "Disputes:"]
+    for prefix in contradiction_prefixes:
+        if quote.startswith(prefix):
+            label = quote.removeprefix(prefix).strip()
+            if label:
+                extracted.append(
+                    (
+                        "risk",
+                        label,
+                        {
+                            "extraction_rule": "explicit_contradiction_prefix",
+                            "prefix": prefix,
+                            "explicit_contradiction_marker": True,
+                            "contradiction_marker": prefix.removesuffix(":"),
+                        },
+                    )
+                )
     nodes = []
-    for node_type, label in extracted:
+    for node_type, label, metadata in extracted:
         nodes.append(
             GraphNode(
                 node_id=_node_id(node_type, f"{workflow_run_id}|{source_identifier}|{evidence_id}|{label}"),
@@ -409,7 +426,7 @@ def _deterministic_nodes_from_evidence(evidence: JsonMap, workflow_run_id: str, 
                 artifact_ids=[],
                 workflow_run_ids=[workflow_run_id],
                 confidence="deterministic_extraction",
-                metadata={"extraction_rule": "heading_or_explicit_prefix"},
+                metadata=metadata,
                 created_at=now,
                 updated_at=now,
             )

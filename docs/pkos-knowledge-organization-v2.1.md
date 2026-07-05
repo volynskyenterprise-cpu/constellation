@@ -152,6 +152,17 @@ To use the package with an external Obsidian PKOS:
 
 Constellation v2.1.0 does not connect to Obsidian directly.
 
+## Cross-Document Analysis
+
+Cross-document analysis is not automatic and does not mutate PKOS packages or external vaults. After building graph entries from multiple PKOS or Research runs, analyze repeated explicit concepts, themes, risks, recommendations, and source clusters:
+
+```bash
+python -m constellation graph build RUN_ID_1
+python -m constellation graph build RUN_ID_2
+python -m constellation graph analyze
+python -m constellation graph findings
+```
+
 ## Limitations
 
 - No PDF parsing yet.

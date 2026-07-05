@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from .artifacts import ArtifactError
+from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .evidence import EvidenceError, EvidenceStore
 from .kernel import ConstellationKernel
 from .knowledge_graph import KnowledgeGraphBuilder, KnowledgeGraphError, KnowledgeGraphStore, show_graph_item
@@ -124,6 +125,13 @@ def main(argv: list[str] | None = None) -> int:
     graph_show_parser = graph_subparsers.add_parser("show", help="Show one graph node or edge.")
     graph_show_parser.add_argument("item_id", help="Graph node ID or edge ID.")
     graph_subparsers.add_parser("export", help="Export graph markdown.")
+    graph_analyze_parser = graph_subparsers.add_parser("analyze", help="Run deterministic cross-document analysis.")
+    graph_analyze_parser.add_argument("--overwrite", action="store_true", help="Overwrite existing analysis outputs.")
+    graph_findings_parser = graph_subparsers.add_parser("findings", help="List or inspect cross-document findings.")
+    graph_findings_subparsers = graph_findings_parser.add_subparsers(dest="graph_findings_command")
+    graph_findings_show_parser = graph_findings_subparsers.add_parser("show", help="Show one finding.")
+    graph_findings_show_parser.add_argument("finding_id", help="Actual finding ID.")
+    graph_findings_subparsers.add_parser("export", help="Export findings markdown.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -401,6 +409,44 @@ def main(argv: list[str] | None = None) -> int:
         if args.graph_command == "export":
             output_path = store.export()
             print(f"graph_export: {output_path}")
+            return 0
+        if args.graph_command == "analyze":
+            try:
+                analysis = CrossDocumentAnalysisStore(root).analyze_graph(overwrite=args.overwrite)
+            except CrossDocumentError as exc:
+                print(f"error: {exc}")
+                return 1
+            print(f"analysis: {CrossDocumentAnalysisStore(root).json_path}")
+            print(f"findings: {len(analysis.findings)}")
+            return 0
+        if args.graph_command == "findings":
+            analysis_store = CrossDocumentAnalysisStore(root)
+            if args.graph_findings_command == "show":
+                try:
+                    finding = analysis_store.show_finding(args.finding_id)
+                except CrossDocumentError as exc:
+                    print(f"error: {exc}")
+                    return 1
+                print(json.dumps(finding.to_dict(), indent=2, sort_keys=True))
+                return 0
+            if args.graph_findings_command == "export":
+                try:
+                    output_path = analysis_store.export()
+                except CrossDocumentError as exc:
+                    print(f"error: {exc}")
+                    return 1
+                print(f"findings_export: {output_path}")
+                return 0
+            try:
+                findings = analysis_store.list_findings()
+            except CrossDocumentError as exc:
+                print(f"error: {exc}")
+                return 1
+            if not findings:
+                print("No cross-document findings found.")
+                return 0
+            for finding in findings:
+                print(f"{finding.finding_id} type={finding.finding_type} confidence={finding.confidence} title={finding.title}")
             return 0
     return 2
 
