@@ -7,6 +7,7 @@ from pathlib import Path
 from .artifacts import ArtifactError
 from .evidence import EvidenceError, EvidenceStore
 from .kernel import ConstellationKernel
+from .knowledge_graph import KnowledgeGraphBuilder, KnowledgeGraphError, KnowledgeGraphStore, show_graph_item
 from .pkos import PKOSError, PKOSKnowledgeOrganization
 from .prompts import PromptUnavailable
 from .research import ResearchError, ResearchOrganization
@@ -112,6 +113,17 @@ def main(argv: list[str] | None = None) -> int:
     evidence_show_parser.add_argument("evidence_id", help="Actual evidence ID.")
     evidence_export_parser = evidence_subparsers.add_parser("export", help="Export evidence report for a workflow run.")
     evidence_export_parser.add_argument("workflow_run_id", help="Actual workflow run ID.")
+
+    graph_parser = subparsers.add_parser("graph", help="Build and inspect the deterministic knowledge graph.")
+    graph_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    graph_subparsers = graph_parser.add_subparsers(dest="graph_command", required=True)
+    graph_build_parser = graph_subparsers.add_parser("build", help="Build or update graph from one workflow run.")
+    graph_build_parser.add_argument("workflow_run_id", help="Actual workflow run ID.")
+    graph_subparsers.add_parser("nodes", help="List graph nodes.")
+    graph_subparsers.add_parser("edges", help="List graph edges.")
+    graph_show_parser = graph_subparsers.add_parser("show", help="Show one graph node or edge.")
+    graph_show_parser.add_argument("item_id", help="Graph node ID or edge ID.")
+    graph_subparsers.add_parser("export", help="Export graph markdown.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -348,6 +360,47 @@ def main(argv: list[str] | None = None) -> int:
         if args.evidence_command == "export":
             output_path = store.export_report(args.workflow_run_id)
             print(f"evidence_report: {output_path}")
+            return 0
+    if args.command == "graph":
+        root = args.root.resolve()
+        store = KnowledgeGraphStore(root)
+        if args.graph_command == "build":
+            try:
+                graph = KnowledgeGraphBuilder(root).build_run(args.workflow_run_id)
+            except (KnowledgeGraphError, WorkflowStateError) as exc:
+                print(f"error: {exc}")
+                return 1
+            print(f"graph: {store.graph_path}")
+            print(f"nodes: {len(graph.nodes)}")
+            print(f"edges: {len(graph.edges)}")
+            return 0
+        if args.graph_command == "nodes":
+            graph = store.load()
+            if not graph.nodes:
+                print("No graph nodes found.")
+                return 0
+            for node in graph.list_nodes():
+                print(f"{node.node_id} type={node.node_type} label={node.label} confidence={node.confidence}")
+            return 0
+        if args.graph_command == "edges":
+            graph = store.load()
+            if not graph.edges:
+                print("No graph edges found.")
+                return 0
+            for edge in graph.list_edges():
+                print(f"{edge.edge_id} {edge.source_node_id} --{edge.relationship_type}--> {edge.target_node_id}")
+            return 0
+        if args.graph_command == "show":
+            try:
+                item = show_graph_item(root, args.item_id)
+            except KnowledgeGraphError as exc:
+                print(f"error: {exc}")
+                return 1
+            print(json.dumps(item, indent=2, sort_keys=True))
+            return 0
+        if args.graph_command == "export":
+            output_path = store.export()
+            print(f"graph_export: {output_path}")
             return 0
     return 2
 

@@ -171,3 +171,16 @@ All notable changes to Constellation will be recorded here.
 - Updated provider-backed artifacts to reference evidence IDs in `evidence_used`.
 - Added evidence reports alongside Research exports and PKOS packages.
 - Preserved disabled-by-default provider execution and deterministic tests.
+
+## 2.3.0 - Knowledge Graph
+
+- Added deterministic `GraphNode`, `GraphEdge`, and `KnowledgeGraph` models.
+- Added file-based graph persistence under `memory/graph/graph.json`.
+- Added deterministic graph builder from workflow runs, evidence records, source files, and artifacts.
+- Added conservative topic, concept, theme, risk, assumption, and recommendation extraction from explicit source text.
+- Added `python -m constellation graph build RUN_ID`.
+- Added `python -m constellation graph nodes`.
+- Added `python -m constellation graph edges`.
+- Added `python -m constellation graph show NODE_OR_EDGE_ID`.
+- Added `python -m constellation graph export`.
+- Added graph health directory checks, tests, and documentation.

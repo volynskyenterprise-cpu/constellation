@@ -98,6 +98,19 @@ python -m constellation evidence show EVIDENCE_ID
 python -m constellation evidence export RUN_ID
 ```
 
+## Knowledge Graph
+
+v2.3 introduces the [Knowledge Graph](docs/knowledge-graph-v2.3.md), a deterministic file-based graph connecting evidence, sources, workflows, artifacts, and explicit source concepts.
+
+Graph building is opt-in:
+
+```bash
+python -m constellation graph build RUN_ID
+python -m constellation graph nodes
+python -m constellation graph edges
+python -m constellation graph export
+```
+
 ## Proposed Documentation Set
 
 - [VISION.md](VISION.md): Product philosophy, strategic intent, and guiding beliefs

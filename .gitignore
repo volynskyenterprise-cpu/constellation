@@ -13,6 +13,7 @@ logs/runs/*
 memory/runs/*
 !memory/runs/README.md
 memory/evidence/*.json
+memory/graph/graph.json
 
 approvals/accepted/*.json
 approvals/pending/*.json
@@ -26,3 +27,4 @@ logs/lifecycle.jsonl
 outputs/research/*.md
 outputs/pkos/
 outputs/evidence/
+outputs/graph/

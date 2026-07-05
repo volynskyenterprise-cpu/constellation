@@ -14,6 +14,10 @@
 - Add evidence-to-artifact validation that blocks unsupported recommendations.
 - Add evidence confidence review and downgrade workflows.
 - Add cross-run evidence deduplication.
+- Add graph diffing across workflow runs.
+- Add graph validation for unsupported artifact claims.
+- Add human-reviewed graph promotion and rejection workflows.
+- Add graph-backed PKOS package previews.
 - Add PDF parsing for research inputs.
 - Add web retrieval for research workflows.
 - Add research export variants for brief, memo, and appendix formats.

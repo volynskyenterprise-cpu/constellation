@@ -63,6 +63,7 @@ The health checker verifies:
 - Crew validation passes.
 - Providers load.
 - Runtime directories exist or can be created.
+- Evidence and graph memory directories exist or can be created.
 - Provider execution remains disabled by default, unless explicitly enabled.
 
 Successful output:
