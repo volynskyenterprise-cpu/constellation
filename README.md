@@ -136,6 +136,18 @@ python -m constellation thesis show THESIS_ID
 python -m constellation thesis export
 ```
 
+## Institutional Intelligence Platform
+
+v3.0 introduces the [Institutional Intelligence Platform](docs/institutional-intelligence-platform-v3.0.md), an opt-in executive synthesis layer over evidence, graph records, cross-document findings, and proposed theses.
+
+Generate the intelligence brief only after graph analysis and thesis generation:
+
+```bash
+python -m constellation intelligence generate
+python -m constellation intelligence show
+python -m constellation intelligence export
+```
+
 ## Proposed Documentation Set
 
 - [VISION.md](VISION.md): Product philosophy, strategic intent, and guiding beliefs

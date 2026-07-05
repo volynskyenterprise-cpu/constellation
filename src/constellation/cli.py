@@ -7,6 +7,7 @@ from pathlib import Path
 from .artifacts import ArtifactError
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .evidence import EvidenceError, EvidenceStore
+from .intelligence import IntelligenceError, IntelligenceStore
 from .kernel import ConstellationKernel
 from .knowledge_graph import KnowledgeGraphBuilder, KnowledgeGraphError, KnowledgeGraphStore, show_graph_item
 from .pkos import PKOSError, PKOSKnowledgeOrganization
@@ -143,6 +144,14 @@ def main(argv: list[str] | None = None) -> int:
     thesis_show_parser = thesis_subparsers.add_parser("show", help="Show one thesis.")
     thesis_show_parser.add_argument("thesis_id", help="Actual thesis ID.")
     thesis_subparsers.add_parser("export", help="Export theses markdown.")
+
+    intelligence_parser = subparsers.add_parser("intelligence", help="Generate and inspect institutional intelligence briefs.")
+    intelligence_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    intelligence_subparsers = intelligence_parser.add_subparsers(dest="intelligence_command", required=True)
+    intelligence_generate_parser = intelligence_subparsers.add_parser("generate", help="Generate institutional intelligence brief.")
+    intelligence_generate_parser.add_argument("--overwrite", action="store_true", help="Overwrite existing intelligence output.")
+    intelligence_subparsers.add_parser("show", help="Show current intelligence brief as JSON.")
+    intelligence_subparsers.add_parser("export", help="Export current intelligence brief as markdown.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -497,6 +506,34 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"error: {exc}")
                 return 1
             print(f"thesis_export: {output_path}")
+            return 0
+    if args.command == "intelligence":
+        store = IntelligenceStore(args.root.resolve())
+        if args.intelligence_command == "generate":
+            try:
+                brief = store.generate(overwrite=args.overwrite)
+            except IntelligenceError as exc:
+                print(f"error: {exc}")
+                return 1
+            print(f"intelligence: {store.json_path}")
+            print(f"brief_id: {brief.brief_id}")
+            print(f"status: {brief.status}")
+            return 0
+        if args.intelligence_command == "show":
+            try:
+                brief = store.load()
+            except IntelligenceError as exc:
+                print(f"error: {exc}")
+                return 1
+            print(json.dumps(brief.to_dict(), indent=2, sort_keys=True))
+            return 0
+        if args.intelligence_command == "export":
+            try:
+                output_path = store.export()
+            except IntelligenceError as exc:
+                print(f"error: {exc}")
+                return 1
+            print(f"intelligence_report: {output_path}")
             return 0
     return 2
 

@@ -25,6 +25,10 @@
 - Add thesis comparison across cross-document analysis versions.
 - Add thesis-driven workflow recommendations.
 - Add evidence-weighted thesis confidence refinement.
+- Add human approval lifecycle for institutional intelligence briefs.
+- Add intelligence brief comparison and diffing across versions.
+- Add executive intelligence report variants by audience.
+- Add intelligence package review workflow using existing approval gates.
 - Add Institutional Reasoning Engine design over accepted evidence and graph findings.
 - Add PDF parsing for research inputs.
 - Add web retrieval for research workflows.

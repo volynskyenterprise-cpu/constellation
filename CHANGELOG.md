@@ -211,3 +211,15 @@ All notable changes to Constellation will be recorded here.
 - Added `python -m constellation thesis export`.
 - Added documentation for the Evidence, Knowledge Graph, Cross-Document, and Thesis relationship.
 - Preserved proposed-by-default thesis status and human authority over acceptance.
+
+## 3.0.0 - Institutional Intelligence Platform
+
+- Added deterministic `IntelligenceBrief` model and Intelligence Engine.
+- Added executive synthesis from theses, cross-document analysis, graph records, and evidence records.
+- Added intelligence store under `outputs/intelligence/`.
+- Added overwrite protection for intelligence brief generation.
+- Added `python -m constellation intelligence generate`.
+- Added `python -m constellation intelligence show`.
+- Added `python -m constellation intelligence export`.
+- Added Markdown executive intelligence report export.
+- Preserved disabled-by-default provider execution and proposed-by-default brief status.
