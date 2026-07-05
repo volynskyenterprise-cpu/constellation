@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from .approvals import ApprovalManager
 from .artifacts import ArtifactParser, ArtifactStore
@@ -44,7 +45,12 @@ class ConstellationKernel:
         self.provider_registry = ProviderRegistry.load_from(root / "config" / "providers.yaml")
         self.crew_loader = CrewLoader(root)
 
-    def run_workflow(self, workflow_path: Path, initial_working_entries: list[dict[str, object]] | None = None) -> KernelRunResult:
+    def run_workflow(
+        self,
+        workflow_path: Path,
+        initial_working_entries: list[dict[str, object]] | None = None,
+        before_execute: Callable[[str, MemoryManager], None] | None = None,
+    ) -> KernelRunResult:
         workflow = self.workflow_loader.load(self._resolve_path(workflow_path))
         workflow_run_id = new_id("run")
         relative_workflow_path = str(workflow_path)
@@ -58,6 +64,8 @@ class ConstellationKernel:
             key = entry.get("key")
             if isinstance(key, str):
                 memory.add_working_entry(key, entry.get("value"))
+        if before_execute is not None:
+            before_execute(workflow_run_id, memory)
         self.state_store.save(
             workflow_run_id=workflow_run_id,
             workflow_id=workflow.id,

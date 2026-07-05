@@ -158,3 +158,16 @@ All notable changes to Constellation will be recorded here.
 - Added overwrite protection with optional `--overwrite`.
 - Preserved disabled-by-default provider execution and human approval gates.
 - Added PKOS Knowledge Organization tests and documentation.
+
+## 2.2.0 - Evidence Engine
+
+- Added deterministic `EvidenceItem` model.
+- Added file-based evidence store under `memory/evidence/`.
+- Added evidence save, list, show, query, and markdown export support.
+- Added `python -m constellation evidence list`.
+- Added `python -m constellation evidence show EVIDENCE_ID`.
+- Added `python -m constellation evidence export RUN_ID`.
+- Integrated evidence generation into Research and PKOS workflow ingestion before execution.
+- Updated provider-backed artifacts to reference evidence IDs in `evidence_used`.
+- Added evidence reports alongside Research exports and PKOS packages.
+- Preserved disabled-by-default provider execution and deterministic tests.

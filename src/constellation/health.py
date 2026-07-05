@@ -24,6 +24,7 @@ RUNTIME_DIRECTORIES = [
     "logs/runs",
     "memory",
     "memory/runs",
+    "memory/evidence",
     "approvals",
     "approvals/pending",
     "approvals/accepted",

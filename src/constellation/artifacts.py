@@ -126,6 +126,7 @@ class ArtifactParser:
         workflow_id = _required_string(prompt_package, "workflow_id")
         prompt_id = _required_string(prompt_package, "prompt_id")
         expected_output = _expected_output(prompt_package)
+        evidence_ids = _evidence_ids(prompt_package)
         key_findings = [
             f"{crew_role} completed {expected_output}.",
             "Output was generated through the configured provider path.",
@@ -170,6 +171,7 @@ class ArtifactParser:
                 "The prompt package is the authoritative execution context for this artifact.",
             ],
             evidence_used=[
+                *[{"type": "evidence", "id": evidence_id} for evidence_id in evidence_ids],
                 {"type": "prompt_package", "id": prompt_id},
                 {"type": "provider_result", "id": _provider_result_id(provider_result)},
             ],
@@ -276,6 +278,27 @@ def _provider_result_id(provider_result: JsonMap) -> str | None:
     if isinstance(provider_name, str) and isinstance(message_id, str):
         return f"provider_result_{message_id}_{provider_name}"
     return None
+
+
+def _evidence_ids(prompt_package: JsonMap) -> list[str]:
+    context_sections = prompt_package.get("context_sections")
+    if not isinstance(context_sections, dict):
+        return []
+    working_memory = context_sections.get("working_memory")
+    if not isinstance(working_memory, dict):
+        return []
+    evidence_ids: list[str] = []
+    entries = working_memory.get("entries", [])
+    if isinstance(entries, list):
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            value = entry.get("value")
+            if isinstance(value, dict):
+                ids = value.get("evidence_ids")
+                if isinstance(ids, list):
+                    evidence_ids.extend(str(item) for item in ids if isinstance(item, str))
+    return sorted(set(evidence_ids))
 
 
 def _proposed_files(expected_output: str) -> list[str]:

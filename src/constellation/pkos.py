@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .artifacts import ArtifactStore
+from .evidence import EvidenceStore, evidence_from_text
 from .io import read_json, write_json
 from .kernel import ConstellationKernel, KernelRunResult
 from .memory import MemoryManager
@@ -29,6 +30,7 @@ PKOS_PACKAGE_FILES = [
     "validation-review.md",
     "release-notes.md",
     "review-package.md",
+    "evidence-report.md",
     "manifest.json",
 ]
 
@@ -60,7 +62,11 @@ class PKOSKnowledgeOrganization:
     def ingest(self, input_path: Path) -> KernelRunResult:
         pkos_input = self.load_input(input_path)
         kernel = ConstellationKernel(self.root)
-        return kernel.run_workflow(PKOS_WORKFLOW_PATH, initial_working_entries=[pkos_input.to_memory_entry()])
+        return kernel.run_workflow(
+            PKOS_WORKFLOW_PATH,
+            initial_working_entries=[pkos_input.to_memory_entry()],
+            before_execute=lambda workflow_run_id, memory: self._persist_evidence(workflow_run_id, memory, pkos_input),
+        )
 
     def package(self, workflow_run_id: str, *, overwrite: bool = False) -> Path:
         state = WorkflowStateStore(self.root).load(workflow_run_id)
@@ -79,6 +85,7 @@ class PKOSKnowledgeOrganization:
         artifacts = ArtifactStore(self.root).list(workflow_run_id)
         artifacts_by_output = _artifacts_by_output(artifacts, working_memory)
         approval_status = "approved" if state.status == "completed" else "pending" if state.status == "needs_approval" else state.status
+        evidence_records = EvidenceStore(self.root).list(workflow_run_id)
 
         files = {
             "source-summary.md": _source_summary(source, artifacts_by_output),
@@ -111,8 +118,10 @@ class PKOSKnowledgeOrganization:
                 "No real citation extraction.",
                 "Generated content requires human review.",
             ],
+            "evidence_ids": [str(record.get("evidence_id")) for record in evidence_records],
         }
         write_json(output_dir / "manifest.json", manifest)
+        EvidenceStore(self.root).export_report(workflow_run_id, output_dir / "evidence-report.md")
         return output_dir
 
     def load_input(self, input_path: Path) -> PKOSInput:
@@ -125,6 +134,18 @@ class PKOSKnowledgeOrganization:
         text = path.read_text(encoding="utf-8")
         return PKOSInput(path=path, title=path.stem.replace("-", " ").replace("_", " ").title(), text=text, format=suffix.removeprefix("."))
 
+    def _persist_evidence(self, workflow_run_id: str, memory: MemoryManager, pkos_input: PKOSInput) -> None:
+        evidence_items = evidence_from_text(
+            workflow_run_id=workflow_run_id,
+            source_identifier=str(pkos_input.path),
+            source_text=pkos_input.text,
+            provenance={"organization": "pkos", "input_format": pkos_input.format},
+        )
+        EvidenceStore(self.root).save_many(evidence_items)
+        evidence_ids = [item.evidence_id for item in evidence_items]
+        memory.add_working_entry("pkos_evidence_records", {"evidence_ids": evidence_ids, "source_path": str(pkos_input.path)})
+        _attach_evidence_to_source(memory.working_path, evidence_ids)
+
     def _output_dir(self, workflow_run_id: str) -> Path:
         return self.root / "outputs" / "pkos" / workflow_run_id
 
@@ -136,6 +157,16 @@ def _pkos_source(working_memory: dict[str, Any]) -> dict[str, Any]:
             if isinstance(entry, dict) and entry.get("key") == "pkos_source_document" and isinstance(entry.get("value"), dict):
                 return entry["value"]
     return {"title": "Unknown Source", "path": "unknown", "format": "unknown", "text": "", "character_count": 0}
+
+
+def _attach_evidence_to_source(working_path: Path, evidence_ids: list[str]) -> None:
+    data = read_json(working_path)
+    entries = data.get("entries", [])
+    if isinstance(entries, list):
+        for entry in entries:
+            if isinstance(entry, dict) and entry.get("key") == "pkos_source_document" and isinstance(entry.get("value"), dict):
+                entry["value"]["evidence_ids"] = evidence_ids
+    write_json(working_path, data)
 
 
 def _artifacts_by_output(artifacts: list[dict[str, Any]], working_memory: dict[str, Any]) -> dict[str, dict[str, Any]]:

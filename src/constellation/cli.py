@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from .artifacts import ArtifactError
+from .evidence import EvidenceError, EvidenceStore
 from .kernel import ConstellationKernel
 from .pkos import PKOSError, PKOSKnowledgeOrganization
 from .prompts import PromptUnavailable
@@ -102,6 +103,15 @@ def main(argv: list[str] | None = None) -> int:
     pkos_package_parser = pkos_subparsers.add_parser("package", help="Export a PKOS review package for a run.")
     pkos_package_parser.add_argument("workflow_run_id", help="Actual workflow run ID.")
     pkos_package_parser.add_argument("--overwrite", action="store_true", help="Overwrite existing package files.")
+
+    evidence_parser = subparsers.add_parser("evidence", help="Inspect and export evidence records.")
+    evidence_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    evidence_subparsers = evidence_parser.add_subparsers(dest="evidence_command", required=True)
+    evidence_subparsers.add_parser("list", help="List evidence records.")
+    evidence_show_parser = evidence_subparsers.add_parser("show", help="Show one evidence record.")
+    evidence_show_parser.add_argument("evidence_id", help="Actual evidence ID.")
+    evidence_export_parser = evidence_subparsers.add_parser("export", help="Export evidence report for a workflow run.")
+    evidence_export_parser.add_argument("workflow_run_id", help="Actual workflow run ID.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -312,6 +322,32 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"error: {exc}")
                 return 1
             print(f"package: {output_dir}")
+            return 0
+    if args.command == "evidence":
+        store = EvidenceStore(args.root.resolve())
+        if args.evidence_command == "list":
+            records = store.list()
+            if not records:
+                print("No evidence records found.")
+                return 0
+            for record in records:
+                print(
+                    f"{record.get('evidence_id')} workflow_run_id={record.get('workflow_run_id')} "
+                    f"source={record.get('source_identifier')} location={record.get('source_location')} "
+                    f"confidence={record.get('confidence')}"
+                )
+            return 0
+        if args.evidence_command == "show":
+            try:
+                record = store.show(args.evidence_id)
+            except EvidenceError as exc:
+                print(f"error: {exc}")
+                return 1
+            print(json.dumps(record, indent=2, sort_keys=True))
+            return 0
+        if args.evidence_command == "export":
+            output_path = store.export_report(args.workflow_run_id)
+            print(f"evidence_report: {output_path}")
             return 0
     return 2
 

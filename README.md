@@ -86,6 +86,18 @@ python -m constellation pkos ingest pkos_inputs/source-note.md
 python -m constellation pkos package RUN_ID
 ```
 
+## Evidence Engine
+
+v2.2 introduces the [Evidence Engine](docs/evidence-engine-v2.2.md), a deterministic evidence layer that records source-backed claims before Research and PKOS workflows execute.
+
+Evidence is stored under `memory/evidence/`, referenced by artifacts through evidence IDs, and can be inspected or exported:
+
+```bash
+python -m constellation evidence list
+python -m constellation evidence show EVIDENCE_ID
+python -m constellation evidence export RUN_ID
+```
+
 ## Proposed Documentation Set
 
 - [VISION.md](VISION.md): Product philosophy, strategic intent, and guiding beliefs

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .artifacts import ArtifactStore
+from .evidence import EvidenceStore, evidence_from_text
 from .io import read_json
 from .kernel import ConstellationKernel, KernelRunResult
 from .memory import MemoryManager
@@ -46,7 +47,11 @@ class ResearchOrganization:
     def run(self, input_path: Path) -> KernelRunResult:
         research_input = self.load_input(input_path)
         kernel = ConstellationKernel(self.root)
-        return kernel.run_workflow(RESEARCH_WORKFLOW_PATH, initial_working_entries=[research_input.to_memory_entry()])
+        return kernel.run_workflow(
+            RESEARCH_WORKFLOW_PATH,
+            initial_working_entries=[research_input.to_memory_entry()],
+            before_execute=lambda workflow_run_id, memory: self._persist_evidence(workflow_run_id, memory, research_input),
+        )
 
     def export(self, workflow_run_id: str) -> Path:
         state = WorkflowStateStore(self.root).load(workflow_run_id)
@@ -66,6 +71,7 @@ class ResearchOrganization:
         output_path = self.root / "outputs" / "research" / f"{workflow_run_id}-report.md"
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(report, encoding="utf-8")
+        EvidenceStore(self.root).export_report(workflow_run_id, self.root / "outputs" / "research" / f"{workflow_run_id}-evidence.md")
         return output_path
 
     def load_input(self, input_path: Path) -> ResearchInput:
@@ -78,6 +84,18 @@ class ResearchOrganization:
         text = path.read_text(encoding="utf-8")
         return ResearchInput(path=path, title=path.stem.replace("-", " ").replace("_", " ").title(), text=text, format=suffix.removeprefix("."))
 
+    def _persist_evidence(self, workflow_run_id: str, memory: MemoryManager, research_input: ResearchInput) -> None:
+        evidence_items = evidence_from_text(
+            workflow_run_id=workflow_run_id,
+            source_identifier=str(research_input.path),
+            source_text=research_input.text,
+            provenance={"organization": "research", "input_format": research_input.format},
+        )
+        EvidenceStore(self.root).save_many(evidence_items)
+        evidence_ids = [item.evidence_id for item in evidence_items]
+        memory.add_working_entry("research_evidence_records", {"evidence_ids": evidence_ids, "source_path": str(research_input.path)})
+        _attach_evidence_to_source(memory.working_path, evidence_ids)
+
 
 def _research_source(working_memory: dict[str, Any]) -> dict[str, Any]:
     entries = working_memory.get("entries", [])
@@ -86,6 +104,18 @@ def _research_source(working_memory: dict[str, Any]) -> dict[str, Any]:
             if isinstance(entry, dict) and entry.get("key") == "research_source_document" and isinstance(entry.get("value"), dict):
                 return entry["value"]
     return {"title": "Unknown Source", "path": "unknown", "text": "", "character_count": 0}
+
+
+def _attach_evidence_to_source(working_path: Path, evidence_ids: list[str]) -> None:
+    from .io import write_json
+
+    data = read_json(working_path)
+    entries = data.get("entries", [])
+    if isinstance(entries, list):
+        for entry in entries:
+            if isinstance(entry, dict) and entry.get("key") == "research_source_document" and isinstance(entry.get("value"), dict):
+                entry["value"]["evidence_ids"] = evidence_ids
+    write_json(working_path, data)
 
 
 def _render_report(

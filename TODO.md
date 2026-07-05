@@ -10,6 +10,10 @@
 - Add artifact promotion rules from Working Memory to Project Memory.
 - Add research report templates for different audiences.
 - Add citation extraction and source-span tracking for research artifacts.
+- Add richer evidence extraction strategies beyond deterministic line records.
+- Add evidence-to-artifact validation that blocks unsupported recommendations.
+- Add evidence confidence review and downgrade workflows.
+- Add cross-run evidence deduplication.
 - Add PDF parsing for research inputs.
 - Add web retrieval for research workflows.
 - Add research export variants for brief, memo, and appendix formats.
