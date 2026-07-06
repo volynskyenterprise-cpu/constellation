@@ -61,6 +61,7 @@ Current capabilities include:
 - ✅ Evidence Graph
 - ✅ Cross-Document Reasoning
 - ✅ Thesis Engine
+- ✅ Thesis Intelligence
 - ✅ Institutional Intelligence Platform
 - ✅ Operational Intake Pipeline
 - ✅ Google Drive Connector
@@ -98,6 +99,9 @@ Cross-Document Reasoning
         │
         ▼
 Thesis Engine
+        │
+        ▼
+Thesis Intelligence
         │
         ▼
 Institutional Intelligence
@@ -321,10 +325,15 @@ Evidence Graph shows exact-ID relationships between evidence, sources, artifacts
 ### Thesis Engine
 
 ```bash
+python -m constellation thesis build
 python -m constellation thesis generate
 python -m constellation thesis list
 python -m constellation thesis show THESIS_ID
+python -m constellation thesis timeline THESIS_ID
+python -m constellation thesis export
 ```
+
+`thesis build` maintains deterministic Thesis Intelligence records under `outputs/thesis/`, including support, conflicts, confidence, timeline events, morning brief references, and memory snapshot references.
 
 ### Intelligence Platform
 
@@ -399,6 +408,7 @@ Current guarantees include:
 - ✅ Evidence Graph
 - ✅ Cross-Document Reasoning
 - ✅ Thesis Engine
+- ✅ Thesis Intelligence
 - ✅ Institutional Intelligence
 - ✅ Intake Pipeline
 - ✅ Google Drive Connector

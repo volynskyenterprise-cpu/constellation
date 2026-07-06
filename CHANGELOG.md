@@ -2,6 +2,17 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 3.6.0 - Thesis Intelligence
+
+- Added deterministic Thesis Intelligence records with support, conflict, source, morning brief, and memory snapshot references.
+- Added thesis confidence records based on deterministic support/conflict/repeated-confirmation rules.
+- Added thesis timeline events for created, updated, strengthened, weakened, and archived states.
+- Added `python -m constellation thesis build`.
+- Added `python -m constellation thesis timeline THESIS_ID`.
+- Extended `thesis list`, `thesis show`, and `thesis export` to use Thesis Intelligence records when present while preserving legacy generated thesis fallback behavior.
+- Added Thesis Intelligence outputs under `outputs/thesis/`.
+- Preserved local-only behavior with no provider calls, no OpenAI calls, no LLM inference, no embeddings, no semantic similarity, no web retrieval, no Gmail, and no automatic workflow execution.
+
 ## 3.5.0 - Evidence Graph
 
 - Added deterministic Evidence Graph nodes and edges across evidence, sources, workflows, artifacts, findings, theses, morning briefs, and institutional memory snapshots.

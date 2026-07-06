@@ -29,6 +29,10 @@
 - Add thesis comparison across cross-document analysis versions.
 - Add thesis-driven workflow recommendations.
 - Add evidence-weighted thesis confidence refinement.
+- Add thesis intelligence diffing across institutional memory snapshots.
+- Add thesis lifecycle review notes and human-reviewed status overrides.
+- Add thesis conflict resolution workflow using existing approval gates.
+- Add thesis intelligence JSON output filters by status and confidence.
 - Add human approval lifecycle for institutional intelligence briefs.
 - Add intelligence brief comparison and diffing across versions.
 - Add executive intelligence report variants by audience.

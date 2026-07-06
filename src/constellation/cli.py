@@ -20,6 +20,7 @@ from .prompts import PromptUnavailable
 from .research import ResearchError, ResearchOrganization
 from .state import WorkflowStateError
 from .thesis import ThesisError, ThesisStore
+from .thesis_intelligence import ThesisIntelligenceError, ThesisStore as ThesisIntelligenceStore
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -153,11 +154,14 @@ def main(argv: list[str] | None = None) -> int:
     thesis_parser = subparsers.add_parser("thesis", help="Generate and inspect institutional theses.")
     thesis_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
     thesis_subparsers = thesis_parser.add_subparsers(dest="thesis_command", required=True)
+    thesis_subparsers.add_parser("build", help="Build deterministic thesis intelligence records.")
     thesis_generate_parser = thesis_subparsers.add_parser("generate", help="Generate theses from cross-document analysis.")
     thesis_generate_parser.add_argument("--overwrite", action="store_true", help="Overwrite existing thesis outputs.")
     thesis_subparsers.add_parser("list", help="List generated theses.")
     thesis_show_parser = thesis_subparsers.add_parser("show", help="Show one thesis.")
     thesis_show_parser.add_argument("thesis_id", help="Actual thesis ID.")
+    thesis_timeline_parser = thesis_subparsers.add_parser("timeline", help="Show thesis intelligence timeline.")
+    thesis_timeline_parser.add_argument("thesis_id", help="Actual thesis ID.")
     thesis_subparsers.add_parser("export", help="Export theses markdown.")
 
     intelligence_parser = subparsers.add_parser("intelligence", help="Generate and inspect institutional intelligence briefs.")
@@ -553,6 +557,18 @@ def main(argv: list[str] | None = None) -> int:
             return 0
     if args.command == "thesis":
         store = ThesisStore(args.root.resolve())
+        intelligence_store = ThesisIntelligenceStore(args.root.resolve())
+        if args.thesis_command == "build":
+            try:
+                records = intelligence_store.build()
+            except ThesisIntelligenceError as exc:
+                print(f"error: {exc}")
+                return 1
+            print(f"thesis_intelligence: {intelligence_store.theses_path}")
+            print(f"count: {len(records)}")
+            print(f"supporting_relationships: {sum(len(record.supporting_evidence_ids) for record in records)}")
+            print(f"conflicts: {sum(len(record.conflicting_evidence_ids) for record in records)}")
+            return 0
         if args.thesis_command == "generate":
             try:
                 theses = store.generate(overwrite=args.overwrite)
@@ -563,6 +579,22 @@ def main(argv: list[str] | None = None) -> int:
             print(f"count: {len(theses)}")
             return 0
         if args.thesis_command == "list":
+            if intelligence_store.theses_path.exists():
+                try:
+                    records = intelligence_store.list()
+                except ThesisIntelligenceError as exc:
+                    print(f"error: {exc}")
+                    return 1
+                if not records:
+                    print("No thesis intelligence records found.")
+                    return 0
+                for record in records:
+                    print(
+                        f"{record.thesis_id} category={record.category} status={record.status} "
+                        f"confidence={record.confidence.label} support={len(record.supporting_evidence_ids)} "
+                        f"conflicts={len(record.conflicting_evidence_ids)} title={record.title}"
+                    )
+                return 0
             try:
                 theses = store.list_theses()
             except ThesisError as exc:
@@ -575,6 +607,14 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{thesis.thesis_id} type={thesis.thesis_type} status={thesis.status} confidence={thesis.confidence} title={thesis.title}")
             return 0
         if args.thesis_command == "show":
+            if intelligence_store.theses_path.exists():
+                try:
+                    record = intelligence_store.show(args.thesis_id)
+                except ThesisIntelligenceError as exc:
+                    print(f"error: {exc}")
+                    return 1
+                print(json.dumps(record.to_dict(), indent=2, sort_keys=True))
+                return 0
             try:
                 thesis = store.show(args.thesis_id)
             except ThesisError as exc:
@@ -582,7 +622,27 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             print(json.dumps(thesis.to_dict(), indent=2, sort_keys=True))
             return 0
+        if args.thesis_command == "timeline":
+            try:
+                events = intelligence_store.timeline(args.thesis_id)
+            except ThesisIntelligenceError as exc:
+                print(f"error: {exc}")
+                return 1
+            if not events:
+                print("No thesis timeline events found.")
+                return 0
+            for event in events:
+                print(f"{event.timestamp} {event.thesis_id} {event.event_type} reason={event.reason}")
+            return 0
         if args.thesis_command == "export":
+            if intelligence_store.theses_path.exists():
+                try:
+                    output_path = intelligence_store.export()
+                except ThesisIntelligenceError as exc:
+                    print(f"error: {exc}")
+                    return 1
+                print(f"thesis_export: {output_path}")
+                return 0
             try:
                 output_path = store.export()
             except ThesisError as exc:
