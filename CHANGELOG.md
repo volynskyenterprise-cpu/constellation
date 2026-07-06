@@ -2,6 +2,19 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 4.0.0 - Workflow Automation Engine
+
+- Added deterministic Workflow Automation Engine.
+- Added built-in workflows: `Morning`, `Research Refresh`, and `Executive Snapshot`.
+- Added `python -m constellation workflow list`.
+- Added `python -m constellation workflow run NAME`.
+- Added `python -m constellation workflow history`.
+- Added `python -m constellation workflow show NAME`.
+- Added `python -m constellation workflow export`.
+- Added workflow definitions, latest run, history, and report outputs under `outputs/workflows/`.
+- Integrated latest workflow status, duration, completed steps, and failed steps into Executive Dashboard.
+- Preserved explicit invocation only with no providers, no OpenAI, no Gmail, no web retrieval, no embeddings, no semantic search, no scheduling, and no autonomous execution.
+
 ## 3.9.0 - Source Monitoring
 
 - Added deterministic Source Monitoring subsystem.

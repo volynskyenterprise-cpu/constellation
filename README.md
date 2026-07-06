@@ -65,6 +65,7 @@ Current capabilities include:
 - ✅ Daily Intelligence Pipeline
 - ✅ Executive Dashboard
 - ✅ Source Monitoring
+- Workflow Automation Engine
 - ✅ Institutional Intelligence Platform
 - ✅ Operational Intake Pipeline
 - ✅ Google Drive Connector
@@ -343,6 +344,18 @@ python -m constellation monitor export
 
 Source Monitoring tracks configured and local intelligence sources over time, reports new/removed/updated/failed sources, and recommends deterministic downstream refreshes. It does not call remote APIs or modify source data.
 
+### Workflow Automation
+
+```bash
+python -m constellation workflow list
+python -m constellation workflow run Morning
+python -m constellation workflow history
+python -m constellation workflow show Morning
+python -m constellation workflow export
+```
+
+Workflow Automation runs named deterministic recipes made from existing Constellation commands. Built-in workflows include `Morning`, `Research Refresh`, and `Executive Snapshot`. Workflow execution occurs only when explicitly invoked and does not add provider calls, LLM inference, Gmail, web retrieval, embeddings, semantic search, scheduling, or autonomous decisions.
+
 ### Research
 
 ```bash
@@ -459,6 +472,7 @@ Current guarantees include:
 - ✅ Daily Intelligence Pipeline
 - ✅ Executive Dashboard
 - ✅ Source Monitoring
+- Workflow Automation Engine
 - ✅ Institutional Intelligence
 - ✅ Intake Pipeline
 - ✅ Google Drive Connector
@@ -469,7 +483,7 @@ Current guarantees include:
 
 - Gmail Connector
 - Folder Watchers
-- Executive Dashboard
+- Workflow approval packages
 
 ## Future Vision
 

@@ -2,6 +2,11 @@
 
 ## Next Engineering Milestones
 
+- Add user-defined workflow definition loading after the built-in workflow set stabilizes.
+- Add workflow dry-run mode that validates steps without executing them.
+- Add workflow stage filters for rerunning a single deterministic stage.
+- Add workflow report comparison across runs.
+- Add explicit approval packages before any future scheduled or outbound workflow behavior.
 - Add explicit token/context budgeting for prompt packages.
 - Add context redaction policy before real provider calls.
 - Add prompt package validation and schema version migration.

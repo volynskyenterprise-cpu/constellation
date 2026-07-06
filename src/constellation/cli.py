@@ -24,6 +24,7 @@ from .source_monitor import SourceMonitorError, SourceMonitorStore
 from .state import WorkflowStateError
 from .thesis import ThesisError, ThesisStore
 from .thesis_intelligence import ThesisIntelligenceError, ThesisStore as ThesisIntelligenceStore
+from .workflow import WorkflowAutomationError, WorkflowStore
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -230,6 +231,17 @@ def main(argv: list[str] | None = None) -> int:
     monitor_subparsers.add_parser("status", help="Show latest source monitor status.")
     monitor_subparsers.add_parser("history", help="Show source monitor history.")
     monitor_subparsers.add_parser("export", help="Export source monitor markdown.")
+
+    workflow_parser = subparsers.add_parser("workflow", help="Run deterministic workflow automations.")
+    workflow_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    workflow_subparsers = workflow_parser.add_subparsers(dest="workflow_command", required=True)
+    workflow_subparsers.add_parser("list", help="List built-in workflow automations.")
+    workflow_run_parser = workflow_subparsers.add_parser("run", help="Run one workflow automation by name.")
+    workflow_run_parser.add_argument("workflow_name", help="Workflow name, such as Morning.")
+    workflow_subparsers.add_parser("history", help="Show workflow automation run history.")
+    workflow_show_parser = workflow_subparsers.add_parser("show", help="Show one workflow automation definition.")
+    workflow_show_parser.add_argument("workflow_name", help="Workflow name, such as Morning.")
+    workflow_subparsers.add_parser("export", help="Export latest workflow automation report.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -865,7 +877,7 @@ def main(argv: list[str] | None = None) -> int:
                 output_path = store.export()
                 print(f"dashboard: {output_path}")
                 return 0
-            dashboard = store.generate(overwrite=args.overwrite)
+            dashboard = store.generate(overwrite=args.overwrite or store.json_path.exists() or store.markdown_path.exists())
             _print_dashboard_summary(dashboard)
             if args.export:
                 print(f"dashboard_markdown: {store.markdown_path}")
@@ -896,6 +908,36 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"source_monitor: {output_path}")
                 return 0
         except SourceMonitorError as exc:
+            print(f"error: {exc}")
+            return 1
+    if args.command == "workflow":
+        store = WorkflowStore(args.root.resolve())
+        try:
+            if args.workflow_command == "list":
+                for definition in store.definitions():
+                    print(f"{definition.name} id={definition.id} enabled={definition.enabled} steps={len(definition.steps)}")
+                return 0
+            if args.workflow_command == "run":
+                run = store.run(args.workflow_name)
+                _print_workflow_run(run)
+                return 0
+            if args.workflow_command == "history":
+                runs = store.history()
+                if not runs:
+                    print("No workflow automation runs found.")
+                    return 0
+                for run in runs:
+                    print(f"{run.run_id} workflow={run.workflow_name} status={run.status} completed_at={run.completed_at} duration={run.duration}")
+                return 0
+            if args.workflow_command == "show":
+                definition = store.get(args.workflow_name)
+                print(json.dumps(definition.to_dict(), indent=2, sort_keys=True))
+                return 0
+            if args.workflow_command == "export":
+                output_path = store.export()
+                print(f"workflow_report: {output_path}")
+                return 0
+        except WorkflowAutomationError as exc:
             print(f"error: {exc}")
             return 1
     return 2
@@ -1032,3 +1074,15 @@ def _print_monitor_summary(summary) -> None:
     print(f"new_items: {summary.get('new_items', 0)}")
     print(f"removed_items: {summary.get('removed_items', 0)}")
     print(f"updated_items: {summary.get('updated_items', 0)}")
+
+
+def _print_workflow_run(run) -> None:
+    print(f"workflow_run_id: {run.run_id}")
+    print(f"workflow_id: {run.workflow_id}")
+    print(f"workflow_name: {run.workflow_name}")
+    print(f"status: {run.status}")
+    print(f"started_at: {run.started_at}")
+    print(f"completed_at: {run.completed_at}")
+    print(f"duration: {run.duration}")
+    print(f"completed_steps: {sum(1 for step in run.executed_steps if step.get('status') in {'completed', 'skipped'})}")
+    print(f"failed_steps: {len(run.failed_steps)}")
