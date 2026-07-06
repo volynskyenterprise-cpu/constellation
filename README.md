@@ -148,6 +148,20 @@ python -m constellation intelligence show
 python -m constellation intelligence export
 ```
 
+## Operational Intake
+
+The `inbox/` folder provides scaffolding for future Google Drive, Gmail, and manual intake workflows.
+
+v3.1 adds the [Intake Pipeline](docs/intake-pipeline-v3.1.md), a deterministic local importer that copies files from incoming inboxes into dated `research_inputs/` folders while preserving provenance.
+
+It does not connect to Google Drive or Gmail. `config/sources.yaml` contains placeholder source definitions only and does not include credentials, Google Drive IDs, or Gmail tokens.
+
+```bash
+python -m constellation intake scan
+python -m constellation intake import
+python -m constellation intake status
+```
+
 ## Proposed Documentation Set
 
 - [VISION.md](VISION.md): Product philosophy, strategic intent, and guiding beliefs

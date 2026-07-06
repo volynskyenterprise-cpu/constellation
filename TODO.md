@@ -29,6 +29,15 @@
 - Add intelligence brief comparison and diffing across versions.
 - Add executive intelligence report variants by audience.
 - Add intelligence package review workflow using existing approval gates.
+- Add source registry validation for `config/sources.yaml`.
+- Add manual intake promotion from `inbox/manual/incoming/` to research or PKOS inputs.
+- Add Google Drive intake connector with explicit credential handling outside the repo.
+- Add Gmail intake connector with explicit credential handling outside the repo.
+- Add intake item manifests, checksums, and status transitions.
+- Add intake failure reports and retry workflow.
+- Add intake batch IDs and per-run source selection.
+- Add intake file type validation and configurable destination routing.
+- Add intake archive transitions after successful processing.
 - Add Institutional Reasoning Engine design over accepted evidence and graph findings.
 - Add PDF parsing for research inputs.
 - Add web retrieval for research workflows.

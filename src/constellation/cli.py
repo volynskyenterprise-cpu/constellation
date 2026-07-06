@@ -7,6 +7,7 @@ from pathlib import Path
 from .artifacts import ArtifactError
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .evidence import EvidenceError, EvidenceStore
+from .intake import IntakeEngine, IntakeError
 from .intelligence import IntelligenceError, IntelligenceStore
 from .kernel import ConstellationKernel
 from .knowledge_graph import KnowledgeGraphBuilder, KnowledgeGraphError, KnowledgeGraphStore, show_graph_item
@@ -152,6 +153,13 @@ def main(argv: list[str] | None = None) -> int:
     intelligence_generate_parser.add_argument("--overwrite", action="store_true", help="Overwrite existing intelligence output.")
     intelligence_subparsers.add_parser("show", help="Show current intelligence brief as JSON.")
     intelligence_subparsers.add_parser("export", help="Export current intelligence brief as markdown.")
+
+    intake_parser = subparsers.add_parser("intake", help="Scan and import local operational intake files.")
+    intake_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    intake_subparsers = intake_parser.add_subparsers(dest="intake_command", required=True)
+    intake_subparsers.add_parser("scan", help="Report available local intake files.")
+    intake_subparsers.add_parser("import", help="Import local intake files into dated research inputs.")
+    intake_subparsers.add_parser("status", help="Show intake manifest counts.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -535,6 +543,37 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             print(f"intelligence_report: {output_path}")
             return 0
+    if args.command == "intake":
+        engine = IntakeEngine(args.root.resolve())
+        if args.intake_command == "scan":
+            try:
+                items = engine.scan()
+            except IntakeError as exc:
+                print(f"error: {exc}")
+                return 1
+            if not items:
+                print("No intake files found.")
+                return 0
+            for item in items:
+                print(f"{item.item_id} channel={item.source_channel} path={item.original_path} sha256={item.file_hash}")
+            return 0
+        if args.intake_command == "import":
+            try:
+                manifest = engine.import_items()
+            except IntakeError as exc:
+                print(f"error: {exc}")
+                return 1
+            print(f"manifest: {engine.json_path}")
+            _print_intake_counts(manifest.counts)
+            return 0
+        if args.intake_command == "status":
+            try:
+                counts = engine.status()
+            except IntakeError as exc:
+                print(f"error: {exc}")
+                return 1
+            _print_intake_counts(counts)
+            return 0
     return 2
 
 
@@ -601,3 +640,10 @@ def _print_health_report(report) -> None:
     print(f"health: {report.status}")
     for check in report.checks:
         print(f"{check.status}: {check.name}: {check.message}")
+
+
+def _print_intake_counts(counts) -> None:
+    print(f"imported: {counts.get('imported', 0)}")
+    print(f"skipped: {counts.get('skipped', 0)}")
+    print(f"duplicates: {counts.get('duplicates', 0)}")
+    print(f"errors: {counts.get('errors', 0)}")

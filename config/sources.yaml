@@ -1,0 +1,71 @@
+sources:
+  - id: moonshots
+    display_name: Moonshots
+    source_type: placeholder
+    intake_channel: manual
+    expected_format: markdown_or_text
+    destination_category: research
+    enabled: false
+  - id: all_in
+    display_name: All-In
+    source_type: placeholder
+    intake_channel: manual
+    expected_format: markdown_or_text
+    destination_category: research
+    enabled: false
+  - id: pomp_jordi
+    display_name: Pomp and Jordi
+    source_type: placeholder
+    intake_channel: manual
+    expected_format: markdown_or_text
+    destination_category: research
+    enabled: false
+  - id: ciovacco_capital
+    display_name: Ciovacco Capital
+    source_type: placeholder
+    intake_channel: manual
+    expected_format: markdown_or_text
+    destination_category: research
+    enabled: false
+  - id: mark_newton
+    display_name: Mark Newton
+    source_type: placeholder
+    intake_channel: manual
+    expected_format: markdown_or_text
+    destination_category: research
+    enabled: false
+  - id: sean_farrell
+    display_name: Sean Farrell
+    source_type: placeholder
+    intake_channel: manual
+    expected_format: markdown_or_text
+    destination_category: research
+    enabled: false
+  - id: housing
+    display_name: Housing
+    source_type: placeholder
+    intake_channel: manual
+    expected_format: markdown_or_text
+    destination_category: housing
+    enabled: false
+  - id: macro
+    display_name: Macro
+    source_type: placeholder
+    intake_channel: manual
+    expected_format: markdown_or_text
+    destination_category: macro
+    enabled: false
+  - id: robotics
+    display_name: Robotics
+    source_type: placeholder
+    intake_channel: manual
+    expected_format: markdown_or_text
+    destination_category: robotics
+    enabled: false
+  - id: misc
+    display_name: Miscellaneous
+    source_type: placeholder
+    intake_channel: manual
+    expected_format: markdown_or_text
+    destination_category: misc
+    enabled: false

@@ -2,6 +2,18 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 3.1.0 - Intake Pipeline
+
+- Added operational intake scaffolding under `inbox/` for future Google Drive, Gmail, and manual intake workflows.
+- Added placeholder source registry at `config/sources.yaml` without credentials, Drive IDs, or Gmail tokens.
+- Added deterministic local intake pipeline from incoming inbox folders into dated `research_inputs/` folders.
+- Added SHA-256 duplicate detection and overwrite refusal for conflicting destination filenames.
+- Added intake manifest outputs under `outputs/intake/`.
+- Added `python -m constellation intake scan`.
+- Added `python -m constellation intake import`.
+- Added `python -m constellation intake status`.
+- Preserved local-only behavior with no Google Drive, Gmail, OAuth, external API, provider, or workflow integration.
+
 ## 0.0.0 - Scaffold
 
 - Added founding blueprint documents.
