@@ -64,6 +64,7 @@ Current capabilities include:
 - ✅ Operational Intake Pipeline
 - ✅ Google Drive Connector
 - ✅ Morning Executive Intelligence
+- ✅ Institutional Memory
 - ✅ Executive Intelligence Brief generation
 - ✅ Deterministic provenance tracking
 - ✅ Human approval workflow
@@ -265,6 +266,17 @@ python -m constellation morning --overwrite
 
 Morning briefs report current deterministic local state only. They do not run upstream workflows or call providers.
 
+### Institutional Memory
+
+```bash
+python -m constellation memory snapshot --label baseline
+python -m constellation memory list
+python -m constellation memory diff
+python -m constellation memory export
+```
+
+Institutional Memory preserves historical snapshots of deterministic local state and compares snapshots without LLM inference or provider calls.
+
 ### Research
 
 ```bash
@@ -363,12 +375,12 @@ Current guarantees include:
 - ✅ Intake Pipeline
 - ✅ Google Drive Connector
 - ✅ Morning Executive Intelligence
+- ✅ Institutional Memory
 
 ## Coming Next
 
 - Gmail Connector
 - Folder Watchers
-- Institutional Memory
 - Executive Dashboard
 
 ## Future Vision

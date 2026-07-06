@@ -2,6 +2,19 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 3.4.0 - Institutional Memory
+
+- Added deterministic institutional memory snapshots and deltas.
+- Added `python -m constellation memory snapshot`.
+- Added `python -m constellation memory snapshot --label LABEL`.
+- Added `python -m constellation memory list`.
+- Added `python -m constellation memory show SNAPSHOT_ID`.
+- Added `python -m constellation memory diff`.
+- Added `python -m constellation memory diff SNAPSHOT_ID_A SNAPSHOT_ID_B`.
+- Added `python -m constellation memory export`.
+- Added institutional memory outputs under `outputs/memory/`.
+- Preserved explicit command-only behavior with no provider calls, no LLM inference, no web retrieval, and no automatic upstream workflow execution.
+
 ## 3.3.0 - Morning Executive Intelligence
 
 - Added deterministic morning executive brief model, engine, and store.

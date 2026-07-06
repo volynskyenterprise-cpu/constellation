@@ -12,6 +12,7 @@ from .intake import IntakeEngine, IntakeError
 from .intelligence import IntelligenceError, IntelligenceStore
 from .kernel import ConstellationKernel
 from .knowledge_graph import KnowledgeGraphBuilder, KnowledgeGraphError, KnowledgeGraphStore, show_graph_item
+from .memory import InstitutionalMemoryError, InstitutionalMemoryStore
 from .morning import MorningExecutiveError, MorningExecutiveStore
 from .pkos import PKOSError, PKOSKnowledgeOrganization
 from .prompts import PromptUnavailable
@@ -176,6 +177,18 @@ def main(argv: list[str] | None = None) -> int:
     morning_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
     morning_parser.add_argument("--export", action="store_true", help="Export the current morning brief markdown.")
     morning_parser.add_argument("--overwrite", action="store_true", help="Overwrite an existing morning brief.")
+
+    memory_parser = subparsers.add_parser("memory", help="Capture and compare institutional memory snapshots.")
+    memory_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    memory_subparsers = memory_parser.add_subparsers(dest="memory_command", required=True)
+    memory_snapshot_parser = memory_subparsers.add_parser("snapshot", help="Capture current local intelligence state.")
+    memory_snapshot_parser.add_argument("--label", help="Optional human-readable snapshot label.")
+    memory_subparsers.add_parser("list", help="List institutional memory snapshots.")
+    memory_show_parser = memory_subparsers.add_parser("show", help="Show one snapshot as JSON.")
+    memory_show_parser.add_argument("snapshot_id", help="Snapshot ID.")
+    memory_diff_parser = memory_subparsers.add_parser("diff", help="Diff latest two snapshots or explicit snapshot IDs.")
+    memory_diff_parser.add_argument("snapshot_ids", nargs="*", help="Optional pair of snapshot IDs.")
+    memory_subparsers.add_parser("export", help="Export institutional memory markdown report.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -645,6 +658,43 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"morning_markdown: {store.markdown_path}")
             return 0
         except MorningExecutiveError as exc:
+            print(f"error: {exc}")
+            return 1
+    if args.command == "memory":
+        store = InstitutionalMemoryStore(args.root.resolve())
+        try:
+            if args.memory_command == "snapshot":
+                snapshot = store.create_snapshot(args.label)
+                print(f"snapshot_id: {snapshot.snapshot_id}")
+                print(f"label: {snapshot.label or ''}")
+                print(f"created_at: {snapshot.created_at}")
+                print(f"evidence_count: {snapshot.evidence_count}")
+                print(f"thesis_count: {snapshot.thesis_count}")
+                return 0
+            if args.memory_command == "list":
+                snapshots = store.list_snapshots()
+                if not snapshots:
+                    print("No institutional memory snapshots found.")
+                    return 0
+                for snapshot in snapshots:
+                    print(f"{snapshot.snapshot_id} label={snapshot.label or ''} created_at={snapshot.created_at} evidence={snapshot.evidence_count} theses={snapshot.thesis_count}")
+                return 0
+            if args.memory_command == "show":
+                snapshot = store.show_snapshot(args.snapshot_id)
+                print(json.dumps(snapshot.to_dict(), indent=2, sort_keys=True))
+                return 0
+            if args.memory_command == "diff":
+                if len(args.snapshot_ids) not in {0, 2}:
+                    print("error: provide either zero snapshot IDs or exactly two snapshot IDs")
+                    return 1
+                delta = store.diff(*args.snapshot_ids) if args.snapshot_ids else store.diff()
+                print(json.dumps(delta.to_dict(), indent=2, sort_keys=True))
+                return 0
+            if args.memory_command == "export":
+                output_path = store.export()
+                print(f"institutional_memory: {output_path}")
+                return 0
+        except InstitutionalMemoryError as exc:
             print(f"error: {exc}")
             return 1
     return 2

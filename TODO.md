@@ -43,6 +43,9 @@
 - Add morning brief comparison across days.
 - Add configurable morning brief sections.
 - Add morning brief delivery targets after explicit user approval.
+- Add institutional memory retention policies.
+- Add institutional memory snapshot tagging and notes.
+- Add richer institutional memory diffs for graph nodes and evidence IDs.
 - Add Institutional Reasoning Engine design over accepted evidence and graph findings.
 - Add PDF parsing for research inputs.
 - Add web retrieval for research workflows.
