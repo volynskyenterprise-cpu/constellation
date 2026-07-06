@@ -10,6 +10,7 @@ from .daily import DailyPipelineError, DailyPipelineStore
 from .dashboard import ExecutiveDashboardError, ExecutiveDashboardStore
 from .evidence import EvidenceError, EvidenceStore
 from .evidence_graph import EvidenceGraphError, EvidenceGraphStore
+from .evolution import KnowledgeEvolutionError, KnowledgeEvolutionStore
 from .google_drive import GoogleDriveConnector, GoogleDriveDependencyError, GoogleDriveError
 from .intake import IntakeEngine, IntakeError
 from .intelligence import IntelligenceError, IntelligenceStore
@@ -242,6 +243,16 @@ def main(argv: list[str] | None = None) -> int:
     workflow_show_parser = workflow_subparsers.add_parser("show", help="Show one workflow automation definition.")
     workflow_show_parser.add_argument("workflow_name", help="Workflow name, such as Morning.")
     workflow_subparsers.add_parser("export", help="Export latest workflow automation report.")
+
+    evolution_parser = subparsers.add_parser("evolution", help="Generate and inspect deterministic knowledge evolution.")
+    evolution_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    evolution_subparsers = evolution_parser.add_subparsers(dest="evolution_command")
+    evolution_subparsers.add_parser("status", help="Show latest knowledge evolution status.")
+    evolution_subparsers.add_parser("history", help="Show knowledge evolution history.")
+    evolution_subparsers.add_parser("export", help="Export latest knowledge evolution markdown reports.")
+    evolution_compare_parser = evolution_subparsers.add_parser("compare", help="Compare two institutional memory snapshot IDs.")
+    evolution_compare_parser.add_argument("snapshot_id_a", help="Prior institutional memory snapshot ID.")
+    evolution_compare_parser.add_argument("snapshot_id_b", help="Current institutional memory snapshot ID.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -940,6 +951,37 @@ def main(argv: list[str] | None = None) -> int:
         except WorkflowAutomationError as exc:
             print(f"error: {exc}")
             return 1
+    if args.command == "evolution":
+        store = KnowledgeEvolutionStore(args.root.resolve())
+        try:
+            if args.evolution_command is None:
+                delta = store.generate()
+                _print_evolution_delta(delta)
+                return 0
+            if args.evolution_command == "status":
+                _print_evolution_status(store.status())
+                return 0
+            if args.evolution_command == "history":
+                history = store.history()
+                if not history:
+                    print("No knowledge evolution history found.")
+                    return 0
+                for item in history:
+                    delta = item["delta"]
+                    print(f"{delta.delta_id} current={delta.current_snapshot_id} evidence_gained={len(delta.evidence_gained)} graph_nodes={delta.graph_node_growth:+} health={delta.longitudinal_health_score}")
+                return 0
+            if args.evolution_command == "export":
+                output_path = store.export()
+                print(f"evolution_report: {output_path}")
+                print(f"trend_report: {store.trend_report_path}")
+                return 0
+            if args.evolution_command == "compare":
+                delta = store.compare(args.snapshot_id_a, args.snapshot_id_b)
+                print(json.dumps(delta.to_dict(), indent=2, sort_keys=True))
+                return 0
+        except KnowledgeEvolutionError as exc:
+            print(f"error: {exc}")
+            return 1
     return 2
 
 
@@ -1086,3 +1128,31 @@ def _print_workflow_run(run) -> None:
     print(f"duration: {run.duration}")
     print(f"completed_steps: {sum(1 for step in run.executed_steps if step.get('status') in {'completed', 'skipped'})}")
     print(f"failed_steps: {len(run.failed_steps)}")
+
+
+def _print_evolution_delta(delta) -> None:
+    print(f"delta_id: {delta.delta_id}")
+    print(f"prior_snapshot_id: {delta.prior_snapshot_id or ''}")
+    print(f"current_snapshot_id: {delta.current_snapshot_id}")
+    print(f"evidence_gained: {len(delta.evidence_gained)}")
+    print(f"evidence_removed: {len(delta.evidence_removed)}")
+    print(f"graph_node_growth: {delta.graph_node_growth}")
+    print(f"graph_edge_growth: {delta.graph_edge_growth}")
+    print(f"thesis_confidence_changes: {len(delta.thesis_confidence_changes)}")
+    print(f"thesis_status_changes: {len(delta.thesis_status_changes)}")
+    print(f"trend_records: {len(delta.trend_records)}")
+    print(f"longitudinal_health_score: {delta.longitudinal_health_score}")
+
+
+def _print_evolution_status(status) -> None:
+    print(f"available: {status.get('available')}")
+    print(f"history_count: {status.get('history_count', 0)}")
+    if status.get("available"):
+        print(f"delta_id: {status.get('delta_id')}")
+        print(f"current_snapshot_id: {status.get('current_snapshot_id')}")
+        print(f"evidence_gained: {status.get('evidence_gained')}")
+        print(f"evidence_removed: {status.get('evidence_removed')}")
+        print(f"graph_node_growth: {status.get('graph_node_growth')}")
+        print(f"graph_edge_growth: {status.get('graph_edge_growth')}")
+        print(f"trend_count: {status.get('trend_count')}")
+        print(f"longitudinal_health_score: {status.get('longitudinal_health_score')}")

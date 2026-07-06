@@ -2,6 +2,20 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 4.1.0 - Knowledge Evolution Engine
+
+- Added deterministic Knowledge Evolution Engine.
+- Added `python -m constellation evolution`.
+- Added `python -m constellation evolution status`.
+- Added `python -m constellation evolution history`.
+- Added `python -m constellation evolution export`.
+- Added `python -m constellation evolution compare SNAPSHOT_A SNAPSHOT_B`.
+- Added evolution outputs under `outputs/evolution/`.
+- Added evidence gained/removed, graph growth, thesis confidence/status changes, source activity trends, research volume trends, workflow execution trends, and longitudinal health score.
+- Integrated Knowledge Evolution into Daily Pipeline after Institutional Memory.
+- Added Knowledge Evolution Summary to Executive Dashboard.
+- Preserved deterministic local-only behavior with no providers, no OpenAI, no LLM inference, no embeddings, no semantic search, no Gmail, no web retrieval, and no autonomous execution.
+
 ## 4.0.1 - Research Auto-Processing For Morning Workflow
 
 - Updated the built-in `Morning` workflow to import intake files and auto-process newly imported local research inputs.

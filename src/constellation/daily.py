@@ -9,6 +9,7 @@ from typing import Any
 
 from . import __version__
 from .evidence_graph import EvidenceGraphStore
+from .evolution import KnowledgeEvolutionStore
 from .google_drive import GoogleDriveConnector, GoogleDriveDependencyError, GoogleDriveError
 from .intake import IntakeEngine, IntakeError
 from .io import read_json, write_json
@@ -80,6 +81,7 @@ class DailyPipeline:
         drive_summary = self._google_drive_sync(stages, limitations)
         morning = self._morning(stages, overwrite)
         snapshot = self._memory_snapshot(stages)
+        evolution = self._knowledge_evolution(stages)
         evidence_graph = self._evidence_graph(stages)
         theses = self._thesis_intelligence(stages)
         completed_at = _now_iso()
@@ -90,6 +92,7 @@ class DailyPipeline:
             source_monitor=source_monitor,
             morning=morning,
             snapshot=snapshot,
+            evolution=evolution,
             evidence_graph=evidence_graph,
             theses=theses,
             runtime_seconds=runtime_seconds,
@@ -166,6 +169,22 @@ class DailyPipeline:
         snapshot = InstitutionalMemoryStore(self.root).create_snapshot("daily")
         stages.append(_stage("memory_snapshot", "completed", {"snapshot_id": snapshot.snapshot_id}))
         return snapshot.to_dict()
+
+    def _knowledge_evolution(self, stages: list[JsonMap]) -> JsonMap:
+        delta = KnowledgeEvolutionStore(self.root).generate()
+        stages.append(
+            _stage(
+                "knowledge_evolution",
+                "completed",
+                {
+                    "delta_id": delta.delta_id,
+                    "evidence_gained": len(delta.evidence_gained),
+                    "evidence_removed": len(delta.evidence_removed),
+                    "health_score": delta.longitudinal_health_score,
+                },
+            )
+        )
+        return delta.to_dict()
 
     def _evidence_graph(self, stages: list[JsonMap]) -> JsonMap:
         graph = EvidenceGraphStore(self.root).build()
@@ -249,6 +268,7 @@ def render_daily_report(run: DailyPipelineRun) -> str:
         f"- Google Drive sync: `{_map(manifest.get('google_drive_sync')).get('status', 'unknown')}`",
         f"- Morning brief ID: `{manifest.get('morning_brief_id') or ''}`",
         f"- Memory snapshot ID: `{manifest.get('memory_snapshot_id') or ''}`",
+        f"- Knowledge evolution ID: `{manifest.get('knowledge_evolution_delta_id') or ''}`",
         f"- Evidence graph ID: `{manifest.get('evidence_graph_id') or ''}`",
         f"- Thesis count: {manifest.get('thesis_count', 0)}",
         f"- Evidence count: {manifest.get('evidence_count', 0)}",
@@ -273,6 +293,7 @@ def _manifest(
     source_monitor: JsonMap,
     morning: JsonMap,
     snapshot: JsonMap,
+    evolution: JsonMap,
     evidence_graph: JsonMap,
     theses: list[JsonMap],
     runtime_seconds: float,
@@ -281,7 +302,7 @@ def _manifest(
 ) -> JsonMap:
     evidence_count = _int(morning.get("evidence_count"))
     return {
-        "manifest_id": _daily_manifest_id(intake_items, drive_summary, source_monitor, morning, snapshot, evidence_graph, theses),
+        "manifest_id": _daily_manifest_id(intake_items, drive_summary, source_monitor, morning, snapshot, evolution, evidence_graph, theses),
         "created_at": created_at,
         "completed_at": completed_at,
         "version": __version__,
@@ -291,6 +312,8 @@ def _manifest(
         "google_drive_sync": drive_summary,
         "morning_brief_id": morning.get("brief_id"),
         "memory_snapshot_id": snapshot.get("snapshot_id"),
+        "knowledge_evolution_delta_id": evolution.get("delta_id"),
+        "knowledge_evolution_health_score": evolution.get("longitudinal_health_score", 0),
         "evidence_graph_id": evidence_graph.get("graph_id"),
         "thesis_count": len(theses),
         "evidence_count": evidence_count,
@@ -336,6 +359,7 @@ def _daily_manifest_id(
     source_monitor: JsonMap,
     morning: JsonMap,
     snapshot: JsonMap,
+    evolution: JsonMap,
     evidence_graph: JsonMap,
     theses: list[JsonMap],
 ) -> str:
@@ -346,6 +370,7 @@ def _daily_manifest_id(
             str(source_monitor.get("monitor_id")),
             str(morning.get("brief_id")),
             str(snapshot.get("snapshot_id")),
+            str(evolution.get("delta_id")),
             str(evidence_graph.get("graph_id")),
             ",".join(sorted(str(item.get("thesis_id")) for item in theses)),
         ]

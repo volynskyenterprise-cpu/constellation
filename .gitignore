@@ -40,6 +40,7 @@ outputs/daily/
 outputs/dashboard/
 outputs/source-monitor/
 outputs/workflows/
+outputs/evolution/
 outputs/intelligence/
 outputs/intake/
 outputs/google-drive/

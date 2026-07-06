@@ -66,6 +66,7 @@ Current capabilities include:
 - ✅ Executive Dashboard
 - ✅ Source Monitoring
 - Workflow Automation Engine
+- Knowledge Evolution Engine
 - ✅ Institutional Intelligence Platform
 - ✅ Operational Intake Pipeline
 - ✅ Google Drive Connector
@@ -356,6 +357,18 @@ python -m constellation workflow export
 
 Workflow Automation runs named deterministic recipes made from existing Constellation commands. Built-in workflows include `Morning`, `Research Refresh`, and `Executive Snapshot`. The `Morning` workflow imports intake files, processes newly imported markdown/text research inputs, builds graph records for the generated research runs, and refreshes downstream deterministic intelligence outputs. Workflow execution occurs only when explicitly invoked and does not add provider calls, LLM inference, Gmail, web retrieval, embeddings, semantic search, scheduling, or autonomous decisions.
 
+### Knowledge Evolution
+
+```bash
+python -m constellation evolution
+python -m constellation evolution status
+python -m constellation evolution history
+python -m constellation evolution export
+python -m constellation evolution compare SNAPSHOT_A SNAPSHOT_B
+```
+
+Knowledge Evolution compares longitudinal institutional state from existing local artifacts. It reports evidence gained/removed, graph growth, thesis changes, source activity trends, research volume trends, workflow execution trends, and a deterministic longitudinal health score.
+
 ### Research
 
 ```bash
@@ -473,6 +486,7 @@ Current guarantees include:
 - ✅ Executive Dashboard
 - ✅ Source Monitoring
 - Workflow Automation Engine
+- Knowledge Evolution Engine
 - ✅ Institutional Intelligence
 - ✅ Intake Pipeline
 - ✅ Google Drive Connector

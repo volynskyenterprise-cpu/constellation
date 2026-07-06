@@ -152,6 +152,7 @@ _STAGES = [
     "google_drive_sync",
     "morning_brief",
     "memory_snapshot",
+    "knowledge_evolution",
     "evidence_graph",
     "thesis_intelligence",
 ]

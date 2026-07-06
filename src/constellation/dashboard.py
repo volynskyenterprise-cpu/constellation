@@ -28,6 +28,7 @@ EXPECTED_ARTIFACTS = {
     "intake_manifest": Path("outputs/intake/intake-manifest.json"),
     "source_monitor": Path("outputs/source-monitor/latest-monitor.json"),
     "latest_workflow": Path("outputs/workflows/latest-workflow.json"),
+    "knowledge_evolution": Path("outputs/evolution/evolution.json"),
 }
 
 
@@ -46,6 +47,7 @@ class ExecutiveDashboard:
     morning_brief_summary: JsonMap
     source_monitoring_summary: JsonMap
     workflow_automation_summary: JsonMap
+    knowledge_evolution_summary: JsonMap
     current_risks_gaps: list[str]
     recommended_next_actions: list[str]
     key_output_files: list[JsonMap]
@@ -68,6 +70,7 @@ class ExecutiveDashboard:
             "morning_brief_summary": self.morning_brief_summary,
             "source_monitoring_summary": self.source_monitoring_summary,
             "workflow_automation_summary": self.workflow_automation_summary,
+            "knowledge_evolution_summary": self.knowledge_evolution_summary,
             "current_risks_gaps": self.current_risks_gaps,
             "recommended_next_actions": self.recommended_next_actions,
             "key_output_files": self.key_output_files,
@@ -92,6 +95,7 @@ class ExecutiveDashboard:
             morning_brief_summary=_map(data.get("morning_brief_summary")),
             source_monitoring_summary=_map(data.get("source_monitoring_summary")),
             workflow_automation_summary=_map(data.get("workflow_automation_summary")),
+            knowledge_evolution_summary=_map(data.get("knowledge_evolution_summary")),
             current_risks_gaps=_string_list(data.get("current_risks_gaps", [])),
             recommended_next_actions=_string_list(data.get("recommended_next_actions", [])),
             key_output_files=_map_list(data.get("key_output_files", [])),
@@ -118,6 +122,7 @@ class ExecutiveDashboardBuilder:
         drive = _map(artifacts.get("google_drive_sync"))
         monitor = _map(artifacts.get("source_monitor"))
         workflow = _map(artifacts.get("latest_workflow"))
+        evolution = _map(artifacts.get("knowledge_evolution"))
         theses = _map_list(thesis_store.get("theses", []))
         graph_nodes = _map_list(evidence_graph.get("nodes", []))
         graph_edges = _map_list(evidence_graph.get("edges", []))
@@ -131,6 +136,7 @@ class ExecutiveDashboardBuilder:
         morning_summary = _morning_summary(morning)
         monitor_summary = _source_monitor_summary(monitor)
         workflow_summary = _workflow_summary(workflow)
+        evolution_summary = _evolution_summary(evolution)
         risks_gaps = _risks_gaps(morning, theses)
         actions = _actions(morning, status, risks_gaps)
         key_files = _key_files(self.root, status)
@@ -143,10 +149,11 @@ class ExecutiveDashboardBuilder:
             "evidence_count": evidence_summary["evidence_count"],
             "current_gaps_or_risks": len(risks_gaps),
             "last_workflow_status": workflow_summary.get("status"),
+            "longitudinal_health_score": evolution_summary.get("longitudinal_health_score"),
             "next_files_to_inspect": [item["path"] for item in key_files[:5]],
         }
         dashboard = ExecutiveDashboard(
-            dashboard_id=_dashboard_id(daily_run, morning, snapshot, evidence_graph, thesis_store, intake, drive, monitor, workflow),
+            dashboard_id=_dashboard_id(daily_run, morning, snapshot, evidence_graph, thesis_store, intake, drive, monitor, workflow, evolution),
             created_at=created_at,
             version=__version__,
             executive_summary=executive_summary,
@@ -159,6 +166,7 @@ class ExecutiveDashboardBuilder:
             morning_brief_summary=morning_summary,
             source_monitoring_summary=monitor_summary,
             workflow_automation_summary=workflow_summary,
+            knowledge_evolution_summary=evolution_summary,
             current_risks_gaps=risks_gaps,
             recommended_next_actions=actions,
             key_output_files=key_files,
@@ -252,6 +260,9 @@ def render_dashboard_markdown(dashboard: ExecutiveDashboard) -> str:
         "## Workflow Automation Summary",
         "",
         *_summary_lines(dashboard.workflow_automation_summary),
+        "## Knowledge Evolution Summary",
+        "",
+        *_summary_lines(dashboard.knowledge_evolution_summary),
         "## Current Risks / Gaps",
         "",
         *_string_lines(dashboard.current_risks_gaps),
@@ -391,6 +402,25 @@ def _workflow_summary(workflow: JsonMap) -> JsonMap:
         "completed_steps": sum(1 for step in executed_steps if step.get("status") in {"completed", "skipped"}),
         "failed_steps": len(failed_steps),
         "completed_at": workflow.get("completed_at"),
+    }
+
+
+def _evolution_summary(evolution: JsonMap) -> JsonMap:
+    delta = _map(evolution.get("delta"))
+    trends = _map_list(delta.get("trend_records", []))
+    source_trends = _map_list(delta.get("source_activity_trends", []))
+    research_trends = _map_list(delta.get("research_volume_trends", []))
+    thesis_changes = _map_list(delta.get("thesis_confidence_changes", [])) + _map_list(delta.get("thesis_status_changes", []))
+    return {
+        "available": bool(delta),
+        "delta_id": delta.get("delta_id"),
+        "evidence_growth": len(_list(delta.get("evidence_gained", []))) - len(_list(delta.get("evidence_removed", []))),
+        "graph_growth": _int(delta.get("graph_node_growth")) + _int(delta.get("graph_edge_growth")),
+        "thesis_changes": len(thesis_changes),
+        "fastest_growing_sources": [item.get("subject") for item in source_trends[:5]],
+        "most_active_research_areas": [item.get("subject") for item in research_trends[:5]],
+        "recent_trend_changes": len(trends),
+        "longitudinal_health_score": delta.get("longitudinal_health_score", 0),
     }
 
 

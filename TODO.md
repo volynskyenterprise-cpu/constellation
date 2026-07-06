@@ -2,6 +2,10 @@
 
 ## Next Engineering Milestones
 
+- Add explicit acceptance/rejection notes for Knowledge Evolution trend records.
+- Add evolution diff views filtered by thesis, source, and research category.
+- Add longitudinal health score weighting configuration.
+- Add evolution retention policies for trend history.
 - Add operator controls for selecting which imported research files Morning should process.
 - Add research auto-processing retry reports for graph build failures.
 - Add workflow research-processing registry pruning and audit export.
