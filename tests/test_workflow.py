@@ -6,11 +6,13 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from constellation.cli import main
 from constellation.dashboard import ExecutiveDashboardStore
-from constellation.workflow import WorkflowDefinition, WorkflowEngine, WorkflowStep, WorkflowStore
+from constellation.research import ResearchError
+from constellation.workflow import WorkflowDefinition, WorkflowEngine, WorkflowStep, WorkflowStore, collect_research_run_ids
 
 
 class WorkflowAutomationTests(unittest.TestCase):
@@ -65,6 +67,61 @@ class WorkflowAutomationTests(unittest.TestCase):
             self.assertEqual(run.status, "completed")
             drive_step = next(step for step in run.executed_steps if step["command"] == "drive sync")
             self.assertEqual(drive_step["status"], "skipped")
+            research_step = next(step for step in run.executed_steps if step["command"] == "process research")
+            self.assertEqual(research_step["details"]["new_research_files_detected"], 0)
+
+    def test_morning_workflow_detects_and_processes_imported_research(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_minimal_tree(root)
+            (root / "inbox" / "manual" / "incoming" / "brief.md").write_text("# Brief\n\nRobotics demand is rising.\n", encoding="utf-8")
+
+            with patch("constellation.workflow.ResearchOrganization.run", return_value=SimpleNamespace(workflow_run_id="run_research_001", status="needs_approval")) as research_run:
+                with patch("constellation.workflow.KnowledgeGraphBuilder.build_run") as graph_build:
+                    run = WorkflowStore(root).run("Morning")
+
+            research_step = next(step for step in run.executed_steps if step["command"] == "process research")
+            details = research_step["details"]
+            self.assertEqual(details["new_research_files_detected"], 1)
+            self.assertEqual(details["research_runs_created"], 1)
+            self.assertEqual(details["research_run_ids"], ["run_research_001"])
+            self.assertEqual(details["graph_builds_completed"], 1)
+            research_run.assert_called_once()
+            graph_build.assert_called_once_with("run_research_001")
+
+    def test_duplicate_files_are_not_reprocessed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_minimal_tree(root)
+            (root / "inbox" / "manual" / "incoming" / "brief.md").write_text("# Brief\n\nEvidence line.\n", encoding="utf-8")
+
+            with patch("constellation.workflow.ResearchOrganization.run", return_value=SimpleNamespace(workflow_run_id="run_research_001", status="needs_approval")):
+                with patch("constellation.workflow.KnowledgeGraphBuilder.build_run"):
+                    WorkflowStore(root).run("Morning")
+            with patch("constellation.workflow.ResearchOrganization.run") as research_run:
+                with patch("constellation.workflow.KnowledgeGraphBuilder.build_run") as graph_build:
+                    second = WorkflowStore(root).run("Morning")
+
+            research_step = next(step for step in second.executed_steps if step["command"] == "process research")
+            self.assertEqual(research_step["details"]["new_research_files_detected"], 0)
+            self.assertEqual(research_step["details"]["skipped_files_count"], 1)
+            research_run.assert_not_called()
+            graph_build.assert_not_called()
+            self.assertEqual(collect_research_run_ids(root), ["run_research_001"])
+
+    def test_research_failures_are_recorded_without_corrupting_history(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_minimal_tree(root)
+            (root / "inbox" / "manual" / "incoming" / "brief.md").write_text("# Brief\n\nEvidence line.\n", encoding="utf-8")
+
+            with patch("constellation.workflow.ResearchOrganization.run", side_effect=ResearchError("bad input")):
+                run = WorkflowStore(root).run("Morning")
+
+            research_step = next(step for step in run.executed_steps if step["command"] == "process research")
+            self.assertEqual(research_step["status"], "completed_with_errors")
+            self.assertEqual(len(research_step["details"]["errors"]), 1)
+            self.assertEqual(len(WorkflowStore(root).history()), 1)
 
     def test_history_creation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -224,11 +281,12 @@ class WorkflowAutomationTests(unittest.TestCase):
 _MORNING_COMMANDS = [
     "monitor",
     "drive sync",
-    "intake scan",
-    "morning",
-    "memory snapshot",
-    "evidence-graph build",
+    "intake import",
+    "process research",
+    "graph analyze",
+    "thesis generate",
     "thesis build",
+    "evidence-graph build",
     "daily",
     "dashboard",
 ]

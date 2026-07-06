@@ -8,16 +8,20 @@ from time import perf_counter
 from typing import Any, Callable
 
 from . import __version__
+from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .daily import DailyPipelineStore
 from .dashboard import ExecutiveDashboardStore
 from .evidence_graph import EvidenceGraphStore
 from .google_drive import GoogleDriveConnector, GoogleDriveDependencyError, GoogleDriveError
-from .intake import IntakeEngine
+from .intake import IntakeEngine, IntakeManifest
 from .io import read_json, write_json
+from .knowledge_graph import KnowledgeGraphBuilder, KnowledgeGraphError
 from .memory import InstitutionalMemoryStore
 from .models import JsonMap
 from .morning import MorningExecutiveStore
+from .research import ResearchError, ResearchOrganization, SUPPORTED_RESEARCH_INPUTS
 from .source_monitor import SourceMonitorStore
+from .thesis import ThesisError, ThesisStore
 from .thesis_intelligence import ThesisStore as ThesisIntelligenceStore
 
 
@@ -137,6 +141,10 @@ class WorkflowEngine:
             "monitor": self._monitor,
             "drive sync": self._drive_sync,
             "intake scan": self._intake_scan,
+            "intake import": self._intake_import,
+            "process research": self._process_research,
+            "graph analyze": self._graph_analyze,
+            "thesis generate": self._thesis_generate,
             "morning": self._morning,
             "memory snapshot": self._memory_snapshot,
             "evidence-graph build": self._evidence_graph_build,
@@ -245,6 +253,31 @@ class WorkflowEngine:
         items = IntakeEngine(self.root).scan()
         return {"status": "completed", "available": len(items)}
 
+    def _intake_import(self, arguments: JsonMap) -> JsonMap:
+        manifest = IntakeEngine(self.root).import_items()
+        return {"status": "completed", "manifest_id": manifest.manifest_id, **manifest.counts}
+
+    def _process_research(self, arguments: JsonMap) -> JsonMap:
+        return process_new_research_inputs(self.root)
+
+    def _graph_analyze(self, arguments: JsonMap) -> JsonMap:
+        if not (self.root / "memory" / "graph" / "graph.json").exists():
+            return {"status": "skipped", "reason": "no knowledge graph found"}
+        try:
+            analysis = CrossDocumentAnalysisStore(self.root).analyze_graph(overwrite=bool(arguments.get("overwrite", False)))
+        except CrossDocumentError as exc:
+            return {"status": "failed", "error": str(exc)}
+        return {"status": "completed", "analysis_id": analysis.analysis_id, "findings": len(analysis.findings)}
+
+    def _thesis_generate(self, arguments: JsonMap) -> JsonMap:
+        if not (self.root / "outputs" / "analysis" / "cross-document-analysis.json").exists():
+            return {"status": "skipped", "reason": "no cross-document analysis found"}
+        try:
+            theses = ThesisStore(self.root).generate(overwrite=bool(arguments.get("overwrite", False)))
+        except ThesisError as exc:
+            return {"status": "failed", "error": str(exc)}
+        return {"status": "completed", "thesis_count": len(theses)}
+
     def _morning(self, arguments: JsonMap) -> JsonMap:
         brief = MorningExecutiveStore(self.root).generate(overwrite=bool(arguments.get("overwrite", False)))
         return {"status": "completed", "brief_id": brief.brief_id}
@@ -258,6 +291,8 @@ class WorkflowEngine:
         return {"status": "completed", "graph_id": graph.graph_id, "nodes": len(graph.nodes), "edges": len(graph.edges)}
 
     def _thesis_build(self, arguments: JsonMap) -> JsonMap:
+        if not (self.root / "outputs" / "thesis").exists() and not (self.root / "outputs" / "theses" / "theses.json").exists():
+            return {"status": "skipped", "reason": "no thesis inputs found"}
         records = ThesisIntelligenceStore(self.root).build()
         return {"status": "completed", "thesis_count": len(records)}
 
@@ -344,6 +379,23 @@ def render_workflow_report(run: WorkflowRun) -> str:
         lines.append(f"- `{step.get('name')}` (`{step.get('command')}`): `{step.get('status')}`")
         if step.get("error"):
             lines.append(f"  Error: {step.get('error')}")
+    research_steps = [step for step in run.executed_steps if step.get("command") == "process research"]
+    if research_steps:
+        details = _map(research_steps[-1].get("details"))
+        lines.extend(
+            [
+                "",
+                "## Research Processing",
+                "",
+                f"- New research files detected: {details.get('new_research_files_detected', 0)}",
+                f"- Research runs created: {details.get('research_runs_created', 0)}",
+                f"- Graph builds completed: {details.get('graph_builds_completed', 0)}",
+                f"- Graph builds failed: {details.get('graph_builds_failed', 0)}",
+                f"- Skipped files: {details.get('skipped_files_count', 0)}",
+                f"- Errors: {len(_map_list(details.get('errors', [])))}",
+                "",
+            ]
+        )
     lines.extend(["", "## Failed Steps", ""])
     if not run.failed_steps:
         lines.extend(["- None", ""])
@@ -376,11 +428,12 @@ def _built_in_workflows() -> list[WorkflowDefinition]:
             steps=[
                 _step("Source Monitor", "monitor", {"overwrite": True}),
                 _step("Google Drive Sync", "drive sync", {}, continue_on_failure=True),
-                _step("Intake Scan", "intake scan"),
-                _step("Morning Executive Brief", "morning", {"overwrite": True}),
-                _step("Institutional Memory Snapshot", "memory snapshot", {"label": "workflow-morning"}),
-                _step("Evidence Graph Build", "evidence-graph build"),
+                _step("Intake Import", "intake import"),
+                _step("Research Auto Processing", "process research"),
+                _step("Cross Document Analysis", "graph analyze", {"overwrite": True}),
+                _step("Thesis Generation", "thesis generate", {"overwrite": True}),
                 _step("Thesis Intelligence Build", "thesis build"),
+                _step("Evidence Graph Build", "evidence-graph build"),
                 _step("Daily Intelligence Pipeline", "daily", {"overwrite": True}),
                 _step("Executive Dashboard", "dashboard", {"overwrite": True}),
             ],
@@ -419,6 +472,147 @@ def _built_in_workflows() -> list[WorkflowDefinition]:
 
 def _step(name: str, command: str, arguments: JsonMap | None = None, *, continue_on_failure: bool = False) -> WorkflowStep:
     return WorkflowStep(name=name, command=command, arguments=arguments or {}, enabled=True, continue_on_failure=continue_on_failure)
+
+
+def detect_new_research_inputs(root: Path) -> list[JsonMap]:
+    manifest_path = root / "outputs" / "intake" / "intake-manifest.json"
+    if not manifest_path.exists():
+        return []
+    manifest = IntakeManifest.from_dict(read_json(manifest_path))
+    registry = _research_processing_registry(root)
+    processed_hashes = {str(item.get("file_hash")) for item in _map_list(registry.get("processed_files", []))}
+    inputs: list[JsonMap] = []
+    for item in manifest.items:
+        if item.status != "imported" or not item.destination_path:
+            continue
+        path = Path(item.destination_path)
+        if not path.is_absolute():
+            path = root / path
+        if not _is_research_input(root, path):
+            continue
+        if item.file_hash in processed_hashes:
+            continue
+        inputs.append(
+            {
+                "item_id": item.item_id,
+                "source_channel": item.source_channel,
+                "destination_path": str(path),
+                "file_hash": item.file_hash,
+                "import_timestamp": item.import_timestamp,
+            }
+        )
+    return sorted(inputs, key=lambda value: str(value.get("destination_path")))
+
+
+def process_new_research_inputs(root: Path) -> JsonMap:
+    inputs = detect_new_research_inputs(root)
+    processed_records: list[JsonMap] = []
+    skipped_files = _skipped_research_inputs(root)
+    errors: list[JsonMap] = []
+    research_run_ids: list[str] = []
+    graph_builds_completed = 0
+    graph_builds_failed = 0
+    for item in inputs:
+        path = Path(str(item["destination_path"]))
+        try:
+            result = ResearchOrganization(root).run(path)
+            research_run_id = result.workflow_run_id
+            research_run_ids.append(research_run_id)
+            graph_status = "not_run"
+            graph_error = None
+            try:
+                KnowledgeGraphBuilder(root).build_run(research_run_id)
+                graph_status = "completed"
+                graph_builds_completed += 1
+            except KnowledgeGraphError as exc:
+                graph_status = "failed"
+                graph_error = str(exc)
+                graph_builds_failed += 1
+            record = {
+                **item,
+                "workflow_run_id": research_run_id,
+                "research_status": result.status,
+                "graph_status": graph_status,
+                "graph_error": graph_error,
+                "processed_at": _now_iso(),
+            }
+            processed_records.append(record)
+        except ResearchError as exc:
+            errors.append({**item, "error": str(exc)})
+        except Exception as exc:
+            errors.append({**item, "error": str(exc)})
+    _append_research_processing_registry(root, processed_records)
+    status = "completed" if not errors and graph_builds_failed == 0 else "completed_with_errors"
+    return {
+        "status": status,
+        "new_research_files_detected": len(inputs),
+        "research_runs_created": len(research_run_ids),
+        "research_run_ids": research_run_ids,
+        "graph_builds_completed": graph_builds_completed,
+        "graph_builds_failed": graph_builds_failed,
+        "skipped_files_count": len(skipped_files),
+        "skipped_files": skipped_files,
+        "processed_files": processed_records,
+        "errors": errors,
+    }
+
+
+def collect_research_run_ids(root: Path) -> list[str]:
+    registry = _research_processing_registry(root)
+    return sorted({str(item.get("workflow_run_id")) for item in _map_list(registry.get("processed_files", [])) if item.get("workflow_run_id")})
+
+
+def _skipped_research_inputs(root: Path) -> list[JsonMap]:
+    manifest_path = root / "outputs" / "intake" / "intake-manifest.json"
+    if not manifest_path.exists():
+        return []
+    manifest = IntakeManifest.from_dict(read_json(manifest_path))
+    processed_hashes = {str(item.get("file_hash")) for item in _map_list(_research_processing_registry(root).get("processed_files", []))}
+    skipped = []
+    for item in manifest.items:
+        if item.status != "imported" or not item.destination_path:
+            continue
+        path = Path(item.destination_path)
+        if not path.is_absolute():
+            path = root / path
+        if _is_research_input(root, path) and item.file_hash in processed_hashes:
+            skipped.append({"destination_path": str(path), "file_hash": item.file_hash, "reason": "already processed"})
+    return sorted(skipped, key=lambda value: str(value.get("destination_path")))
+
+
+def _research_processing_registry_path(root: Path) -> Path:
+    return root / "outputs" / "workflows" / "research-processing.json"
+
+
+def _research_processing_registry(root: Path) -> JsonMap:
+    path = _research_processing_registry_path(root)
+    if not path.exists():
+        return {"processed_files": []}
+    try:
+        data = read_json(path)
+    except Exception:
+        return {"processed_files": []}
+    return data if isinstance(data, dict) else {"processed_files": []}
+
+
+def _append_research_processing_registry(root: Path, records: list[JsonMap]) -> None:
+    if not records:
+        return
+    registry = _research_processing_registry(root)
+    existing = _map_list(registry.get("processed_files", []))
+    by_hash = {str(item.get("file_hash")): item for item in existing}
+    for record in records:
+        if record.get("graph_status") == "completed":
+            by_hash[str(record.get("file_hash"))] = record
+    write_json(_research_processing_registry_path(root), {"processed_files": [by_hash[key] for key in sorted(by_hash)]})
+
+
+def _is_research_input(root: Path, path: Path) -> bool:
+    try:
+        path.relative_to(root / "research_inputs")
+    except ValueError:
+        return False
+    return path.suffix.lower() in SUPPORTED_RESEARCH_INPUTS and path.exists() and path.is_file()
 
 
 def _drive_ready(status: JsonMap) -> bool:

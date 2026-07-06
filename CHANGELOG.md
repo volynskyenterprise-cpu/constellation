@@ -2,6 +2,17 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 4.0.1 - Research Auto-Processing For Morning Workflow
+
+- Updated the built-in `Morning` workflow to import intake files and auto-process newly imported local research inputs.
+- Added deterministic research input detection from the latest intake manifest.
+- Added research processing metadata to workflow outputs and reports.
+- Added per-file research workflow execution through the existing Research Organization.
+- Added per-run Knowledge Graph builds for generated research workflow run IDs.
+- Added deterministic refresh steps for cross-document analysis, thesis generation, Thesis Intelligence, Evidence Graph, Daily Pipeline, and Executive Dashboard.
+- Added duplicate protection through `outputs/workflows/research-processing.json`.
+- Preserved approval behavior, provider-disabled defaults, explicit workflow invocation, and no external services.
+
 ## 4.0.0 - Workflow Automation Engine
 
 - Added deterministic Workflow Automation Engine.

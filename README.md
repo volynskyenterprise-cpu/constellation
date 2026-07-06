@@ -354,7 +354,7 @@ python -m constellation workflow show Morning
 python -m constellation workflow export
 ```
 
-Workflow Automation runs named deterministic recipes made from existing Constellation commands. Built-in workflows include `Morning`, `Research Refresh`, and `Executive Snapshot`. Workflow execution occurs only when explicitly invoked and does not add provider calls, LLM inference, Gmail, web retrieval, embeddings, semantic search, scheduling, or autonomous decisions.
+Workflow Automation runs named deterministic recipes made from existing Constellation commands. Built-in workflows include `Morning`, `Research Refresh`, and `Executive Snapshot`. The `Morning` workflow imports intake files, processes newly imported markdown/text research inputs, builds graph records for the generated research runs, and refreshes downstream deterministic intelligence outputs. Workflow execution occurs only when explicitly invoked and does not add provider calls, LLM inference, Gmail, web retrieval, embeddings, semantic search, scheduling, or autonomous decisions.
 
 ### Research
 

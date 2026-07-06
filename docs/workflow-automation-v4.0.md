@@ -22,11 +22,12 @@ Runs:
 
 - monitor
 - drive sync
-- intake scan
-- morning
-- memory snapshot
-- evidence-graph build
+- intake import
+- research auto-processing
+- graph analyze
+- thesis generate
 - thesis build
+- evidence-graph build
 - daily
 - dashboard
 
@@ -71,6 +72,10 @@ Each workflow step has:
 The engine executes enabled steps in order. Failed steps stop the workflow unless `continue_on_failure` is enabled for that step.
 
 Google Drive sync is skipped when local configuration is incomplete or optional dependencies are unavailable. No Gmail, provider, web retrieval, embedding, or semantic search behavior is introduced.
+
+## v4.0.1 Patch
+
+The built-in `Morning` workflow now imports intake files and processes newly imported markdown/text research inputs before downstream intelligence refresh. See `docs/workflow-auto-processing-v4.0.1.md` for details.
 
 ## Dashboard Integration
 

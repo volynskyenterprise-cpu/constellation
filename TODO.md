@@ -2,6 +2,9 @@
 
 ## Next Engineering Milestones
 
+- Add operator controls for selecting which imported research files Morning should process.
+- Add research auto-processing retry reports for graph build failures.
+- Add workflow research-processing registry pruning and audit export.
 - Add user-defined workflow definition loading after the built-in workflow set stabilizes.
 - Add workflow dry-run mode that validates steps without executing them.
 - Add workflow stage filters for rerunning a single deterministic stage.
