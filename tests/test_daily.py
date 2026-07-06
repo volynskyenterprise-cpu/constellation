@@ -147,6 +147,7 @@ class DailyPipelineTests(unittest.TestCase):
 
 
 _STAGES = [
+    "source_monitoring",
     "intake_scan",
     "google_drive_sync",
     "morning_brief",

@@ -20,6 +20,7 @@ from .morning import MorningExecutiveError, MorningExecutiveStore
 from .pkos import PKOSError, PKOSKnowledgeOrganization
 from .prompts import PromptUnavailable
 from .research import ResearchError, ResearchOrganization
+from .source_monitor import SourceMonitorError, SourceMonitorStore
 from .state import WorkflowStateError
 from .thesis import ThesisError, ThesisStore
 from .thesis_intelligence import ThesisIntelligenceError, ThesisStore as ThesisIntelligenceStore
@@ -221,6 +222,14 @@ def main(argv: list[str] | None = None) -> int:
     dashboard_parser.add_argument("--overwrite", action="store_true", help="Overwrite existing dashboard outputs.")
     dashboard_subparsers = dashboard_parser.add_subparsers(dest="dashboard_command")
     dashboard_subparsers.add_parser("status", help="Report expected dashboard input artifact availability.")
+
+    monitor_parser = subparsers.add_parser("monitor", help="Run or inspect deterministic source monitoring.")
+    monitor_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    monitor_parser.add_argument("--overwrite", action="store_true", help="Overwrite current monitor output.")
+    monitor_subparsers = monitor_parser.add_subparsers(dest="monitor_command")
+    monitor_subparsers.add_parser("status", help="Show latest source monitor status.")
+    monitor_subparsers.add_parser("history", help="Show source monitor history.")
+    monitor_subparsers.add_parser("export", help="Export source monitor markdown.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -864,6 +873,31 @@ def main(argv: list[str] | None = None) -> int:
         except ExecutiveDashboardError as exc:
             print(f"error: {exc}")
             return 1
+    if args.command == "monitor":
+        store = SourceMonitorStore(args.root.resolve())
+        try:
+            if args.monitor_command is None:
+                run = store.run(overwrite=args.overwrite)
+                _print_monitor_run(run)
+                return 0
+            if args.monitor_command == "status":
+                _print_monitor_status(store.status())
+                return 0
+            if args.monitor_command == "history":
+                runs = store.history()
+                if not runs:
+                    print("No source monitor runs found.")
+                    return 0
+                for run in runs:
+                    print(f"{run.monitor_id} created_at={run.created_at} sources={run.summary.get('sources_checked', 0)} changed={run.summary.get('sources_changed', 0)} failed={run.summary.get('sources_failed', 0)}")
+                return 0
+            if args.monitor_command == "export":
+                output_path = store.export()
+                print(f"source_monitor: {output_path}")
+                return 0
+        except SourceMonitorError as exc:
+            print(f"error: {exc}")
+            return 1
     return 2
 
 
@@ -973,3 +1007,28 @@ def _print_dashboard_status(status) -> None:
     for name, item in status.items():
         state = "available" if item.get("exists") else "unavailable"
         print(f"{state}: {name}: {item.get('path')}")
+
+
+def _print_monitor_run(run) -> None:
+    print(f"monitor_id: {run.monitor_id}")
+    print(f"created_at: {run.created_at}")
+    _print_monitor_summary(run.summary)
+
+
+def _print_monitor_status(status) -> None:
+    print(f"available: {status.get('available')}")
+    if status.get("monitor_id"):
+        print(f"monitor_id: {status.get('monitor_id')}")
+        print(f"created_at: {status.get('created_at')}")
+    _print_monitor_summary(status.get("summary", {}))
+
+
+def _print_monitor_summary(summary) -> None:
+    print(f"sources_checked: {summary.get('sources_checked', 0)}")
+    print(f"sources_changed: {summary.get('sources_changed', 0)}")
+    print(f"sources_unchanged: {summary.get('sources_unchanged', 0)}")
+    print(f"sources_failed: {summary.get('sources_failed', 0)}")
+    print(f"sources_unknown: {summary.get('sources_unknown', 0)}")
+    print(f"new_items: {summary.get('new_items', 0)}")
+    print(f"removed_items: {summary.get('removed_items', 0)}")
+    print(f"updated_items: {summary.get('updated_items', 0)}")

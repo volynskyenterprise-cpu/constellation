@@ -62,6 +62,10 @@
 - Add dashboard diff view against prior daily package.
 - Add dashboard section filters for executive, research, and engineering review modes.
 - Add dashboard approval-ready package generation after explicit human request.
+- Add source monitor plugin interface for future source types.
+- Add source monitor retention policy and history pruning.
+- Add source monitor diff export between explicit monitor IDs.
+- Add source monitor refresh planning report gated by human approval.
 - Add Institutional Reasoning Engine design over accepted evidence and graph findings.
 - Add PDF parsing for research inputs.
 - Add web retrieval for research workflows.

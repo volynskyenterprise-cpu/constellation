@@ -15,6 +15,7 @@ from .io import read_json, write_json
 from .memory import InstitutionalMemoryStore
 from .models import JsonMap
 from .morning import MorningExecutiveError, MorningExecutiveStore
+from .source_monitor import SourceMonitorStore
 from .thesis_intelligence import ThesisStore as ThesisIntelligenceStore
 
 
@@ -74,6 +75,7 @@ class DailyPipeline:
             "Daily Pipeline orchestrates existing deterministic modules only.",
             "No providers, LLM inference, embeddings, semantic search, web retrieval, Gmail, or autonomous decisions are used.",
         ]
+        source_monitor = self._source_monitor(stages)
         intake_items = self._intake_scan(stages)
         drive_summary = self._google_drive_sync(stages, limitations)
         morning = self._morning(stages, overwrite)
@@ -85,6 +87,7 @@ class DailyPipeline:
         manifest = _manifest(
             intake_items=intake_items,
             drive_summary=drive_summary,
+            source_monitor=source_monitor,
             morning=morning,
             snapshot=snapshot,
             evidence_graph=evidence_graph,
@@ -106,6 +109,11 @@ class DailyPipeline:
             manifest=manifest,
             limitations=limitations,
         )
+
+    def _source_monitor(self, stages: list[JsonMap]) -> JsonMap:
+        run = SourceMonitorStore(self.root).run(overwrite=True)
+        stages.append(_stage("source_monitoring", "completed", run.summary))
+        return run.to_dict()
 
     def _intake_scan(self, stages: list[JsonMap]) -> list[JsonMap]:
         try:
@@ -235,6 +243,8 @@ def render_daily_report(run: DailyPipelineRun) -> str:
         "",
         "## Summary",
         "",
+        f"- Sources checked: {_map(manifest.get('source_monitor_summary')).get('sources_checked', 0)}",
+        f"- Sources changed: {_map(manifest.get('source_monitor_summary')).get('sources_changed', 0)}",
         f"- Intake files processed: {manifest.get('intake_files_processed', 0)}",
         f"- Google Drive sync: `{_map(manifest.get('google_drive_sync')).get('status', 'unknown')}`",
         f"- Morning brief ID: `{manifest.get('morning_brief_id') or ''}`",
@@ -260,6 +270,7 @@ def _manifest(
     *,
     intake_items: list[JsonMap],
     drive_summary: JsonMap,
+    source_monitor: JsonMap,
     morning: JsonMap,
     snapshot: JsonMap,
     evidence_graph: JsonMap,
@@ -270,11 +281,13 @@ def _manifest(
 ) -> JsonMap:
     evidence_count = _int(morning.get("evidence_count"))
     return {
-        "manifest_id": _daily_manifest_id(intake_items, drive_summary, morning, snapshot, evidence_graph, theses),
+        "manifest_id": _daily_manifest_id(intake_items, drive_summary, source_monitor, morning, snapshot, evidence_graph, theses),
         "created_at": created_at,
         "completed_at": completed_at,
         "version": __version__,
         "intake_files_processed": len(intake_items),
+        "source_monitor_id": source_monitor.get("monitor_id"),
+        "source_monitor_summary": source_monitor.get("summary", {}),
         "google_drive_sync": drive_summary,
         "morning_brief_id": morning.get("brief_id"),
         "memory_snapshot_id": snapshot.get("snapshot_id"),
@@ -320,6 +333,7 @@ def _run_id(manifest: JsonMap) -> str:
 def _daily_manifest_id(
     intake_items: list[JsonMap],
     drive_summary: JsonMap,
+    source_monitor: JsonMap,
     morning: JsonMap,
     snapshot: JsonMap,
     evidence_graph: JsonMap,
@@ -329,6 +343,7 @@ def _daily_manifest_id(
         [
             ",".join(sorted(str(item.get("item_id")) for item in intake_items)),
             str(drive_summary.get("sync_id")),
+            str(source_monitor.get("monitor_id")),
             str(morning.get("brief_id")),
             str(snapshot.get("snapshot_id")),
             str(evidence_graph.get("graph_id")),

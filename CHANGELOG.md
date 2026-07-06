@@ -2,6 +2,20 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 3.9.0 - Source Monitoring
+
+- Added deterministic Source Monitoring subsystem.
+- Added `python -m constellation monitor`.
+- Added `python -m constellation monitor --overwrite`.
+- Added `python -m constellation monitor status`.
+- Added `python -m constellation monitor history`.
+- Added `python -m constellation monitor export`.
+- Added source monitor outputs under `outputs/source-monitor/`.
+- Added source monitoring history and latest monitor snapshots.
+- Integrated Source Monitoring as the first Daily Pipeline stage.
+- Added Source Monitoring Summary to Executive Dashboard.
+- Preserved read-only deterministic behavior with no provider calls, no OpenAI calls, no LLM inference, no embeddings, no semantic search, no web retrieval, no Gmail, no scheduling, and no autonomous workflow execution.
+
 ## 3.8.0 - Executive Dashboard
 
 - Added deterministic Executive Dashboard presentation layer.

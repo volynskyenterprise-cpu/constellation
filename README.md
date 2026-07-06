@@ -64,6 +64,7 @@ Current capabilities include:
 - ✅ Thesis Intelligence
 - ✅ Daily Intelligence Pipeline
 - ✅ Executive Dashboard
+- ✅ Source Monitoring
 - ✅ Institutional Intelligence Platform
 - ✅ Operational Intake Pipeline
 - ✅ Google Drive Connector
@@ -110,6 +111,9 @@ Daily Intelligence Pipeline
         │
         ▼
 Executive Dashboard
+        │
+        ▼
+Source Monitoring
         │
         ▼
 Institutional Intelligence
@@ -327,6 +331,18 @@ python -m constellation dashboard status
 
 Executive Dashboard presents current local Constellation state from existing outputs only. It reports missing artifacts as unavailable and writes `outputs/dashboard/dashboard.json` and `outputs/dashboard/dashboard.md`.
 
+### Source Monitoring
+
+```bash
+python -m constellation monitor
+python -m constellation monitor --overwrite
+python -m constellation monitor status
+python -m constellation monitor history
+python -m constellation monitor export
+```
+
+Source Monitoring tracks configured and local intelligence sources over time, reports new/removed/updated/failed sources, and recommends deterministic downstream refreshes. It does not call remote APIs or modify source data.
+
 ### Research
 
 ```bash
@@ -442,6 +458,7 @@ Current guarantees include:
 - ✅ Thesis Intelligence
 - ✅ Daily Intelligence Pipeline
 - ✅ Executive Dashboard
+- ✅ Source Monitoring
 - ✅ Institutional Intelligence
 - ✅ Intake Pipeline
 - ✅ Google Drive Connector

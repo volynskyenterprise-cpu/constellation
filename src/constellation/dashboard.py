@@ -26,6 +26,7 @@ EXPECTED_ARTIFACTS = {
     "thesis_report": Path("outputs/thesis/thesis-report.md"),
     "google_drive_sync": Path("outputs/google-drive/google-drive-sync-manifest.json"),
     "intake_manifest": Path("outputs/intake/intake-manifest.json"),
+    "source_monitor": Path("outputs/source-monitor/latest-monitor.json"),
 }
 
 
@@ -42,6 +43,7 @@ class ExecutiveDashboard:
     thesis_intelligence_summary: JsonMap
     institutional_memory_summary: JsonMap
     morning_brief_summary: JsonMap
+    source_monitoring_summary: JsonMap
     current_risks_gaps: list[str]
     recommended_next_actions: list[str]
     key_output_files: list[JsonMap]
@@ -62,6 +64,7 @@ class ExecutiveDashboard:
             "thesis_intelligence_summary": self.thesis_intelligence_summary,
             "institutional_memory_summary": self.institutional_memory_summary,
             "morning_brief_summary": self.morning_brief_summary,
+            "source_monitoring_summary": self.source_monitoring_summary,
             "current_risks_gaps": self.current_risks_gaps,
             "recommended_next_actions": self.recommended_next_actions,
             "key_output_files": self.key_output_files,
@@ -84,6 +87,7 @@ class ExecutiveDashboard:
             thesis_intelligence_summary=_map(data.get("thesis_intelligence_summary")),
             institutional_memory_summary=_map(data.get("institutional_memory_summary")),
             morning_brief_summary=_map(data.get("morning_brief_summary")),
+            source_monitoring_summary=_map(data.get("source_monitoring_summary")),
             current_risks_gaps=_string_list(data.get("current_risks_gaps", [])),
             recommended_next_actions=_string_list(data.get("recommended_next_actions", [])),
             key_output_files=_map_list(data.get("key_output_files", [])),
@@ -108,6 +112,7 @@ class ExecutiveDashboardBuilder:
         thesis_store = _map(artifacts.get("thesis_records"))
         intake = _map(artifacts.get("intake_manifest"))
         drive = _map(artifacts.get("google_drive_sync"))
+        monitor = _map(artifacts.get("source_monitor"))
         theses = _map_list(thesis_store.get("theses", []))
         graph_nodes = _map_list(evidence_graph.get("nodes", []))
         graph_edges = _map_list(evidence_graph.get("edges", []))
@@ -119,6 +124,7 @@ class ExecutiveDashboardBuilder:
         thesis_summary = _thesis_summary(theses)
         memory_summary = _memory_summary(snapshot, delta)
         morning_summary = _morning_summary(morning)
+        monitor_summary = _source_monitor_summary(monitor)
         risks_gaps = _risks_gaps(morning, theses)
         actions = _actions(morning, status, risks_gaps)
         key_files = _key_files(self.root, status)
@@ -133,7 +139,7 @@ class ExecutiveDashboardBuilder:
             "next_files_to_inspect": [item["path"] for item in key_files[:5]],
         }
         dashboard = ExecutiveDashboard(
-            dashboard_id=_dashboard_id(daily_run, morning, snapshot, evidence_graph, thesis_store, intake, drive),
+            dashboard_id=_dashboard_id(daily_run, morning, snapshot, evidence_graph, thesis_store, intake, drive, monitor),
             created_at=created_at,
             version=__version__,
             executive_summary=executive_summary,
@@ -144,6 +150,7 @@ class ExecutiveDashboardBuilder:
             thesis_intelligence_summary=thesis_summary,
             institutional_memory_summary=memory_summary,
             morning_brief_summary=morning_summary,
+            source_monitoring_summary=monitor_summary,
             current_risks_gaps=risks_gaps,
             recommended_next_actions=actions,
             key_output_files=key_files,
@@ -231,6 +238,9 @@ def render_dashboard_markdown(dashboard: ExecutiveDashboard) -> str:
         "## Morning Brief Summary",
         "",
         *_summary_lines(dashboard.morning_brief_summary),
+        "## Source Monitoring Summary",
+        "",
+        *_summary_lines(dashboard.source_monitoring_summary),
         "## Current Risks / Gaps",
         "",
         *_string_lines(dashboard.current_risks_gaps),
@@ -339,6 +349,22 @@ def _morning_summary(morning: JsonMap) -> JsonMap:
         "top_findings": len(_list(morning.get("top_findings", []))),
         "top_theses": len(_list(morning.get("top_theses", []))),
         "risk_or_gap_count": len(_list(morning.get("risks_or_gaps", []))),
+    }
+
+
+def _source_monitor_summary(monitor: JsonMap) -> JsonMap:
+    summary = _map(monitor.get("summary"))
+    return {
+        "available": bool(monitor),
+        "monitor_id": monitor.get("monitor_id"),
+        "sources_checked": summary.get("sources_checked", 0),
+        "sources_changed": summary.get("sources_changed", 0),
+        "sources_unchanged": summary.get("sources_unchanged", 0),
+        "sources_failed": summary.get("sources_failed", 0),
+        "new_items": summary.get("new_items", 0),
+        "removed_items": summary.get("removed_items", 0),
+        "updated_items": summary.get("updated_items", 0),
+        "recommended_refreshes": summary.get("recommended_refreshes", []),
     }
 
 
