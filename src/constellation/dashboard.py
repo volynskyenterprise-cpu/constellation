@@ -1,0 +1,478 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from hashlib import sha256
+from pathlib import Path
+from typing import Any
+
+from . import __version__
+from .io import read_json, write_json
+from .models import JsonMap
+
+
+class ExecutiveDashboardError(RuntimeError):
+    pass
+
+
+EXPECTED_ARTIFACTS = {
+    "daily_run": Path("outputs/daily/daily-run.json"),
+    "daily_report": Path("outputs/daily/daily-report.md"),
+    "morning_brief": Path("outputs/morning/morning-brief.json"),
+    "latest_snapshot": Path("outputs/memory/latest-snapshot.json"),
+    "latest_delta": Path("outputs/memory/latest-delta.json"),
+    "evidence_graph": Path("outputs/evidence-graph/evidence-graph.json"),
+    "thesis_records": Path("outputs/thesis/theses.json"),
+    "thesis_report": Path("outputs/thesis/thesis-report.md"),
+    "google_drive_sync": Path("outputs/google-drive/google-drive-sync-manifest.json"),
+    "intake_manifest": Path("outputs/intake/intake-manifest.json"),
+}
+
+
+@dataclass(frozen=True)
+class ExecutiveDashboard:
+    dashboard_id: str
+    created_at: str
+    version: str
+    executive_summary: JsonMap
+    daily_pipeline_status: JsonMap
+    intake_google_drive_summary: JsonMap
+    evidence_summary: JsonMap
+    evidence_graph_summary: JsonMap
+    thesis_intelligence_summary: JsonMap
+    institutional_memory_summary: JsonMap
+    morning_brief_summary: JsonMap
+    current_risks_gaps: list[str]
+    recommended_next_actions: list[str]
+    key_output_files: list[JsonMap]
+    limitations: list[str]
+    provenance: JsonMap
+    artifact_status: JsonMap
+
+    def to_dict(self) -> JsonMap:
+        return {
+            "dashboard_id": self.dashboard_id,
+            "created_at": self.created_at,
+            "version": self.version,
+            "executive_summary": self.executive_summary,
+            "daily_pipeline_status": self.daily_pipeline_status,
+            "intake_google_drive_summary": self.intake_google_drive_summary,
+            "evidence_summary": self.evidence_summary,
+            "evidence_graph_summary": self.evidence_graph_summary,
+            "thesis_intelligence_summary": self.thesis_intelligence_summary,
+            "institutional_memory_summary": self.institutional_memory_summary,
+            "morning_brief_summary": self.morning_brief_summary,
+            "current_risks_gaps": self.current_risks_gaps,
+            "recommended_next_actions": self.recommended_next_actions,
+            "key_output_files": self.key_output_files,
+            "limitations": self.limitations,
+            "provenance": self.provenance,
+            "artifact_status": self.artifact_status,
+        }
+
+    @classmethod
+    def from_dict(cls, data: JsonMap) -> "ExecutiveDashboard":
+        return cls(
+            dashboard_id=_require_str(data, "dashboard_id"),
+            created_at=_require_str(data, "created_at"),
+            version=_require_str(data, "version"),
+            executive_summary=_map(data.get("executive_summary")),
+            daily_pipeline_status=_map(data.get("daily_pipeline_status")),
+            intake_google_drive_summary=_map(data.get("intake_google_drive_summary")),
+            evidence_summary=_map(data.get("evidence_summary")),
+            evidence_graph_summary=_map(data.get("evidence_graph_summary")),
+            thesis_intelligence_summary=_map(data.get("thesis_intelligence_summary")),
+            institutional_memory_summary=_map(data.get("institutional_memory_summary")),
+            morning_brief_summary=_map(data.get("morning_brief_summary")),
+            current_risks_gaps=_string_list(data.get("current_risks_gaps", [])),
+            recommended_next_actions=_string_list(data.get("recommended_next_actions", [])),
+            key_output_files=_map_list(data.get("key_output_files", [])),
+            limitations=_string_list(data.get("limitations", [])),
+            provenance=_map(data.get("provenance")),
+            artifact_status=_map(data.get("artifact_status")),
+        )
+
+
+class ExecutiveDashboardBuilder:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+
+    def build(self) -> ExecutiveDashboard:
+        artifacts = {name: _read_optional_json(self.root / path) for name, path in EXPECTED_ARTIFACTS.items() if path.suffix == ".json"}
+        status = self.status()
+        daily_run = _map(artifacts.get("daily_run"))
+        morning = _map(artifacts.get("morning_brief"))
+        snapshot = _map(artifacts.get("latest_snapshot"))
+        delta = _map(artifacts.get("latest_delta"))
+        evidence_graph = _map(artifacts.get("evidence_graph"))
+        thesis_store = _map(artifacts.get("thesis_records"))
+        intake = _map(artifacts.get("intake_manifest"))
+        drive = _map(artifacts.get("google_drive_sync"))
+        theses = _map_list(thesis_store.get("theses", []))
+        graph_nodes = _map_list(evidence_graph.get("nodes", []))
+        graph_edges = _map_list(evidence_graph.get("edges", []))
+        created_at = _now_iso()
+        daily_status = _daily_status(daily_run)
+        intake_drive = _intake_drive_summary(intake, drive)
+        evidence_summary = _evidence_summary(morning, evidence_graph)
+        graph_summary = _graph_summary(evidence_graph, graph_nodes, graph_edges)
+        thesis_summary = _thesis_summary(theses)
+        memory_summary = _memory_summary(snapshot, delta)
+        morning_summary = _morning_summary(morning)
+        risks_gaps = _risks_gaps(morning, theses)
+        actions = _actions(morning, status, risks_gaps)
+        key_files = _key_files(self.root, status)
+        limitations = _limitations(status)
+        provenance = {name: str(path) for name, path in EXPECTED_ARTIFACTS.items()}
+        executive_summary = {
+            "status": daily_status.get("status", "unavailable"),
+            "what_changed_today": _what_changed_today(daily_run, snapshot, delta),
+            "active_or_strengthening_theses": thesis_summary["active_count"] + thesis_summary["strengthening_count"],
+            "evidence_count": evidence_summary["evidence_count"],
+            "current_gaps_or_risks": len(risks_gaps),
+            "next_files_to_inspect": [item["path"] for item in key_files[:5]],
+        }
+        dashboard = ExecutiveDashboard(
+            dashboard_id=_dashboard_id(daily_run, morning, snapshot, evidence_graph, thesis_store, intake, drive),
+            created_at=created_at,
+            version=__version__,
+            executive_summary=executive_summary,
+            daily_pipeline_status=daily_status,
+            intake_google_drive_summary=intake_drive,
+            evidence_summary=evidence_summary,
+            evidence_graph_summary=graph_summary,
+            thesis_intelligence_summary=thesis_summary,
+            institutional_memory_summary=memory_summary,
+            morning_brief_summary=morning_summary,
+            current_risks_gaps=risks_gaps,
+            recommended_next_actions=actions,
+            key_output_files=key_files,
+            limitations=limitations,
+            provenance=provenance,
+            artifact_status=status,
+        )
+        return dashboard
+
+    def status(self) -> JsonMap:
+        statuses: JsonMap = {}
+        for name, relative_path in EXPECTED_ARTIFACTS.items():
+            path = self.root / relative_path
+            statuses[name] = {
+                "path": str(relative_path),
+                "exists": path.exists(),
+                "kind": "json" if relative_path.suffix == ".json" else "markdown",
+            }
+        return statuses
+
+
+class ExecutiveDashboardStore:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.directory = root / "outputs" / "dashboard"
+        self.json_path = self.directory / "dashboard.json"
+        self.markdown_path = self.directory / "dashboard.md"
+
+    def generate(self, *, overwrite: bool = False) -> ExecutiveDashboard:
+        if (self.json_path.exists() or self.markdown_path.exists()) and not overwrite:
+            raise ExecutiveDashboardError("Dashboard already exists. Use --overwrite to replace it.")
+        dashboard = ExecutiveDashboardBuilder(self.root).build()
+        self.save(dashboard)
+        return dashboard
+
+    def save(self, dashboard: ExecutiveDashboard) -> None:
+        write_json(self.json_path, dashboard.to_dict())
+        self.markdown_path.parent.mkdir(parents=True, exist_ok=True)
+        self.markdown_path.write_text(render_dashboard_markdown(dashboard), encoding="utf-8")
+
+    def load(self) -> ExecutiveDashboard:
+        if not self.json_path.exists():
+            raise ExecutiveDashboardError("No dashboard found. Run dashboard first.")
+        return ExecutiveDashboard.from_dict(read_json(self.json_path))
+
+    def export(self) -> Path:
+        dashboard = self.load()
+        self.markdown_path.parent.mkdir(parents=True, exist_ok=True)
+        self.markdown_path.write_text(render_dashboard_markdown(dashboard), encoding="utf-8")
+        return self.markdown_path
+
+    def status(self) -> JsonMap:
+        return ExecutiveDashboardBuilder(self.root).status()
+
+
+def render_dashboard_markdown(dashboard: ExecutiveDashboard) -> str:
+    lines = [
+        "# Executive Dashboard",
+        "",
+        f"Dashboard ID: `{dashboard.dashboard_id}`",
+        f"Created: `{dashboard.created_at}`",
+        f"Version: `{dashboard.version}`",
+        "",
+        "## Executive Summary",
+        "",
+        *_summary_lines(dashboard.executive_summary),
+        "## Daily Pipeline Status",
+        "",
+        *_summary_lines(dashboard.daily_pipeline_status),
+        "## Intake / Google Drive Summary",
+        "",
+        *_summary_lines(dashboard.intake_google_drive_summary),
+        "## Evidence Summary",
+        "",
+        *_summary_lines(dashboard.evidence_summary),
+        "## Evidence Graph Summary",
+        "",
+        *_summary_lines(dashboard.evidence_graph_summary),
+        "## Thesis Intelligence Summary",
+        "",
+        *_summary_lines(dashboard.thesis_intelligence_summary),
+        "## Institutional Memory Summary",
+        "",
+        *_summary_lines(dashboard.institutional_memory_summary),
+        "## Morning Brief Summary",
+        "",
+        *_summary_lines(dashboard.morning_brief_summary),
+        "## Current Risks / Gaps",
+        "",
+        *_string_lines(dashboard.current_risks_gaps),
+        "## Recommended Next Actions",
+        "",
+        *_string_lines(dashboard.recommended_next_actions),
+        "## Key Output Files",
+        "",
+        *_file_lines(dashboard.key_output_files),
+        "## Limitations",
+        "",
+        *_string_lines(dashboard.limitations),
+        "## Provenance",
+        "",
+        *_summary_lines(dashboard.provenance),
+    ]
+    return "\n".join(lines)
+
+
+def _daily_status(daily_run: JsonMap) -> JsonMap:
+    if not daily_run:
+        return {"available": False, "status": "unavailable", "run_id": None, "completed_at": None, "version": None}
+    manifest = _map(daily_run.get("manifest"))
+    return {
+        "available": True,
+        "status": daily_run.get("status"),
+        "run_id": daily_run.get("run_id"),
+        "completed_at": daily_run.get("completed_at"),
+        "version": daily_run.get("version"),
+        "runtime_seconds": daily_run.get("runtime_seconds"),
+        "thesis_count": manifest.get("thesis_count", 0),
+        "evidence_graph_id": manifest.get("evidence_graph_id"),
+    }
+
+
+def _intake_drive_summary(intake: JsonMap, drive: JsonMap) -> JsonMap:
+    counts = _map(intake.get("counts"))
+    return {
+        "intake_available": bool(intake),
+        "intake_manifest_id": intake.get("manifest_id"),
+        "intake_imported": counts.get("imported", 0),
+        "intake_duplicates": counts.get("duplicates", 0),
+        "intake_errors": counts.get("errors", 0),
+        "google_drive_available": bool(drive),
+        "google_drive_sync_id": drive.get("sync_id"),
+        "google_drive_downloaded": len(_list(drive.get("downloaded_files", []))),
+        "google_drive_skipped": len(_list(drive.get("skipped_files", []))),
+        "google_drive_errors": len(_list(drive.get("errors", []))),
+    }
+
+
+def _evidence_summary(morning: JsonMap, graph: JsonMap) -> JsonMap:
+    evidence_nodes = [node for node in _map_list(graph.get("nodes", [])) if node.get("node_type") == "evidence"]
+    return {
+        "evidence_count": _int(morning.get("evidence_count")) or len(evidence_nodes),
+        "evidence_nodes": len(evidence_nodes),
+        "source_nodes": sum(1 for node in _map_list(graph.get("nodes", [])) if node.get("node_type") == "source"),
+    }
+
+
+def _graph_summary(graph: JsonMap, nodes: list[JsonMap], edges: list[JsonMap]) -> JsonMap:
+    return {
+        "available": bool(graph),
+        "graph_id": graph.get("graph_id"),
+        "node_count": graph.get("node_count", len(nodes)),
+        "edge_count": graph.get("edge_count", len(edges)),
+        "orphan_evidence_hint": "See outputs/evidence-graph/evidence-graph.md for orphan evidence records.",
+    }
+
+
+def _thesis_summary(theses: list[JsonMap]) -> JsonMap:
+    status_counts = _counts(str(item.get("status", "unknown")) for item in theses)
+    confidence_counts = _counts(str(_map(item.get("confidence")).get("label", "unknown")) for item in theses)
+    return {
+        "available": bool(theses),
+        "thesis_count": len(theses),
+        "active_count": status_counts.get("active", 0),
+        "strengthening_count": status_counts.get("strengthening", 0),
+        "weakening_count": status_counts.get("weakening", 0),
+        "archived_count": status_counts.get("archived", 0),
+        "high_confidence_count": confidence_counts.get("high", 0),
+        "medium_confidence_count": confidence_counts.get("medium", 0),
+        "low_confidence_count": confidence_counts.get("low", 0),
+        "supporting_relationships": sum(len(_string_list(item.get("supporting_evidence_ids", []))) for item in theses),
+        "conflicts": sum(len(_string_list(item.get("conflicting_evidence_ids", []))) for item in theses),
+    }
+
+
+def _memory_summary(snapshot: JsonMap, delta: JsonMap) -> JsonMap:
+    return {
+        "snapshot_available": bool(snapshot),
+        "snapshot_id": snapshot.get("snapshot_id"),
+        "snapshot_label": snapshot.get("label"),
+        "evidence_count": snapshot.get("evidence_count", 0),
+        "thesis_count": snapshot.get("thesis_count", 0),
+        "delta_available": bool(delta),
+        "delta_summary": delta.get("summary"),
+    }
+
+
+def _morning_summary(morning: JsonMap) -> JsonMap:
+    return {
+        "available": bool(morning),
+        "brief_id": morning.get("brief_id"),
+        "created_at": morning.get("created_at"),
+        "top_findings": len(_list(morning.get("top_findings", []))),
+        "top_theses": len(_list(morning.get("top_theses", []))),
+        "risk_or_gap_count": len(_list(morning.get("risks_or_gaps", []))),
+    }
+
+
+def _risks_gaps(morning: JsonMap, theses: list[JsonMap]) -> list[str]:
+    items = set(_string_list(morning.get("risks_or_gaps", [])))
+    for thesis in theses:
+        if thesis.get("status") == "weakening":
+            items.add(f"Weakening thesis: {thesis.get('title', thesis.get('thesis_id', 'unknown'))}")
+        if _map(thesis.get("confidence")).get("label") == "low":
+            items.add(f"Low-confidence thesis: {thesis.get('title', thesis.get('thesis_id', 'unknown'))}")
+    return sorted(items)[:12]
+
+
+def _actions(morning: JsonMap, status: JsonMap, risks: list[str]) -> list[str]:
+    actions = set(_string_list(morning.get("recommended_next_actions", [])))
+    if risks:
+        actions.add("Review current risks and gaps before relying on dashboard conclusions.")
+    for name, record in status.items():
+        if not record.get("exists"):
+            actions.add(f"Generate or inspect missing artifact: {record.get('path')}")
+    if not actions:
+        actions.add("Review key output files before making decisions.")
+    return sorted(actions)[:12]
+
+
+def _key_files(root: Path, status: JsonMap) -> list[JsonMap]:
+    files = []
+    for name, record in status.items():
+        exists = bool(record.get("exists"))
+        if exists:
+            files.append({"name": name, "path": str(record.get("path")), "exists": exists})
+    for name, record in status.items():
+        if not record.get("exists"):
+            files.append({"name": name, "path": str(record.get("path")), "exists": False})
+    return files
+
+
+def _limitations(status: JsonMap) -> list[str]:
+    limitations = [
+        "Dashboard is a deterministic presentation layer over existing local artifacts.",
+        "Missing artifacts are reported as unavailable; values are not fabricated.",
+        "No providers, LLM inference, embeddings, semantic similarity, web retrieval, Gmail, or autonomous decisions are used.",
+    ]
+    missing = [name for name, record in status.items() if not record.get("exists")]
+    if missing:
+        limitations.append("Unavailable artifacts: " + ", ".join(sorted(missing)) + ".")
+    return limitations
+
+
+def _what_changed_today(daily_run: JsonMap, snapshot: JsonMap, delta: JsonMap) -> str:
+    if delta.get("summary"):
+        return str(delta["summary"])
+    if daily_run:
+        return f"Daily pipeline status is {daily_run.get('status', 'unknown')}."
+    if snapshot:
+        return f"Latest memory snapshot is {snapshot.get('snapshot_id', 'unknown')}."
+    return "No daily pipeline, memory delta, or snapshot artifact is available."
+
+
+def _dashboard_id(*items: JsonMap) -> str:
+    fingerprint = "|".join(
+        [
+            str(item.get("run_id") or item.get("brief_id") or item.get("snapshot_id") or item.get("graph_id") or item.get("manifest_id") or item.get("sync_id") or len(_map_list(item.get("theses", []))))
+            for item in items
+        ]
+    )
+    return f"dashboard_{sha256(fingerprint.encode('utf-8')).hexdigest()[:16]}"
+
+
+def _read_optional_json(path: Path) -> JsonMap:
+    if not path.exists():
+        return {}
+    try:
+        data = read_json(path)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _counts(values) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    return counts
+
+
+def _summary_lines(summary: JsonMap) -> list[str]:
+    if not summary:
+        return ["- None", ""]
+    return [*[f"- {key}: `{value}`" for key, value in summary.items()], ""]
+
+
+def _string_lines(items: list[str]) -> list[str]:
+    if not items:
+        return ["- None", ""]
+    return [*[f"- {item}" for item in items], ""]
+
+
+def _file_lines(items: list[JsonMap]) -> list[str]:
+    if not items:
+        return ["- None", ""]
+    return [*[f"- `{item.get('path')}` ({'available' if item.get('exists') else 'unavailable'})" for item in items], ""]
+
+
+def _now_iso() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _map(value: Any) -> JsonMap:
+    return value if isinstance(value, dict) else {}
+
+
+def _map_list(value: Any) -> list[JsonMap]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _int(value: Any) -> int:
+    return value if isinstance(value, int) else 0
+
+
+def _require_str(data: JsonMap, key: str) -> str:
+    value = data.get(key)
+    if not isinstance(value, str):
+        raise ExecutiveDashboardError(f"Dashboard field {key} must be a string")
+    return value

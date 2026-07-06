@@ -63,6 +63,7 @@ Current capabilities include:
 - ✅ Thesis Engine
 - ✅ Thesis Intelligence
 - ✅ Daily Intelligence Pipeline
+- ✅ Executive Dashboard
 - ✅ Institutional Intelligence Platform
 - ✅ Operational Intake Pipeline
 - ✅ Google Drive Connector
@@ -106,6 +107,9 @@ Thesis Intelligence
         │
         ▼
 Daily Intelligence Pipeline
+        │
+        ▼
+Executive Dashboard
         │
         ▼
 Institutional Intelligence
@@ -312,6 +316,17 @@ python -m constellation daily export
 
 Daily Pipeline orchestrates intake scan, optional Google Drive sync readiness, morning brief, memory snapshot, Evidence Graph, and Thesis Intelligence into `outputs/daily/`. It does not call providers, run LLM inference, or make autonomous decisions.
 
+### Executive Dashboard
+
+```bash
+python -m constellation dashboard
+python -m constellation dashboard --export
+python -m constellation dashboard --overwrite
+python -m constellation dashboard status
+```
+
+Executive Dashboard presents current local Constellation state from existing outputs only. It reports missing artifacts as unavailable and writes `outputs/dashboard/dashboard.json` and `outputs/dashboard/dashboard.md`.
+
 ### Research
 
 ```bash
@@ -426,6 +441,7 @@ Current guarantees include:
 - ✅ Thesis Engine
 - ✅ Thesis Intelligence
 - ✅ Daily Intelligence Pipeline
+- ✅ Executive Dashboard
 - ✅ Institutional Intelligence
 - ✅ Intake Pipeline
 - ✅ Google Drive Connector

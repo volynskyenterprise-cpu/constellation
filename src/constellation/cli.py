@@ -7,6 +7,7 @@ from pathlib import Path
 from .artifacts import ArtifactError
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .daily import DailyPipelineError, DailyPipelineStore
+from .dashboard import ExecutiveDashboardError, ExecutiveDashboardStore
 from .evidence import EvidenceError, EvidenceStore
 from .evidence_graph import EvidenceGraphError, EvidenceGraphStore
 from .google_drive import GoogleDriveConnector, GoogleDriveDependencyError, GoogleDriveError
@@ -213,6 +214,13 @@ def main(argv: list[str] | None = None) -> int:
     daily_subparsers.add_parser("status", help="Show latest daily run status.")
     daily_subparsers.add_parser("history", help="Show daily run history.")
     daily_subparsers.add_parser("export", help="Export latest daily markdown report.")
+
+    dashboard_parser = subparsers.add_parser("dashboard", help="Generate or inspect the deterministic executive dashboard.")
+    dashboard_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    dashboard_parser.add_argument("--export", action="store_true", help="Export dashboard markdown.")
+    dashboard_parser.add_argument("--overwrite", action="store_true", help="Overwrite existing dashboard outputs.")
+    dashboard_subparsers = dashboard_parser.add_subparsers(dest="dashboard_command")
+    dashboard_subparsers.add_parser("status", help="Report expected dashboard input artifact availability.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -838,6 +846,24 @@ def main(argv: list[str] | None = None) -> int:
         except DailyPipelineError as exc:
             print(f"error: {exc}")
             return 1
+    if args.command == "dashboard":
+        store = ExecutiveDashboardStore(args.root.resolve())
+        try:
+            if args.dashboard_command == "status":
+                _print_dashboard_status(store.status())
+                return 0
+            if args.export and store.json_path.exists() and not args.overwrite:
+                output_path = store.export()
+                print(f"dashboard: {output_path}")
+                return 0
+            dashboard = store.generate(overwrite=args.overwrite)
+            _print_dashboard_summary(dashboard)
+            if args.export:
+                print(f"dashboard_markdown: {store.markdown_path}")
+            return 0
+        except ExecutiveDashboardError as exc:
+            print(f"error: {exc}")
+            return 1
     return 2
 
 
@@ -924,3 +950,26 @@ def _print_daily_run(run) -> None:
     print(f"memory_snapshot_id: {manifest.get('memory_snapshot_id') or ''}")
     print(f"evidence_graph_id: {manifest.get('evidence_graph_id') or ''}")
     print(f"thesis_count: {manifest.get('thesis_count', 0)}")
+
+
+def _print_dashboard_summary(dashboard) -> None:
+    summary = dashboard.executive_summary
+    daily = dashboard.daily_pipeline_status
+    thesis = dashboard.thesis_intelligence_summary
+    print(f"dashboard_id: {dashboard.dashboard_id}")
+    print(f"created_at: {dashboard.created_at}")
+    print(f"daily_status: {daily.get('status')}")
+    print(f"evidence_count: {summary.get('evidence_count')}")
+    print(f"active_or_strengthening_theses: {summary.get('active_or_strengthening_theses')}")
+    print(f"current_gaps_or_risks: {summary.get('current_gaps_or_risks')}")
+    print(f"thesis_count: {thesis.get('thesis_count')}")
+    print(f"key_files: {len(dashboard.key_output_files)}")
+
+
+def _print_dashboard_status(status) -> None:
+    available = sum(1 for item in status.values() if item.get("exists"))
+    total = len(status)
+    print(f"dashboard_inputs: {available}/{total} available")
+    for name, item in status.items():
+        state = "available" if item.get("exists") else "unavailable"
+        print(f"{state}: {name}: {item.get('path')}")

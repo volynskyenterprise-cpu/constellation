@@ -58,6 +58,10 @@
 - Add daily pipeline JSON output mode for CI and scheduled operators.
 - Add daily package comparison across days.
 - Add daily pipeline explicit approval gate before any future outbound delivery.
+- Add dashboard terminal table formatting and optional JSON output.
+- Add dashboard diff view against prior daily package.
+- Add dashboard section filters for executive, research, and engineering review modes.
+- Add dashboard approval-ready package generation after explicit human request.
 - Add Institutional Reasoning Engine design over accepted evidence and graph findings.
 - Add PDF parsing for research inputs.
 - Add web retrieval for research workflows.

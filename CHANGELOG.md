@@ -2,6 +2,17 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 3.8.0 - Executive Dashboard
+
+- Added deterministic Executive Dashboard presentation layer.
+- Added `python -m constellation dashboard`.
+- Added `python -m constellation dashboard --export`.
+- Added `python -m constellation dashboard --overwrite`.
+- Added `python -m constellation dashboard status`.
+- Added dashboard outputs under `outputs/dashboard/`.
+- Added dashboard sections for daily status, intake, Google Drive, evidence, Evidence Graph, Thesis Intelligence, Institutional Memory, Morning Brief, risks/gaps, recommended next actions, key output files, limitations, and provenance.
+- Preserved read-only presentation behavior with no provider calls, no OpenAI calls, no LLM inference, no embeddings, no semantic similarity, no web retrieval, no Gmail, no workflow execution, and no autonomous decisions.
+
 ## 3.7.0 - Daily Intelligence Pipeline
 
 - Added deterministic Daily Intelligence Pipeline orchestration.
