@@ -2,6 +2,19 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 3.7.0 - Daily Intelligence Pipeline
+
+- Added deterministic Daily Intelligence Pipeline orchestration.
+- Added `python -m constellation daily`.
+- Added `python -m constellation daily --overwrite`.
+- Added `python -m constellation daily status`.
+- Added `python -m constellation daily history`.
+- Added `python -m constellation daily export`.
+- Added daily outputs under `outputs/daily/`.
+- Added daily run, manifest, report, and history persistence.
+- Reused existing intake scan, Google Drive readiness/sync, morning brief, institutional memory, Evidence Graph, and Thesis Intelligence modules.
+- Preserved deterministic orchestration-only behavior with no provider calls, no OpenAI calls, no LLM inference, no embeddings, no semantic search, no web retrieval, no Gmail, and no autonomous decisions.
+
 ## 3.6.0 - Thesis Intelligence
 
 - Added deterministic Thesis Intelligence records with support, conflict, source, morning brief, and memory snapshot references.

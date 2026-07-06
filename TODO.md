@@ -54,6 +54,10 @@
 - Add institutional memory retention policies.
 - Add institutional memory snapshot tagging and notes.
 - Add richer institutional memory diffs for graph nodes and evidence IDs.
+- Add daily pipeline stage filters and dry-run mode.
+- Add daily pipeline JSON output mode for CI and scheduled operators.
+- Add daily package comparison across days.
+- Add daily pipeline explicit approval gate before any future outbound delivery.
 - Add Institutional Reasoning Engine design over accepted evidence and graph findings.
 - Add PDF parsing for research inputs.
 - Add web retrieval for research workflows.

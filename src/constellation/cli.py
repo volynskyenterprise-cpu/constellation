@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .artifacts import ArtifactError
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
+from .daily import DailyPipelineError, DailyPipelineStore
 from .evidence import EvidenceError, EvidenceStore
 from .evidence_graph import EvidenceGraphError, EvidenceGraphStore
 from .google_drive import GoogleDriveConnector, GoogleDriveDependencyError, GoogleDriveError
@@ -204,6 +205,14 @@ def main(argv: list[str] | None = None) -> int:
     memory_diff_parser = memory_subparsers.add_parser("diff", help="Diff latest two snapshots or explicit snapshot IDs.")
     memory_diff_parser.add_argument("snapshot_ids", nargs="*", help="Optional pair of snapshot IDs.")
     memory_subparsers.add_parser("export", help="Export institutional memory markdown report.")
+
+    daily_parser = subparsers.add_parser("daily", help="Run or inspect the deterministic daily intelligence pipeline.")
+    daily_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    daily_parser.add_argument("--overwrite", action="store_true", help="Overwrite the current daily run output.")
+    daily_subparsers = daily_parser.add_subparsers(dest="daily_command")
+    daily_subparsers.add_parser("status", help="Show latest daily run status.")
+    daily_subparsers.add_parser("history", help="Show daily run history.")
+    daily_subparsers.add_parser("export", help="Export latest daily markdown report.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -803,6 +812,32 @@ def main(argv: list[str] | None = None) -> int:
         except InstitutionalMemoryError as exc:
             print(f"error: {exc}")
             return 1
+    if args.command == "daily":
+        store = DailyPipelineStore(args.root.resolve())
+        try:
+            if args.daily_command is None:
+                run = store.run(overwrite=args.overwrite)
+                _print_daily_run(run)
+                return 0
+            if args.daily_command == "status":
+                run = store.load()
+                _print_daily_run(run)
+                return 0
+            if args.daily_command == "history":
+                runs = store.history()
+                if not runs:
+                    print("No daily pipeline runs found.")
+                    return 0
+                for run in runs:
+                    print(f"{run.run_id} status={run.status} completed_at={run.completed_at} version={run.version}")
+                return 0
+            if args.daily_command == "export":
+                output_path = store.export()
+                print(f"daily_report: {output_path}")
+                return 0
+        except DailyPipelineError as exc:
+            print(f"error: {exc}")
+            return 1
     return 2
 
 
@@ -876,3 +911,16 @@ def _print_intake_counts(counts) -> None:
     print(f"skipped: {counts.get('skipped', 0)}")
     print(f"duplicates: {counts.get('duplicates', 0)}")
     print(f"errors: {counts.get('errors', 0)}")
+
+
+def _print_daily_run(run) -> None:
+    manifest = run.manifest
+    print(f"daily_run_id: {run.run_id}")
+    print(f"status: {run.status}")
+    print(f"completed_at: {run.completed_at}")
+    print(f"version: {run.version}")
+    print(f"intake_files_processed: {manifest.get('intake_files_processed', 0)}")
+    print(f"morning_brief_id: {manifest.get('morning_brief_id') or ''}")
+    print(f"memory_snapshot_id: {manifest.get('memory_snapshot_id') or ''}")
+    print(f"evidence_graph_id: {manifest.get('evidence_graph_id') or ''}")
+    print(f"thesis_count: {manifest.get('thesis_count', 0)}")

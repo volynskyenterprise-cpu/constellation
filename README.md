@@ -62,6 +62,7 @@ Current capabilities include:
 - ✅ Cross-Document Reasoning
 - ✅ Thesis Engine
 - ✅ Thesis Intelligence
+- ✅ Daily Intelligence Pipeline
 - ✅ Institutional Intelligence Platform
 - ✅ Operational Intake Pipeline
 - ✅ Google Drive Connector
@@ -102,6 +103,9 @@ Thesis Engine
         │
         ▼
 Thesis Intelligence
+        │
+        ▼
+Daily Intelligence Pipeline
         │
         ▼
 Institutional Intelligence
@@ -296,6 +300,18 @@ python -m constellation memory export
 
 Institutional Memory preserves historical snapshots of deterministic local state and compares snapshots without LLM inference or provider calls.
 
+### Daily Intelligence Pipeline
+
+```bash
+python -m constellation daily
+python -m constellation daily --overwrite
+python -m constellation daily status
+python -m constellation daily history
+python -m constellation daily export
+```
+
+Daily Pipeline orchestrates intake scan, optional Google Drive sync readiness, morning brief, memory snapshot, Evidence Graph, and Thesis Intelligence into `outputs/daily/`. It does not call providers, run LLM inference, or make autonomous decisions.
+
 ### Research
 
 ```bash
@@ -409,6 +425,7 @@ Current guarantees include:
 - ✅ Cross-Document Reasoning
 - ✅ Thesis Engine
 - ✅ Thesis Intelligence
+- ✅ Daily Intelligence Pipeline
 - ✅ Institutional Intelligence
 - ✅ Intake Pipeline
 - ✅ Google Drive Connector
