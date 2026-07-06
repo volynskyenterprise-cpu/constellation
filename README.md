@@ -63,6 +63,7 @@ Current capabilities include:
 - ✅ Institutional Intelligence Platform
 - ✅ Operational Intake Pipeline
 - ✅ Google Drive Connector
+- ✅ Morning Executive Intelligence
 - ✅ Executive Intelligence Brief generation
 - ✅ Deterministic provenance tracking
 - ✅ Human approval workflow
@@ -254,6 +255,16 @@ python -m constellation drive sync
 
 Drive sync stages files into `inbox/google-drive/incoming/` only. It does not run intake import or downstream workflows automatically.
 
+### Morning Executive Intelligence
+
+```bash
+python -m constellation morning
+python -m constellation morning --export
+python -m constellation morning --overwrite
+```
+
+Morning briefs report current deterministic local state only. They do not run upstream workflows or call providers.
+
 ### Research
 
 ```bash
@@ -351,12 +362,12 @@ Current guarantees include:
 - ✅ Institutional Intelligence
 - ✅ Intake Pipeline
 - ✅ Google Drive Connector
+- ✅ Morning Executive Intelligence
 
 ## Coming Next
 
 - Gmail Connector
 - Folder Watchers
-- Morning Intelligence Brief
 - Institutional Memory
 - Executive Dashboard
 

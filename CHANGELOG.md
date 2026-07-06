@@ -2,6 +2,16 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 3.3.0 - Morning Executive Intelligence
+
+- Added deterministic morning executive brief model, engine, and store.
+- Added `python -m constellation morning`.
+- Added `python -m constellation morning --export`.
+- Added `python -m constellation morning --overwrite`.
+- Added morning brief outputs under `outputs/morning/`.
+- Added summaries for intake, Google Drive sync, evidence, graph, findings, theses, and institutional intelligence state.
+- Preserved report-only behavior with no provider calls, no LLM inference, no web retrieval, no autonomous decisions, and no automatic upstream workflow execution.
+
 ## 3.2.0 - Google Drive Connector
 
 - Added optional Google Drive connector module for staging Drive files into `inbox/google-drive/incoming/`.

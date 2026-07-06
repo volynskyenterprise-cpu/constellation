@@ -40,6 +40,9 @@
 - Add intake batch IDs and per-run source selection.
 - Add intake file type validation and configurable destination routing.
 - Add intake archive transitions after successful processing.
+- Add morning brief comparison across days.
+- Add configurable morning brief sections.
+- Add morning brief delivery targets after explicit user approval.
 - Add Institutional Reasoning Engine design over accepted evidence and graph findings.
 - Add PDF parsing for research inputs.
 - Add web retrieval for research workflows.

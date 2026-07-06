@@ -12,6 +12,7 @@ from .intake import IntakeEngine, IntakeError
 from .intelligence import IntelligenceError, IntelligenceStore
 from .kernel import ConstellationKernel
 from .knowledge_graph import KnowledgeGraphBuilder, KnowledgeGraphError, KnowledgeGraphStore, show_graph_item
+from .morning import MorningExecutiveError, MorningExecutiveStore
 from .pkos import PKOSError, PKOSKnowledgeOrganization
 from .prompts import PromptUnavailable
 from .research import ResearchError, ResearchOrganization
@@ -170,6 +171,11 @@ def main(argv: list[str] | None = None) -> int:
     drive_sync_parser = drive_subparsers.add_parser("sync", help="Download files into the Google Drive intake inbox.")
     drive_sync_parser.add_argument("--source", help="Optional source ID from config/sources.yaml.")
     drive_sync_parser.add_argument("--dry-run", action="store_true", help="Show what would be downloaded without downloading.")
+
+    morning_parser = subparsers.add_parser("morning", help="Generate a deterministic morning executive intelligence brief.")
+    morning_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    morning_parser.add_argument("--export", action="store_true", help="Export the current morning brief markdown.")
+    morning_parser.add_argument("--overwrite", action="store_true", help="Overwrite an existing morning brief.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -621,6 +627,26 @@ def main(argv: list[str] | None = None) -> int:
             print(f"duplicates: {len(manifest.duplicate_files)}")
             print(f"errors: {len(manifest.errors)}")
             return 0
+    if args.command == "morning":
+        store = MorningExecutiveStore(args.root.resolve())
+        try:
+            if args.export and store.json_path.exists() and not args.overwrite:
+                output_path = store.export()
+                print(f"morning_brief: {output_path}")
+                return 0
+            brief = store.generate(overwrite=args.overwrite)
+            print(f"morning_brief: {store.json_path}")
+            print(f"brief_id: {brief.brief_id}")
+            print(f"created_at: {brief.created_at}")
+            print(f"evidence_count: {brief.evidence_count}")
+            print(f"graph_nodes: {brief.graph_node_count}")
+            print(f"graph_edges: {brief.graph_edge_count}")
+            if args.export:
+                print(f"morning_markdown: {store.markdown_path}")
+            return 0
+        except MorningExecutiveError as exc:
+            print(f"error: {exc}")
+            return 1
     return 2
 
 
