@@ -7,6 +7,7 @@ from pathlib import Path
 from .artifacts import ArtifactError
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .evidence import EvidenceError, EvidenceStore
+from .evidence_graph import EvidenceGraphError, EvidenceGraphStore
 from .google_drive import GoogleDriveConnector, GoogleDriveDependencyError, GoogleDriveError
 from .intake import IntakeEngine, IntakeError
 from .intelligence import IntelligenceError, IntelligenceStore
@@ -120,6 +121,16 @@ def main(argv: list[str] | None = None) -> int:
     evidence_show_parser.add_argument("evidence_id", help="Actual evidence ID.")
     evidence_export_parser = evidence_subparsers.add_parser("export", help="Export evidence report for a workflow run.")
     evidence_export_parser.add_argument("workflow_run_id", help="Actual workflow run ID.")
+
+    evidence_graph_parser = subparsers.add_parser("evidence-graph", help="Build and inspect deterministic evidence relationships.")
+    evidence_graph_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    evidence_graph_subparsers = evidence_graph_parser.add_subparsers(dest="evidence_graph_command", required=True)
+    evidence_graph_subparsers.add_parser("build", help="Build the evidence graph from local artifacts.")
+    evidence_graph_subparsers.add_parser("nodes", help="List evidence graph nodes.")
+    evidence_graph_subparsers.add_parser("edges", help="List evidence graph edges.")
+    evidence_graph_show_parser = evidence_graph_subparsers.add_parser("show", help="Show one evidence graph node or edge.")
+    evidence_graph_show_parser.add_argument("item_id", help="Evidence graph node ID, edge ID, or referenced artifact ID.")
+    evidence_graph_subparsers.add_parser("export", help="Export evidence graph markdown.")
 
     graph_parser = subparsers.add_parser("graph", help="Build and inspect the deterministic knowledge graph.")
     graph_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
@@ -426,6 +437,41 @@ def main(argv: list[str] | None = None) -> int:
             output_path = store.export_report(args.workflow_run_id)
             print(f"evidence_report: {output_path}")
             return 0
+    if args.command == "evidence-graph":
+        store = EvidenceGraphStore(args.root.resolve())
+        try:
+            if args.evidence_graph_command == "build":
+                graph = store.build()
+                print(f"evidence_graph: {store.graph_path}")
+                print(f"nodes: {len(graph.nodes)}")
+                print(f"edges: {len(graph.edges)}")
+                return 0
+            if args.evidence_graph_command == "nodes":
+                graph = store.load()
+                if not graph.nodes:
+                    print("No evidence graph nodes found.")
+                    return 0
+                for node in graph.list_nodes():
+                    print(f"{node.node_id} type={node.node_type} label={node.label}")
+                return 0
+            if args.evidence_graph_command == "edges":
+                graph = store.load()
+                if not graph.edges:
+                    print("No evidence graph edges found.")
+                    return 0
+                for edge in graph.list_edges():
+                    print(f"{edge.edge_id} {edge.source_node_id} --{edge.edge_type}--> {edge.target_node_id}")
+                return 0
+            if args.evidence_graph_command == "show":
+                print(json.dumps(store.show(args.item_id), indent=2, sort_keys=True))
+                return 0
+            if args.evidence_graph_command == "export":
+                output_path = store.export()
+                print(f"evidence_graph_export: {output_path}")
+                return 0
+        except EvidenceGraphError as exc:
+            print(f"error: {exc}")
+            return 1
     if args.command == "graph":
         root = args.root.resolve()
         store = KnowledgeGraphStore(root)

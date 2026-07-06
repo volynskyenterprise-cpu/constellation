@@ -58,6 +58,7 @@ Current capabilities include:
 - ✅ PKOS Knowledge Organization
 - ✅ Evidence Engine
 - ✅ Knowledge Graph
+- ✅ Evidence Graph
 - ✅ Cross-Document Reasoning
 - ✅ Thesis Engine
 - ✅ Institutional Intelligence Platform
@@ -88,6 +89,9 @@ Evidence Engine
         │
         ▼
 Knowledge Graph
+        │
+        ▼
+Evidence Graph
         │
         ▼
 Cross-Document Reasoning
@@ -158,7 +162,15 @@ python -m constellation graph build RUN_ID
 
 ---
 
-### 4. Analyze cross-document findings
+### 4. Build the Evidence Graph
+
+```bash
+python -m constellation evidence-graph build
+```
+
+---
+
+### 5. Analyze cross-document findings
 
 ```bash
 python -m constellation graph analyze
@@ -166,7 +178,7 @@ python -m constellation graph analyze
 
 ---
 
-### 5. Generate institutional theses
+### 6. Generate institutional theses
 
 ```bash
 python -m constellation thesis generate
@@ -174,7 +186,7 @@ python -m constellation thesis generate
 
 ---
 
-### 6. Generate executive intelligence
+### 7. Generate executive intelligence
 
 ```bash
 python -m constellation intelligence generate
@@ -195,6 +207,9 @@ Evidence Records
         │
         ▼
 Knowledge Graph
+        │
+        ▼
+Evidence Graph
         │
         ▼
 Cross-Document Findings
@@ -291,6 +306,18 @@ python -m constellation graph analyze
 python -m constellation graph findings
 ```
 
+### Evidence Graph
+
+```bash
+python -m constellation evidence-graph build
+python -m constellation evidence-graph nodes
+python -m constellation evidence-graph edges
+python -m constellation evidence-graph show NODE_OR_EDGE_ID
+python -m constellation evidence-graph export
+```
+
+Evidence Graph shows exact-ID relationships between evidence, sources, artifacts, findings, theses, morning briefs, and institutional memory snapshots. It does not infer semantic relationships or call providers.
+
 ### Thesis Engine
 
 ```bash
@@ -369,6 +396,7 @@ Current guarantees include:
 - ✅ PKOS Knowledge Organization
 - ✅ Evidence Engine
 - ✅ Knowledge Graph
+- ✅ Evidence Graph
 - ✅ Cross-Document Reasoning
 - ✅ Thesis Engine
 - ✅ Institutional Intelligence

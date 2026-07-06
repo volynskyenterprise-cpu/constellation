@@ -14,6 +14,10 @@
 - Add evidence-to-artifact validation that blocks unsupported recommendations.
 - Add evidence confidence review and downgrade workflows.
 - Add cross-run evidence deduplication.
+- Add Evidence Graph diffing across institutional memory snapshots.
+- Add Evidence Graph validation for orphan evidence and unsupported theses.
+- Add human-reviewed Evidence Graph promotion and suppression notes.
+- Add machine-readable filters for Evidence Graph nodes and edges.
 - Add graph diffing across workflow runs.
 - Add graph validation for unsupported artifact claims.
 - Add human-reviewed graph promotion and rejection workflows.

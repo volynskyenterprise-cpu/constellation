@@ -2,6 +2,17 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 3.5.0 - Evidence Graph
+
+- Added deterministic Evidence Graph nodes and edges across evidence, sources, workflows, artifacts, findings, theses, morning briefs, and institutional memory snapshots.
+- Added `python -m constellation evidence-graph build`.
+- Added `python -m constellation evidence-graph nodes`.
+- Added `python -m constellation evidence-graph edges`.
+- Added `python -m constellation evidence-graph show NODE_OR_EDGE_ID`.
+- Added `python -m constellation evidence-graph export`.
+- Added Evidence Graph outputs under `outputs/evidence-graph/`.
+- Preserved exact-reference-only behavior with no provider calls, no LLM inference, no embeddings, no semantic similarity, no web retrieval, and no automatic upstream workflow execution.
+
 ## 3.4.0 - Institutional Memory
 
 - Added deterministic institutional memory snapshots and deltas.
