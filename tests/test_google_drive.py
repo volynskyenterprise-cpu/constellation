@@ -16,6 +16,7 @@ from constellation.google_drive import (
     GoogleDriveDependencyError,
     GoogleDriveFile,
     GoogleDriveSyncManifest,
+    normalize_scopes,
 )
 
 
@@ -37,6 +38,39 @@ class GoogleDriveConnectorTests(unittest.TestCase):
 
             self.assertEqual(config["download_folder"], "inbox/google-drive/incoming")
             self.assertEqual(config["allowed_extensions"], [".md", ".txt", ".pdf"])
+
+    def test_alias_scope_normalization(self) -> None:
+        self.assertEqual(normalize_scopes(["drive.readonly"]), ["https://www.googleapis.com/auth/drive.readonly"])
+
+    def test_full_url_scope_normalization(self) -> None:
+        self.assertEqual(
+            normalize_scopes([{"https": "//www.googleapis.com/auth/drive.readonly"}]),
+            ["https://www.googleapis.com/auth/drive.readonly"],
+        )
+        self.assertEqual(
+            normalize_scopes(["https://www.googleapis.com/auth/drive.readonly"]),
+            ["https://www.googleapis.com/auth/drive.readonly"],
+        )
+
+    def test_invalid_scope_rejection(self) -> None:
+        with self.assertRaisesRegex(Exception, "Unsupported Google Drive scope"):
+            normalize_scopes(["drive.file"])
+
+    def test_empty_scope_rejection(self) -> None:
+        with self.assertRaisesRegex(Exception, "must include drive.readonly"):
+            normalize_scopes([])
+
+    def test_oauth_flow_receives_normalized_scope_list(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = _root(Path(temp_dir), enabled=True)
+            (root / "config" / "secrets").mkdir(parents=True)
+            (root / "config" / "secrets" / "google-drive-credentials.json").write_text("{}", encoding="utf-8")
+            deps = _fake_oauth_deps()
+
+            with patch("constellation.google_drive._google_dependencies", return_value=deps):
+                GoogleDriveConnector(root).authenticate()
+
+            self.assertEqual(deps["InstalledAppFlow"].scopes, ["https://www.googleapis.com/auth/drive.readonly"])
 
     def test_source_filtering(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -260,7 +294,7 @@ def _root(path: Path, *, enabled: bool, second_source: bool = False) -> Path:
         """credentials_path: config/secrets/google-drive-credentials.json
 token_path: config/secrets/google-drive-token.json
 scopes:
-  - https://www.googleapis.com/auth/drive.readonly
+  - drive.readonly
 download_folder: inbox/google-drive/incoming
 allowed_extensions:
   - .md
@@ -332,6 +366,53 @@ def _drive_file(file_id: str, name: str, *, status: str) -> GoogleDriveFile:
         status=status,
         metadata={},
     )
+
+
+def _fake_oauth_deps():
+    deps = {
+        "Request": FakeRequestTransport,
+        "Credentials": FakeCredentialsLoader,
+        "InstalledAppFlow": FakeInstalledAppFlow,
+        "build": fake_build,
+        "MediaIoBaseDownload": FakeDownloader,
+    }
+    FakeInstalledAppFlow.scopes = None
+    return deps
+
+
+class FakeRequestTransport:
+    pass
+
+
+class FakeCredentialsLoader:
+    @classmethod
+    def from_authorized_user_file(cls, path, scopes):
+        raise AssertionError("token path should not be used in this test")
+
+
+class FakeCredentials:
+    valid = True
+    expired = False
+    refresh_token = None
+
+    def to_json(self):
+        return "{}"
+
+
+class FakeInstalledAppFlow:
+    scopes = None
+
+    @classmethod
+    def from_client_secrets_file(cls, path, scopes):
+        cls.scopes = scopes
+        return cls()
+
+    def run_local_server(self, port=0):
+        return FakeCredentials()
+
+
+def fake_build(api_name, version, credentials):
+    return FakeDriveService({})
 
 
 if __name__ == "__main__":

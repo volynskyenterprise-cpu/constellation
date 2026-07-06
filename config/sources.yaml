@@ -1,6 +1,6 @@
 sources:
-  - id: moonshots
-    display_name: Moonshots
+  - id: ai_markets_drive
+    display_name: AI & Markets Google Drive Intake
     source_type: google_drive
     intake_channel: google-drive
     destination_channel: google-drive
@@ -9,58 +9,9 @@ sources:
       - txt
       - pdf
     destination_category: research
-    folder_id: null
-    enabled: false
-  - id: all_in
-    display_name: All-In
-    source_type: google_drive
-    intake_channel: google-drive
-    destination_channel: google-drive
-    expected_format:
-      - md
-      - txt
-      - pdf
-    destination_category: research
-    folder_id: null
-    enabled: false
-  - id: pomp_jordi
-    display_name: Pomp and Jordi
-    source_type: google_drive
-    intake_channel: google-drive
-    destination_channel: google-drive
-    expected_format:
-      - md
-      - txt
-      - pdf
-    destination_category: research
-    folder_id: null
-    enabled: false
-  - id: ciovacco_capital
-    display_name: Ciovacco Capital
-    source_type: google_drive
-    intake_channel: google-drive
-    destination_channel: google-drive
-    expected_format:
-      - md
-      - txt
-      - pdf
-    destination_category: research
-    folder_id: null
-    enabled: false
-  - id: mark_newton
-    display_name: Mark Newton
-    source_type: placeholder
-    intake_channel: manual
-    expected_format: markdown_or_text
-    destination_category: research
-    enabled: false
-  - id: sean_farrell
-    display_name: Sean Farrell
-    source_type: placeholder
-    intake_channel: manual
-    expected_format: markdown_or_text
-    destination_category: research
-    enabled: false
+    folder_id: 1oKxwF5sNvb1ts8QNoiClI0ndsECR0Zra
+    enabled: true
+
   - id: housing
     display_name: Housing
     source_type: google_drive
@@ -73,6 +24,7 @@ sources:
     destination_category: housing
     folder_id: null
     enabled: false
+
   - id: macro
     display_name: Macro
     source_type: google_drive
@@ -85,18 +37,7 @@ sources:
     destination_category: macro
     folder_id: null
     enabled: false
-  - id: robotics
-    display_name: Robotics
-    source_type: google_drive
-    intake_channel: google-drive
-    destination_channel: google-drive
-    expected_format:
-      - md
-      - txt
-      - pdf
-    destination_category: robotics
-    folder_id: null
-    enabled: false
+
   - id: misc
     display_name: Miscellaneous
     source_type: google_drive

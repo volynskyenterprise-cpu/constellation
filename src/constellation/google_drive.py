@@ -24,6 +24,8 @@ DEPENDENCY_MESSAGE = "Google Drive dependencies are not installed. Run: pip inst
 GOOGLE_DOC_MIME_TYPE = "application/vnd.google-apps.document"
 MARKDOWN_EXPORT_MIME_TYPE = "text/markdown"
 TEXT_EXPORT_MIME_TYPE = "text/plain"
+DRIVE_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+SCOPE_ALIASES = {"drive.readonly": DRIVE_READONLY_SCOPE, DRIVE_READONLY_SCOPE: DRIVE_READONLY_SCOPE}
 
 
 @dataclass(frozen=True)
@@ -119,9 +121,9 @@ class GoogleDriveConnector:
     def authenticate(self):
         if self.service is not None:
             return self.service
-        deps = _google_dependencies()
         config = self.load_config()
-        scopes = _string_list(config.get("scopes", []))
+        scopes = normalize_scopes(config.get("scopes", []))
+        deps = _google_dependencies()
         credentials_path = self.root / str(config.get("credentials_path", ""))
         token_path = self.root / str(config.get("token_path", ""))
         credentials = None
@@ -249,6 +251,24 @@ def google_drive_dependencies_installed() -> bool:
     return True
 
 
+def normalize_scopes(raw_scopes: Any) -> list[str]:
+    scopes: list[str] = []
+    if not isinstance(raw_scopes, list):
+        raise GoogleDriveError("Google Drive config scopes must be a non-empty list.")
+    for raw_scope in raw_scopes:
+        scope = _scope_string(raw_scope)
+        if scope is None:
+            raise GoogleDriveError(f"Unsupported Google Drive scope entry: {raw_scope}")
+        normalized = SCOPE_ALIASES.get(scope)
+        if normalized is None:
+            raise GoogleDriveError(f"Unsupported Google Drive scope: {scope}")
+        if normalized not in scopes:
+            scopes.append(normalized)
+    if not scopes:
+        raise GoogleDriveError("Google Drive config scopes must include drive.readonly.")
+    return scopes
+
+
 def render_sync_manifest_markdown(manifest: GoogleDriveSyncManifest) -> str:
     lines = [
         "# Google Drive Sync Manifest",
@@ -370,6 +390,16 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _scope_string(value: Any) -> str | None:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict) and len(value) == 1:
+        key, raw = next(iter(value.items()))
+        if isinstance(key, str) and isinstance(raw, str):
+            return f"{key}:{raw}".strip()
+    return None
 
 
 def _digest(value: str) -> str:
