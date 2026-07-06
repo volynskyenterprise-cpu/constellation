@@ -31,7 +31,9 @@
 - Add intelligence package review workflow using existing approval gates.
 - Add source registry validation for `config/sources.yaml`.
 - Add manual intake promotion from `inbox/manual/incoming/` to research or PKOS inputs.
-- Add Google Drive intake connector with explicit credential handling outside the repo.
+- Add Google Drive source registry validation and clearer enablement checks.
+- Add Google Drive folder traversal controls and pagination state.
+- Add Google Drive sync history diffing without mutating Drive files.
 - Add Gmail intake connector with explicit credential handling outside the repo.
 - Add intake item manifests, checksums, and status transitions.
 - Add intake failure reports and retry workflow.

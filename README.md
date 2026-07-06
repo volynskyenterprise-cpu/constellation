@@ -62,6 +62,7 @@ Current capabilities include:
 - ✅ Thesis Engine
 - ✅ Institutional Intelligence Platform
 - ✅ Operational Intake Pipeline
+- ✅ Google Drive Connector
 - ✅ Executive Intelligence Brief generation
 - ✅ Deterministic provenance tracking
 - ✅ Human approval workflow
@@ -242,6 +243,17 @@ python -m constellation intake import
 python -m constellation intake status
 ```
 
+### Google Drive
+
+```bash
+pip install -e .[google-drive]
+python -m constellation drive status
+python -m constellation drive sync --dry-run
+python -m constellation drive sync
+```
+
+Drive sync stages files into `inbox/google-drive/incoming/` only. It does not run intake import or downstream workflows automatically.
+
 ### Research
 
 ```bash
@@ -338,10 +350,10 @@ Current guarantees include:
 - ✅ Thesis Engine
 - ✅ Institutional Intelligence
 - ✅ Intake Pipeline
+- ✅ Google Drive Connector
 
 ## Coming Next
 
-- Google Drive Connector
 - Gmail Connector
 - Folder Watchers
 - Morning Intelligence Brief

@@ -7,6 +7,7 @@ from pathlib import Path
 from .artifacts import ArtifactError
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .evidence import EvidenceError, EvidenceStore
+from .google_drive import GoogleDriveConnector, GoogleDriveDependencyError, GoogleDriveError
 from .intake import IntakeEngine, IntakeError
 from .intelligence import IntelligenceError, IntelligenceStore
 from .kernel import ConstellationKernel
@@ -160,6 +161,15 @@ def main(argv: list[str] | None = None) -> int:
     intake_subparsers.add_parser("scan", help="Report available local intake files.")
     intake_subparsers.add_parser("import", help="Import local intake files into dated research inputs.")
     intake_subparsers.add_parser("status", help="Show intake manifest counts.")
+
+    drive_parser = subparsers.add_parser("drive", help="Stage files from configured Google Drive sources.")
+    drive_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    drive_subparsers = drive_parser.add_subparsers(dest="drive_command", required=True)
+    drive_subparsers.add_parser("status", help="Check Google Drive connector configuration.")
+    drive_subparsers.add_parser("list", help="List files from enabled Google Drive sources.")
+    drive_sync_parser = drive_subparsers.add_parser("sync", help="Download files into the Google Drive intake inbox.")
+    drive_sync_parser.add_argument("--source", help="Optional source ID from config/sources.yaml.")
+    drive_sync_parser.add_argument("--dry-run", action="store_true", help="Show what would be downloaded without downloading.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -573,6 +583,43 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"error: {exc}")
                 return 1
             _print_intake_counts(counts)
+            return 0
+    if args.command == "drive":
+        connector = GoogleDriveConnector(args.root.resolve())
+        if args.drive_command == "status":
+            status = connector.status()
+            print(f"config_present: {status.get('config_present')}")
+            print(f"config_path: {status.get('config_path')}")
+            print(f"dependencies_installed: {status.get('dependencies_installed')}")
+            print(f"credentials_path_configured: {status.get('credentials_path_configured')}")
+            print(f"token_path_configured: {status.get('token_path_configured')}")
+            print(f"enabled_sources: {','.join(status.get('enabled_sources', []))}")
+            if status.get("config_error"):
+                print(f"config_error: {status.get('config_error')}")
+            return 0
+        if args.drive_command == "list":
+            try:
+                files = connector.list_files()
+            except (GoogleDriveDependencyError, GoogleDriveError) as exc:
+                print(f"error: {exc}")
+                return 1
+            if not files:
+                print("No Google Drive files found.")
+                return 0
+            for file in files:
+                print(f"{file.file_id} name={file.name} mime_type={file.mime_type} folder={file.source_folder_id}")
+            return 0
+        if args.drive_command == "sync":
+            try:
+                manifest = connector.sync(source_id=args.source, dry_run=args.dry_run)
+            except (GoogleDriveDependencyError, GoogleDriveError) as exc:
+                print(f"error: {exc}")
+                return 1
+            print(f"manifest: {connector.json_path}")
+            print(f"downloaded: {len(manifest.downloaded_files)}")
+            print(f"skipped: {len(manifest.skipped_files)}")
+            print(f"duplicates: {len(manifest.duplicate_files)}")
+            print(f"errors: {len(manifest.errors)}")
             return 0
     return 2
 

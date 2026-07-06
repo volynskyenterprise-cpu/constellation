@@ -1,31 +1,51 @@
 sources:
   - id: moonshots
     display_name: Moonshots
-    source_type: placeholder
-    intake_channel: manual
-    expected_format: markdown_or_text
+    source_type: google_drive
+    intake_channel: google-drive
+    destination_channel: google-drive
+    expected_format:
+      - md
+      - txt
+      - pdf
     destination_category: research
+    folder_id: null
     enabled: false
   - id: all_in
     display_name: All-In
-    source_type: placeholder
-    intake_channel: manual
-    expected_format: markdown_or_text
+    source_type: google_drive
+    intake_channel: google-drive
+    destination_channel: google-drive
+    expected_format:
+      - md
+      - txt
+      - pdf
     destination_category: research
+    folder_id: null
     enabled: false
   - id: pomp_jordi
     display_name: Pomp and Jordi
-    source_type: placeholder
-    intake_channel: manual
-    expected_format: markdown_or_text
+    source_type: google_drive
+    intake_channel: google-drive
+    destination_channel: google-drive
+    expected_format:
+      - md
+      - txt
+      - pdf
     destination_category: research
+    folder_id: null
     enabled: false
   - id: ciovacco_capital
     display_name: Ciovacco Capital
-    source_type: placeholder
-    intake_channel: manual
-    expected_format: markdown_or_text
+    source_type: google_drive
+    intake_channel: google-drive
+    destination_channel: google-drive
+    expected_format:
+      - md
+      - txt
+      - pdf
     destination_category: research
+    folder_id: null
     enabled: false
   - id: mark_newton
     display_name: Mark Newton
@@ -43,29 +63,49 @@ sources:
     enabled: false
   - id: housing
     display_name: Housing
-    source_type: placeholder
-    intake_channel: manual
-    expected_format: markdown_or_text
+    source_type: google_drive
+    intake_channel: google-drive
+    destination_channel: google-drive
+    expected_format:
+      - md
+      - txt
+      - pdf
     destination_category: housing
+    folder_id: null
     enabled: false
   - id: macro
     display_name: Macro
-    source_type: placeholder
-    intake_channel: manual
-    expected_format: markdown_or_text
+    source_type: google_drive
+    intake_channel: google-drive
+    destination_channel: google-drive
+    expected_format:
+      - md
+      - txt
+      - pdf
     destination_category: macro
+    folder_id: null
     enabled: false
   - id: robotics
     display_name: Robotics
-    source_type: placeholder
-    intake_channel: manual
-    expected_format: markdown_or_text
+    source_type: google_drive
+    intake_channel: google-drive
+    destination_channel: google-drive
+    expected_format:
+      - md
+      - txt
+      - pdf
     destination_category: robotics
+    folder_id: null
     enabled: false
   - id: misc
     display_name: Miscellaneous
-    source_type: placeholder
-    intake_channel: manual
-    expected_format: markdown_or_text
+    source_type: google_drive
+    intake_channel: google-drive
+    destination_channel: google-drive
+    expected_format:
+      - md
+      - txt
+      - pdf
     destination_category: misc
+    folder_id: null
     enabled: false

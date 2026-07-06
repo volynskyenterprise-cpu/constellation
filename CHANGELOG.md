@@ -2,6 +2,20 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 3.2.0 - Google Drive Connector
+
+- Added optional Google Drive connector module for staging Drive files into `inbox/google-drive/incoming/`.
+- Added disabled-by-default Google Drive source placeholders in `config/sources.yaml`.
+- Added `config/google-drive.example.yaml` and ignored `config/secrets/` location for local-only credentials and tokens.
+- Added optional `google-drive` dependency extra.
+- Added `python -m constellation drive status`.
+- Added `python -m constellation drive list`.
+- Added `python -m constellation drive sync`.
+- Added `python -m constellation drive sync --source SOURCE_ID`.
+- Added `python -m constellation drive sync --dry-run`.
+- Added Google Drive sync manifests under `outputs/google-drive/`.
+- Preserved staging-only behavior with no Drive mutation, no Gmail integration, no provider execution, no automatic intake import, and no downstream workflow execution.
+
 ## 3.1.0 - Intake Pipeline
 
 - Added operational intake scaffolding under `inbox/` for future Google Drive, Gmail, and manual intake workflows.

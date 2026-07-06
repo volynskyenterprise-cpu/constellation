@@ -1,0 +1,9 @@
+credentials_path: config/secrets/google-drive-credentials.json
+token_path: config/secrets/google-drive-token.json
+scopes:
+  - https://www.googleapis.com/auth/drive.readonly
+download_folder: inbox/google-drive/incoming
+allowed_extensions:
+  - .md
+  - .txt
+  - .pdf

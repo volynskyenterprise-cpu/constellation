@@ -5,8 +5,13 @@ __pycache__/
 .ruff_cache/
 .venv/
 *.egg-info/
+*credentials*.json
+*token*.json
 
 # Constellation runtime artifacts
+config/secrets/*
+!config/secrets/README.md
+
 logs/runs/*
 !logs/runs/README.md
 
@@ -32,3 +37,4 @@ outputs/analysis/
 outputs/theses/
 outputs/intelligence/
 outputs/intake/
+outputs/google-drive/
