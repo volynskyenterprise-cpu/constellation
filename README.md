@@ -1,10 +1,10 @@
 # Constellation
 
-> **Deterministic Institutional Intelligence Platform**
-
-Constellation transforms research into explainable institutional intelligence through deterministic evidence extraction, knowledge graphs, cross-document reasoning, thesis generation, executive intelligence briefs, and operational intake pipelines.
-
-Unlike black-box AI systems, every conclusion produced by Constellation is fully traceable back to explicit evidence with complete provenance.
+> **Current Status — Phase I Complete (v4.2)**
+>
+> Constellation is a deterministic institutional intelligence platform that transforms research into evidence, knowledge graphs, evolving theses, executive dashboards, and institutional research reports.
+>
+> The core intelligence platform is complete. Future development is focused on domain-specific intelligence for AI & Markets, capital allocation, and real estate while preserving deterministic, evidence-first reasoning with complete provenance.
 
 **No hallucinations.**
 
@@ -501,23 +501,40 @@ Current guarantees include:
 
 # Roadmap
 
-## Current
+## Phase I — Core Intelligence Platform ✅ *(Completed)*
 
+The deterministic intelligence foundation is complete.
+
+### Intelligence Core
+
+- ✅ Research Intake Pipeline
+- ✅ Google Drive Connector
 - ✅ Research Organization
-- ✅ PKOS Knowledge Organization
 - ✅ Evidence Engine
+- ✅ Institutional Memory
 - ✅ Knowledge Graph
 - ✅ Evidence Graph
-- ✅ Cross-Document Reasoning
+
+### Intelligence Layer
+
+- ✅ Cross-Document Analysis
 - ✅ Thesis Engine
 - ✅ Thesis Intelligence
+- ✅ Knowledge Evolution
+
+### Executive Layer
+
 - ✅ Daily Intelligence Pipeline
+- ✅ Morning Executive Intelligence
 - ✅ Executive Dashboard
+- ✅ Institutional Research Reports
+
+### Automation Layer
+
 - ✅ Source Monitoring
 - Workflow Automation Engine
 - Knowledge Evolution Engine
 - Institutional Research Reports
-- AI & Markets Intelligence
 - ✅ Institutional Intelligence
 - ✅ Intake Pipeline
 - ✅ Google Drive Connector
@@ -527,9 +544,27 @@ Current guarantees include:
 ## Coming Next
 
 - Gmail Connector
+- Calendar Connector
 - Folder Watchers
-- Workflow approval packages
+- Human Approval Workflows
+- Optional AI-assisted reasoning layered on deterministic evidence
 
+---
+
+## Platform Principles
+
+Constellation remains intentionally deterministic.
+
+Every capability is built upon:
+
+- Complete provenance
+- Deterministic processing
+- Human oversight
+- Evidence-first reasoning
+- Local-first architecture
+- No hidden inference
+- Reproducible outputs
+  
 ## Future Vision
 
 - Multi-provider intelligence
