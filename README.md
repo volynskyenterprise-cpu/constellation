@@ -485,34 +485,92 @@ Current guarantees include:
 
 # Roadmap
 
-## Current
+## Phase I — Core Intelligence Platform ✅ *(Completed)*
 
+The deterministic intelligence foundation is complete.
+
+### Intelligence Core
+
+- ✅ Research Intake Pipeline
+- ✅ Google Drive Connector
 - ✅ Research Organization
-- ✅ PKOS Knowledge Organization
 - ✅ Evidence Engine
+- ✅ Institutional Memory
 - ✅ Knowledge Graph
 - ✅ Evidence Graph
-- ✅ Cross-Document Reasoning
+
+### Intelligence Layer
+
+- ✅ Cross-Document Analysis
 - ✅ Thesis Engine
 - ✅ Thesis Intelligence
+- ✅ Knowledge Evolution
+
+### Executive Layer
+
 - ✅ Daily Intelligence Pipeline
-- ✅ Executive Dashboard
-- ✅ Source Monitoring
-- Workflow Automation Engine
-- Knowledge Evolution Engine
-- Institutional Research Reports
-- ✅ Institutional Intelligence
-- ✅ Intake Pipeline
-- ✅ Google Drive Connector
 - ✅ Morning Executive Intelligence
-- ✅ Institutional Memory
+- ✅ Executive Dashboard
+- ✅ Institutional Research Reports
 
-## Coming Next
+### Automation Layer
 
+- ✅ Source Monitoring
+- ✅ Workflow Automation
+- ✅ End-to-End Morning Research Processing
+
+---
+
+## Phase II — Domain Intelligence *(In Progress)*
+
+Teach Constellation how to think like an institutional research organization.
+
+### Planned Capabilities
+
+- AI & Markets Intelligence
+- Portfolio Intelligence
+- Capital Allocation Intelligence
+- Decision Journal
+- Executive Morning Brief
+- Research Question Tracking
+- Thesis Lifecycle Management
+- Catalyst & Risk Monitoring
+
+---
+
+## Phase III — Enterprise Intelligence
+
+Expand Constellation beyond research into a complete institutional operating system.
+
+### Planned Capabilities
+
+- Multi-domain Intelligence
+- Real Estate Intelligence
+- Executive Workbench
+- CRM Intelligence
+- Event-driven Connectors
 - Gmail Connector
+- Calendar Connector
 - Folder Watchers
-- Workflow approval packages
+- Human Approval Workflows
+- Optional AI-assisted reasoning layered on deterministic evidence
 
+---
+
+## Platform Principles
+
+Constellation remains intentionally deterministic.
+
+Every capability is built upon:
+
+- Complete provenance
+- Deterministic processing
+- Human oversight
+- Evidence-first reasoning
+- Local-first architecture
+- No hidden inference
+- Reproducible outputs
+  
 ## Future Vision
 
 - Multi-provider intelligence
