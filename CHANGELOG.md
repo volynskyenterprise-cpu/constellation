@@ -2,6 +2,15 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 5.5.0 - AI & Markets Executive Morning Brief
+
+- Added deterministic AI & Markets Executive Morning Brief.
+- Added executive brief, research agenda, brief history, and brief delta outputs under `outputs/ai-markets/briefings/`.
+- Added research agenda generation from decisions, catalysts, portfolio reviews, lifecycle status, open questions, and missing artifacts.
+- Added `python -m constellation ai-markets brief` with agenda, history, delta, and export flags.
+- Integrated Executive Morning Brief into AI & Markets reports, Executive Dashboard, and Morning workflow.
+- Preserved deterministic briefing-only behavior with no market prediction, trading recommendations, financial advice, providers, OpenAI, LLM inference, embeddings, semantic search, web retrieval, Gmail, calendar integration, or autonomous decisions.
+
 ## 5.4.0 - AI & Markets Decision Journal
 
 - Added deterministic AI & Markets Decision Journal.

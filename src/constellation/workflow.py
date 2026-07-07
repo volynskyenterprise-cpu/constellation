@@ -8,7 +8,7 @@ from time import perf_counter
 from typing import Any, Callable
 
 from . import __version__
-from .ai_markets import AIMarketsCatalystStore, AIMarketsDecisionJournalStore, AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore
+from .ai_markets import AIMarketsBriefStore, AIMarketsCatalystStore, AIMarketsDecisionJournalStore, AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .daily import DailyPipelineStore
 from .dashboard import ExecutiveDashboardStore
@@ -159,6 +159,7 @@ class WorkflowEngine:
             "ai-markets portfolio": self._ai_markets_portfolio,
             "ai-markets catalysts": self._ai_markets_catalysts,
             "ai-markets decisions": self._ai_markets_decisions,
+            "ai-markets brief": self._ai_markets_brief,
         }
 
     def run(self, definition: WorkflowDefinition) -> WorkflowRun:
@@ -322,6 +323,7 @@ class WorkflowEngine:
         portfolio_status = AIMarketsPortfolioStore(self.root).status()
         catalyst_status = AIMarketsCatalystStore(self.root).status()
         decision_status = AIMarketsDecisionJournalStore(self.root).status()
+        brief_status = AIMarketsBriefStore(self.root).status()
         total_questions = sum(_int(_map(question.provenance).get("variant_count")) or 1 for question in report.open_questions)
         return {
             "status": "completed",
@@ -364,6 +366,13 @@ class WorkflowEngine:
             "outcome_count": decision_status.get("outcome_count", 0),
             "decision_journal_report_path": decision_status.get("report_path"),
             "decision_review_queue_path": decision_status.get("review_queue_path"),
+            "executive_brief_available": brief_status.get("available", False),
+            "executive_brief_id": brief_status.get("brief_id"),
+            "executive_brief_path": brief_status.get("brief_path"),
+            "research_agenda_count": brief_status.get("research_agenda_count", 0),
+            "high_priority_agenda_count": brief_status.get("high_priority_agenda_count", 0),
+            "top_agenda_items": _string_list(AIMarketsBriefStore(self.root).load().get("top_agenda_items", [])) if brief_status.get("available") else [],
+            "source_artifacts_missing_count": len(_string_list(AIMarketsBriefStore(self.root).load().get("source_artifacts_missing", []))) if brief_status.get("available") else 0,
         }
 
     def _ai_markets_lifecycle(self, arguments: JsonMap) -> JsonMap:
@@ -424,6 +433,20 @@ class WorkflowEngine:
             "outcome_count": data.get("outcome_count", 0),
             "decision_journal_report_path": str(AIMarketsDecisionJournalStore(self.root).report_path),
             "decision_review_queue_path": str(AIMarketsDecisionJournalStore(self.root).queue_path),
+        }
+
+    def _ai_markets_brief(self, arguments: JsonMap) -> JsonMap:
+        snapshot = AIMarketsBriefStore(self.root).build()
+        data = snapshot.to_dict()
+        return {
+            "status": "completed",
+            "brief_id": snapshot.brief_id,
+            "executive_brief_available": True,
+            "executive_brief_path": str(AIMarketsBriefStore(self.root).report_path),
+            "research_agenda_count": data.get("research_agenda_count", 0),
+            "high_priority_agenda_count": data.get("high_priority_agenda_count", 0),
+            "top_agenda_items": data.get("top_agenda_items", []),
+            "source_artifacts_missing_count": len(data.get("source_artifacts_missing", [])),
         }
 
 
@@ -579,6 +602,13 @@ def render_workflow_report(run: WorkflowRun) -> str:
                 f"- Outcomes: {details.get('outcome_count', 0)}",
                 f"- Decision journal report: `{details.get('decision_journal_report_path', '')}`",
                 f"- Decision review queue: `{details.get('decision_review_queue_path', '')}`",
+                f"- Executive brief available: {details.get('executive_brief_available', False)}",
+                f"- Executive brief ID: `{details.get('executive_brief_id', '')}`",
+                f"- Executive brief path: `{details.get('executive_brief_path', '')}`",
+                f"- Research agenda items: {details.get('research_agenda_count', 0)}",
+                f"- High-priority agenda items: {details.get('high_priority_agenda_count', 0)}",
+                f"- Top agenda items: {', '.join(_string_list(details.get('top_agenda_items', []))[:5])}",
+                f"- Missing source artifacts: {details.get('source_artifacts_missing_count', 0)}",
                 "",
             ]
         )
@@ -628,6 +658,7 @@ def _built_in_workflows() -> list[WorkflowDefinition]:
                 _step("AI & Markets Portfolio Intelligence", "ai-markets portfolio"),
                 _step("AI & Markets Catalyst Monitoring", "ai-markets catalysts"),
                 _step("AI & Markets Decision Journal", "ai-markets decisions"),
+                _step("AI & Markets Executive Morning Brief", "ai-markets brief"),
             ],
         ),
         WorkflowDefinition(
@@ -853,6 +884,12 @@ def _map_list(value: Any) -> list[JsonMap]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
 
 
 def _optional_str(value: Any) -> str | None:

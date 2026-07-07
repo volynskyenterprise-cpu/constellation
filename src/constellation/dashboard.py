@@ -474,6 +474,7 @@ def _ai_markets_summary(report: JsonMap) -> JsonMap:
     catalyst_monitor = _map(report.get("catalyst_monitor"))
     catalysts = _map_list(catalyst_monitor.get("catalysts", []))
     decisions = _map(report.get("decision_journal"))
+    brief = _map(report.get("executive_brief"))
     return {
         "available": bool(report),
         "report_id": report.get("report_id"),
@@ -539,6 +540,14 @@ def _ai_markets_summary(report: JsonMap) -> JsonMap:
         "outcome_count": decisions.get("outcome_count", 0),
         "decision_journal_report_path": "outputs/ai-markets/decisions/decision-journal.md" if decisions else None,
         "decision_review_queue_path": "outputs/ai-markets/decisions/decision-review-queue.md" if decisions else None,
+        "executive_brief_available": bool(brief),
+        "executive_brief_id": brief.get("brief_id"),
+        "executive_brief_path": "outputs/ai-markets/briefings/morning-brief.md" if brief else None,
+        "research_agenda_path": "outputs/ai-markets/briefings/research-agenda.md" if brief else None,
+        "research_agenda_count": brief.get("research_agenda_count", 0),
+        "high_priority_agenda_count": brief.get("high_priority_agenda_count", 0),
+        "top_agenda_items": _string_list(brief.get("top_agenda_items", [])),
+        "what_matters_today_count": sum(1 for section in _map_list(brief.get("sections", [])) if section.get("title") == "What Matters Today" for _ in _string_list(section.get("items", []))),
     }
 
 

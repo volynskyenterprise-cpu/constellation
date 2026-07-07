@@ -7,7 +7,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from constellation.ai_markets import AIMarketsCatalystStore, AIMarketsDecisionJournalStore, AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore, _normalize_question
+from constellation.ai_markets import AIMarketsBriefStore, AIMarketsCatalystStore, AIMarketsDecisionJournalStore, AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore, _normalize_question
 from constellation.cli import main
 from constellation.dashboard import ExecutiveDashboardStore
 from constellation.io import write_json
@@ -668,6 +668,85 @@ class AIMarketsTests(unittest.TestCase):
 
             self.assertEqual(first["snapshot_id"], second["snapshot_id"])
             self.assertEqual(len(AIMarketsDecisionJournalStore(root).history()), 1)
+            self.assertIn("delta", second)
+            self.assertNotIn("buy ", text)
+            self.assertNotIn("sell ", text)
+            self.assertNotIn("price target", text)
+
+    def test_executive_brief_empty_and_existing_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+
+            snapshot = AIMarketsBriefStore(root).build()
+
+            self.assertTrue(snapshot.brief_id)
+            self.assertTrue((root / "outputs" / "ai-markets" / "briefings" / "morning-brief.md").exists())
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_catalyst_artifacts(root)
+
+            AIMarketsStore(root).build()
+            data = AIMarketsBriefStore(root).load()
+
+            self.assertGreater(data["research_agenda_count"], 0)
+
+    def test_executive_brief_agenda_sources_and_priority(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_catalyst_artifacts(root)
+            _write_portfolio_config(root)
+            _write_decision_entry(root, review_at="2020-01-01")
+
+            AIMarketsStore(root).build()
+            agenda = AIMarketsBriefStore(root).load()["research_agenda"]
+            source_types = {item["source_type"] for item in agenda}
+
+            self.assertIn("decision_review", source_types)
+            self.assertIn("catalyst", source_types)
+            self.assertIn("portfolio_review", source_types)
+            self.assertTrue(any(item["priority"] == "high" for item in agenda))
+            brief = AIMarketsBriefStore(root).load()
+            self.assertGreater(brief["morning_priority_count"], 0)
+            self.assertEqual(brief["morning_priorities"][0]["priority"], "high")
+
+    def test_executive_brief_cli_dashboard_workflow(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_artifacts(root)
+            AIMarketsStore(root).build()
+
+            for option in [[], ["--agenda"], ["--history"], ["--delta"]]:
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    exit_code = main(["ai-markets", "--root", str(root), "brief", *option])
+                self.assertEqual(exit_code, 0)
+            dashboard = ExecutiveDashboardStore(root).generate(overwrite=True)
+            self.assertIn("executive_brief_available", dashboard.ai_markets_summary)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            run = WorkflowStore(root).run("Morning")
+            self.assertIn("ai-markets brief", [step["command"] for step in run.executed_steps])
+
+    def test_executive_brief_history_delta_determinism_and_safety(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_catalyst_artifacts(root)
+            store = AIMarketsStore(root)
+
+            store.build()
+            first = AIMarketsBriefStore(root).load()
+            store.build()
+            second = AIMarketsBriefStore(root).load()
+            text = (root / "outputs" / "ai-markets" / "briefings" / "morning-brief.md").read_text(encoding="utf-8").lower()
+
+            self.assertEqual(first["brief_id"], second["brief_id"])
+            self.assertEqual(len(AIMarketsBriefStore(root).history()), 1)
             self.assertIn("delta", second)
             self.assertNotIn("buy ", text)
             self.assertNotIn("sell ", text)

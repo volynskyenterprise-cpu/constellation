@@ -159,6 +159,24 @@ INPUTS = {
     "google_drive": Path("outputs/google-drive/google-drive-sync-manifest.json"),
 }
 
+BRIEF_INPUTS = {
+    "ai_markets": Path("outputs/ai-markets/ai-markets.json"),
+    "lifecycle": Path("outputs/ai-markets/theme-lifecycle.json"),
+    "portfolio": Path("outputs/ai-markets/portfolio/portfolio-intelligence.json"),
+    "catalysts": Path("outputs/ai-markets/catalysts/catalyst-monitor.json"),
+    "decisions": Path("outputs/ai-markets/decisions/decision-journal.json"),
+    "dashboard": Path("outputs/dashboard/dashboard.json"),
+    "report": Path("outputs/reports/latest-report.json"),
+    "morning": Path("outputs/morning/morning-brief.json"),
+    "daily": Path("outputs/daily/daily-run.json"),
+    "source_monitor": Path("outputs/source-monitor/latest-monitor.json"),
+    "intake": Path("outputs/intake/intake-manifest.json"),
+    "google_drive": Path("outputs/google-drive/google-drive-sync-manifest.json"),
+    "evidence_graph": Path("outputs/evidence-graph/evidence-graph.json"),
+    "thesis": Path("outputs/thesis/theses.json"),
+    "evolution": Path("outputs/evolution/evolution.json"),
+}
+
 
 @dataclass(frozen=True)
 class AIMarketsTheme:
@@ -1267,6 +1285,208 @@ class AIMarketsDecisionJournalStore:
         return path
 
 
+@dataclass(frozen=True)
+class AIMarketsExecutiveBriefSection:
+    title: str
+    items: list[str]
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class AIMarketsResearchAgendaItem:
+    agenda_id: str
+    title: str
+    priority: str
+    reason: str
+    source_type: str
+    related_themes: list[str]
+    related_entities: list[str]
+    related_catalysts: list[str]
+    related_decisions: list[str]
+    related_risks: list[str]
+    source_paths: list[str]
+    provenance: JsonMap
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class AIMarketsMorningPriority:
+    priority_id: str
+    title: str
+    priority: str
+    reason: str
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class AIMarketsBriefDelta:
+    new_agenda_items: list[str]
+    removed_agenda_items: list[str]
+    priority_changes: list[JsonMap]
+    catalyst_count_change: int
+    decision_review_count_change: int
+    portfolio_review_count_change: int
+    lifecycle_count_change: int
+    source_artifact_availability_changes: list[str]
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class AIMarketsBriefSnapshot:
+    brief_id: str
+    created_at: str
+    version: str
+    available: bool
+    source_artifacts_available: list[str]
+    source_artifacts_missing: list[str]
+    research_agenda: list[AIMarketsResearchAgendaItem]
+    morning_priorities: list[AIMarketsMorningPriority]
+    delta: AIMarketsBriefDelta
+    sections: list[AIMarketsExecutiveBriefSection]
+    metrics: JsonMap
+    output_paths: JsonMap
+    provenance: JsonMap
+    limitations: list[str]
+
+    def to_dict(self) -> JsonMap:
+        return {
+            "brief_id": self.brief_id,
+            "created_at": self.created_at,
+            "version": self.version,
+            "available": self.available,
+            "source_artifacts_available": self.source_artifacts_available,
+            "source_artifacts_missing": self.source_artifacts_missing,
+            "ai_markets_available": "ai_markets" in self.source_artifacts_available,
+            "lifecycle_available": "lifecycle" in self.source_artifacts_available,
+            "portfolio_available": "portfolio" in self.source_artifacts_available,
+            "catalyst_monitor_available": "catalysts" in self.source_artifacts_available,
+            "decision_journal_available": "decisions" in self.source_artifacts_available,
+            "dashboard_available": "dashboard" in self.source_artifacts_available,
+            "report_available": "report" in self.source_artifacts_available,
+            "research_agenda": [item.to_dict() for item in self.research_agenda],
+            "research_agenda_count": len(self.research_agenda),
+            "high_priority_agenda_count": sum(1 for item in self.research_agenda if item.priority == "high"),
+            "top_agenda_items": [item.title for item in self.research_agenda[:5]],
+            "morning_priorities": [item.to_dict() for item in self.morning_priorities],
+            "morning_priority_count": len(self.morning_priorities),
+            "delta": self.delta.to_dict(),
+            "sections": [item.to_dict() for item in self.sections],
+            **self.metrics,
+            "output_paths": self.output_paths,
+            "provenance": self.provenance,
+            "limitations": self.limitations,
+        }
+
+
+@dataclass(frozen=True)
+class AIMarketsExecutiveBrief:
+    snapshot: AIMarketsBriefSnapshot
+
+    def to_dict(self) -> JsonMap:
+        return self.snapshot.to_dict()
+
+
+class AIMarketsBriefEngine:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+
+    def build(self, history: list[JsonMap]) -> AIMarketsBriefSnapshot:
+        artifacts = _brief_artifacts(self.root)
+        available = sorted(name for name, value in artifacts.items() if value)
+        missing = sorted(name for name, value in artifacts.items() if not value)
+        agenda = sorted(_brief_agenda(artifacts, missing), key=_agenda_sort_key)
+        priorities = _brief_priorities(agenda)
+        metrics = _brief_metrics(artifacts, agenda)
+        delta = _brief_delta(history[-1] if history else {}, agenda, metrics, available, missing)
+        sections = _brief_sections(artifacts, agenda, metrics, missing)
+        return AIMarketsBriefSnapshot(
+            _brief_id(agenda, metrics, available, missing),
+            _now_iso(),
+            __version__,
+            True,
+            available,
+            missing,
+            agenda,
+            priorities,
+            delta,
+            sections,
+            metrics,
+            {"brief_path": "outputs/ai-markets/briefings/morning-brief.md", "agenda_path": "outputs/ai-markets/briefings/research-agenda.md"},
+            {"consumed_artifacts": {key: str(value) for key, value in BRIEF_INPUTS.items()}},
+            [
+                "Executive Morning Brief is deterministic and uses local artifacts only.",
+                "No web retrieval, external market data, financial advice, trading recommendations, or autonomous decisions are produced.",
+            ],
+        )
+
+
+class AIMarketsBriefStore:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.directory = root / "outputs" / "ai-markets" / "briefings"
+        self.json_path = self.directory / "morning-brief.json"
+        self.report_path = self.directory / "morning-brief.md"
+        self.agenda_json_path = self.directory / "research-agenda.json"
+        self.agenda_path = self.directory / "research-agenda.md"
+        self.history_path = self.directory / "brief-history.json"
+        self.delta_path = self.directory / "brief-delta.json"
+
+    def build(self) -> AIMarketsBriefSnapshot:
+        snapshot = AIMarketsBriefEngine(self.root).build(self.history())
+        self.save(snapshot)
+        return snapshot
+
+    def load(self) -> JsonMap:
+        if not self.json_path.exists():
+            raise AIMarketsError("No AI & Markets executive brief found. Run `python -m constellation ai-markets brief` first.")
+        return read_json(self.json_path)
+
+    def history(self) -> list[JsonMap]:
+        if not self.history_path.exists():
+            return []
+        return _map_list(read_json(self.history_path).get("snapshots", []))
+
+    def save(self, snapshot: AIMarketsBriefSnapshot) -> None:
+        data = snapshot.to_dict()
+        write_json(self.json_path, data)
+        write_json(self.agenda_json_path, {"research_agenda": [item.to_dict() for item in snapshot.research_agenda]})
+        write_json(self.delta_path, snapshot.delta.to_dict())
+        history = self.history()
+        if not history or history[-1].get("brief_id") != snapshot.brief_id:
+            history.append(data)
+        write_json(self.history_path, {"snapshots": history})
+        self.report_path.write_text(render_executive_brief(snapshot), encoding="utf-8")
+        self.agenda_path.write_text(render_research_agenda(snapshot), encoding="utf-8")
+
+    def status(self) -> JsonMap:
+        if not self.json_path.exists():
+            return {"available": False, "brief_path": str(self.report_path), "agenda_path": str(self.agenda_path)}
+        data = self.load()
+        return {
+            "available": True,
+            "brief_id": data.get("brief_id"),
+            "theme_count": data.get("theme_count", 0),
+            "watchlist_count": data.get("watchlist_count", 0),
+            "total_catalyst_count": data.get("total_catalyst_count", 0),
+            "high_priority_catalyst_count": data.get("high_priority_catalyst_count", 0),
+            "open_decision_count": data.get("open_decision_count", 0),
+            "due_review_count": data.get("due_review_count", 0),
+            "overdue_review_count": data.get("overdue_review_count", 0),
+            "research_agenda_count": data.get("research_agenda_count", 0),
+            "high_priority_agenda_count": data.get("high_priority_agenda_count", 0),
+            "brief_path": str(self.report_path),
+            "agenda_path": str(self.agenda_path),
+        }
+
+
 class AIMarketsEngine:
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -1333,14 +1553,16 @@ class AIMarketsStore:
         portfolio = AIMarketsPortfolioStore(self.root).build(report, lifecycle)
         catalyst_monitor = AIMarketsCatalystStore(self.root).build(report, lifecycle, portfolio)
         decision_journal = AIMarketsDecisionJournalStore(self.root).build()
+        executive_brief = AIMarketsBriefStore(self.root).build()
         report_data = report.to_dict()
         report_data["theme_lifecycle"] = lifecycle.to_dict()
         report_data["portfolio_intelligence"] = portfolio.to_dict()
         report_data["catalyst_monitor"] = catalyst_monitor.to_dict()
         report_data["decision_journal"] = decision_journal.to_dict()
+        report_data["executive_brief"] = executive_brief.to_dict()
         write_json(self.json_path, report_data)
         self.report_path.parent.mkdir(parents=True, exist_ok=True)
-        self.report_path.write_text(render_report(report, lifecycle, portfolio, catalyst_monitor, decision_journal), encoding="utf-8")
+        self.report_path.write_text(render_report(report, lifecycle, portfolio, catalyst_monitor, decision_journal, executive_brief), encoding="utf-8")
         self.watchlist_path.write_text(render_watchlist(report, portfolio, catalyst_monitor), encoding="utf-8")
         self.content_ideas_path.write_text(render_content_ideas(report), encoding="utf-8")
         self.executive_questions_path.write_text(render_executive_questions(report), encoding="utf-8")
@@ -1357,6 +1579,7 @@ class AIMarketsStore:
         portfolio_status = AIMarketsPortfolioStore(self.root).status()
         catalyst_status = AIMarketsCatalystStore(self.root).status()
         decision_status = AIMarketsDecisionJournalStore(self.root).status()
+        brief_status = AIMarketsBriefStore(self.root).status()
         return {
             "available": exists,
             "report_id": report.report_id if report else None,
@@ -1397,6 +1620,12 @@ class AIMarketsStore:
             "outcome_count": decision_status.get("outcome_count", 0),
             "decision_journal_report_path": decision_status.get("report_path"),
             "decision_review_queue_path": decision_status.get("review_queue_path"),
+            "executive_brief_available": brief_status.get("available", False),
+            "executive_brief_id": brief_status.get("brief_id"),
+            "executive_brief_path": brief_status.get("brief_path"),
+            "research_agenda_path": brief_status.get("agenda_path"),
+            "research_agenda_count": brief_status.get("research_agenda_count", 0),
+            "high_priority_agenda_count": brief_status.get("high_priority_agenda_count", 0),
         }
 
     def export(self) -> Path:
@@ -1405,14 +1634,15 @@ class AIMarketsStore:
         portfolio = AIMarketsPortfolioStore(self.root).build(report, lifecycle)
         catalyst_monitor = AIMarketsCatalystStore(self.root).build(report, lifecycle, portfolio)
         decision_journal = AIMarketsDecisionJournalStore(self.root).build()
-        self.report_path.write_text(render_report(report, lifecycle, portfolio, catalyst_monitor, decision_journal), encoding="utf-8")
+        executive_brief = AIMarketsBriefStore(self.root).build()
+        self.report_path.write_text(render_report(report, lifecycle, portfolio, catalyst_monitor, decision_journal, executive_brief), encoding="utf-8")
         self.watchlist_path.write_text(render_watchlist(report, portfolio, catalyst_monitor), encoding="utf-8")
         self.content_ideas_path.write_text(render_content_ideas(report), encoding="utf-8")
         self.executive_questions_path.write_text(render_executive_questions(report), encoding="utf-8")
         return self.report_path
 
 
-def render_report(report: AIMarketsReport, lifecycle: AIMarketsThemeLifecycleSnapshot | None = None, portfolio: AIMarketsPortfolioSnapshot | None = None, catalyst_monitor: AIMarketsCatalystSnapshot | None = None, decision_journal: AIMarketsDecisionSnapshot | None = None) -> str:
+def render_report(report: AIMarketsReport, lifecycle: AIMarketsThemeLifecycleSnapshot | None = None, portfolio: AIMarketsPortfolioSnapshot | None = None, catalyst_monitor: AIMarketsCatalystSnapshot | None = None, decision_journal: AIMarketsDecisionSnapshot | None = None, executive_brief: AIMarketsBriefSnapshot | None = None) -> str:
     lines = [
         "# AI & Markets Intelligence",
         "",
@@ -1465,6 +1695,9 @@ def render_report(report: AIMarketsReport, lifecycle: AIMarketsThemeLifecycleSna
         "## Decision Journal",
         "",
         *_decision_journal_report_lines(decision_journal),
+        "## Executive Morning Brief",
+        "",
+        *_executive_brief_report_lines(executive_brief),
         "## Watchlist",
         "",
         *_bullet([entity.symbol for entity in report.entities]),
@@ -1782,6 +2015,51 @@ def render_decision_timeline(snapshot: AIMarketsDecisionSnapshot) -> str:
     return "\n".join(lines)
 
 
+def render_executive_brief(snapshot: AIMarketsBriefSnapshot) -> str:
+    data = snapshot.to_dict()
+    lines = [
+        "# AI & Markets Executive Morning Brief",
+        "",
+        f"- Brief ID: `{snapshot.brief_id}`",
+        f"- Generated: `{snapshot.created_at}`",
+        f"- Version: `{snapshot.version}`",
+        f"- Source artifacts available: {len(snapshot.source_artifacts_available)}",
+        f"- Source artifacts missing: {len(snapshot.source_artifacts_missing)}",
+        "",
+        "## Executive Summary",
+        "",
+        f"- Themes: {data.get('theme_count', 0)}",
+        f"- Watchlist items: {data.get('watchlist_count', 0)}",
+        f"- Catalysts: {data.get('total_catalyst_count', 0)}",
+        f"- Open decisions: {data.get('open_decision_count', 0)}",
+        f"- Research agenda items: {data.get('research_agenda_count', 0)}",
+        "",
+    ]
+    for section in snapshot.sections:
+        lines.extend([f"## {section.title}", ""])
+        lines.extend(_bullet(section.items or ["No items."]))
+    lines.extend(["## Research Agenda", ""])
+    lines.extend(_agenda_markdown_lines(snapshot.research_agenda))
+    lines.extend(["## Limitations", ""])
+    lines.extend(_bullet(snapshot.limitations))
+    lines.extend(["## Provenance", ""])
+    lines.extend(_bullet([f"{key}: {value}" for key, value in snapshot.provenance.get("consumed_artifacts", {}).items()]))
+    return "\n".join(lines)
+
+
+def render_research_agenda(snapshot: AIMarketsBriefSnapshot) -> str:
+    return "\n".join(["# AI & Markets Research Agenda", "", *_agenda_markdown_lines(snapshot.research_agenda)])
+
+
+def _agenda_markdown_lines(items: list[AIMarketsResearchAgendaItem]) -> list[str]:
+    lines: list[str] = []
+    for priority in ["high", "medium", "low"]:
+        lines.extend([f"## {priority.title()} Priority", ""])
+        group = [item for item in items if item.priority == priority]
+        lines.extend(_bullet([f"{item.title} - {item.reason}" for item in group] or [f"No {priority} priority agenda items."]))
+    return lines
+
+
 def _decision_queue_lines(snapshot: AIMarketsDecisionSnapshot) -> list[str]:
     lines: list[str] = []
     groups = [("overdue", "Overdue"), ("due", "Due"), ("not_due", "Upcoming"), ("no_review_date", "No Review Date"), ("reviewed", "Reviewed")]
@@ -1872,6 +2150,20 @@ def _decision_journal_report_lines(snapshot: AIMarketsDecisionSnapshot | None) -
         f"- Outcomes recorded: {data.get('outcome_count', 0)}",
         "- Decision journal: `outputs/ai-markets/decisions/decision-journal.md`",
         "- Review queue: `outputs/ai-markets/decisions/decision-review-queue.md`",
+        "",
+    ]
+
+
+def _executive_brief_report_lines(snapshot: AIMarketsBriefSnapshot | None) -> list[str]:
+    if snapshot is None:
+        return ["- Executive Morning Brief has not been generated.", ""]
+    data = snapshot.to_dict()
+    return [
+        f"- Brief ID: `{snapshot.brief_id}`",
+        f"- Research agenda items: {data.get('research_agenda_count', 0)}",
+        f"- High-priority agenda items: {data.get('high_priority_agenda_count', 0)}",
+        "- Brief path: `outputs/ai-markets/briefings/morning-brief.md`",
+        "- Research agenda path: `outputs/ai-markets/briefings/research-agenda.md`",
         "",
     ]
 
@@ -3005,6 +3297,143 @@ def _decision_template_text() -> str:
         "## Outcome\n\n\n"
         "## Lessons\n\n"
     )
+
+
+def _brief_artifacts(root: Path) -> dict[str, JsonMap]:
+    return {name: _read_optional_json(root / path) for name, path in BRIEF_INPUTS.items()}
+
+
+def _brief_metrics(artifacts: dict[str, JsonMap], agenda: list[AIMarketsResearchAgendaItem]) -> JsonMap:
+    ai = _map(artifacts.get("ai_markets"))
+    portfolio = _map(artifacts.get("portfolio"))
+    catalysts = _map(artifacts.get("catalysts"))
+    decisions = _map(artifacts.get("decisions"))
+    lifecycle = _map(artifacts.get("lifecycle"))
+    return {
+        "theme_count": len(_map_list(ai.get("themes", []))),
+        "entity_count": len(_map_list(ai.get("entities", []))),
+        "risk_count": len(_map_list(ai.get("risks", []))),
+        "watchlist_count": _int(portfolio.get("watchlist_count")),
+        "portfolio_mode": portfolio.get("mode"),
+        "high_priority_review_count": _int(portfolio.get("high_priority_review_count")),
+        "total_catalyst_count": _int(catalysts.get("total_catalyst_count")),
+        "high_priority_catalyst_count": _int(catalysts.get("high_priority_catalyst_count")),
+        "due_review_count": _int(decisions.get("due_review_count")),
+        "overdue_review_count": _int(decisions.get("overdue_review_count")),
+        "open_decision_count": _int(decisions.get("open_decision_count")),
+        "top_themes": [str(item.get("theme_name")) for item in _map_list(lifecycle.get("themes", []))[:5]],
+        "top_entities": [str(item.get("symbol")) for item in _map_list(ai.get("entities", []))[:5]],
+        "top_catalysts": [str(item.get("title")) for item in _map_list(catalysts.get("catalysts", []))[:5]],
+        "top_risks": [str(item.get("description")) for item in _map_list(ai.get("risks", []))[:5]],
+        "top_agenda_items": [item.title for item in agenda[:5]],
+    }
+
+
+def _brief_agenda(artifacts: dict[str, JsonMap], missing: list[str]) -> list[AIMarketsResearchAgendaItem]:
+    items: list[AIMarketsResearchAgendaItem] = []
+    portfolio = _map(artifacts.get("portfolio"))
+    catalysts = _map(artifacts.get("catalysts"))
+    decisions = _map(artifacts.get("decisions"))
+    lifecycle = _map(artifacts.get("lifecycle"))
+    ai = _map(artifacts.get("ai_markets"))
+    for entry in _map_list(decisions.get("entries", [])):
+        review_status = _map(entry.get("review")).get("review_status")
+        if review_status in {"due", "overdue"}:
+            items.append(_agenda_item(f"Review decision: {entry.get('title')}", "high", f"Decision review is {review_status}.", "decision_review", _string_list(entry.get("related_themes", [])), _string_list(entry.get("related_entities", [])), [], [str(entry.get("entry_id"))], _string_list(entry.get("related_risks", [])), ["outputs/ai-markets/decisions/decision-review-queue.md"]))
+    for catalyst in _map_list(catalysts.get("catalysts", [])):
+        if catalyst.get("priority") == "high":
+            items.append(_agenda_item(f"Monitor catalyst: {catalyst.get('title')}", "high", "High-priority catalyst is present.", "catalyst", _string_list(catalyst.get("related_themes", [])), _string_list(catalyst.get("related_entities", [])), [str(catalyst.get("catalyst_id"))], [], _string_list(catalyst.get("related_risks", [])), ["outputs/ai-markets/catalysts/catalyst-monitor.md"]))
+    for item in _map_list(portfolio.get("positions", [])) + _map_list(portfolio.get("watchlist", [])) + _map_list(portfolio.get("detected_entities", [])):
+        if item.get("research_priority") == "high":
+            items.append(_agenda_item(f"Review exposure: {item.get('symbol')}", "high", str(item.get("priority_reason", "High-priority portfolio review.")), "portfolio_review", _string_list(item.get("related_themes", [])), [str(item.get("symbol"))], [], [], _string_list(item.get("related_risks", [])), ["outputs/ai-markets/portfolio/portfolio-intelligence.md"]))
+    for theme in _map_list(lifecycle.get("themes", [])):
+        if theme.get("current_status") in {"contradicted", "weakening"}:
+            items.append(_agenda_item(f"Check theme: {theme.get('theme_name')}", "high", f"Theme lifecycle status is {theme.get('current_status')}.", "theme_lifecycle", [str(theme.get("theme_name"))], _string_list(theme.get("related_entities", [])), [], [], _string_list(theme.get("related_risks", [])), ["outputs/ai-markets/theme-lifecycle.md"]))
+    for question in _map_list(ai.get("executive_questions", [])):
+        items.append(_agenda_item(f"Check evidence for question: {question.get('question')}", "medium", "Executive open question exists.", "open_question", _string_list(question.get("related_themes", [])), [], [], [], [], ["outputs/ai-markets/executive-questions.md"]))
+    for name in missing:
+        items.append(_agenda_item(f"Check missing artifact: {name}", "low", "Source artifact was unavailable for the brief.", "missing_artifact", [], [], [], [], [], [str(BRIEF_INPUTS[name])]))
+    return _unique_agenda(items)
+
+
+def _agenda_item(title: str, priority: str, reason: str, source_type: str, themes: list[str], entities: list[str], catalysts: list[str], decisions: list[str], risks: list[str], paths: list[str]) -> AIMarketsResearchAgendaItem:
+    agenda_id = f"agenda_{_digest(title + priority + source_type)}"
+    return AIMarketsResearchAgendaItem(agenda_id, _short(title), priority, reason, source_type, sorted(set(themes)), sorted(set(entities)), sorted(set(catalysts)), sorted(set(decisions)), sorted(set(risks)), sorted(set(paths)), {"source_type": source_type})
+
+
+def _unique_agenda(items: list[AIMarketsResearchAgendaItem]) -> list[AIMarketsResearchAgendaItem]:
+    by_id = {item.agenda_id: item for item in items}
+    return [by_id[key] for key in sorted(by_id)]
+
+
+def _brief_priorities(agenda: list[AIMarketsResearchAgendaItem]) -> list[AIMarketsMorningPriority]:
+    priorities: list[AIMarketsMorningPriority] = []
+    for item in [agenda_item for agenda_item in agenda if agenda_item.priority == "high"][:5]:
+        priorities.append(AIMarketsMorningPriority(f"priority_{_digest(item.agenda_id)}", item.title, item.priority, item.reason))
+    return priorities
+
+
+def _brief_sections(artifacts: dict[str, JsonMap], agenda: list[AIMarketsResearchAgendaItem], metrics: JsonMap, missing: list[str]) -> list[AIMarketsExecutiveBriefSection]:
+    lifecycle = _map(artifacts.get("lifecycle"))
+    portfolio = _map(artifacts.get("portfolio"))
+    catalysts = _map(artifacts.get("catalysts"))
+    decisions = _map(artifacts.get("decisions"))
+    ai = _map(artifacts.get("ai_markets"))
+    changed = _brief_changes(artifacts)
+    matters = [item.title for item in agenda if item.priority == "high"][:8]
+    return [
+        AIMarketsExecutiveBriefSection("What Changed", changed or ["No new changes detected from available artifacts."]),
+        AIMarketsExecutiveBriefSection("What Matters Today", matters or ["No high-priority agenda items currently identified."]),
+        AIMarketsExecutiveBriefSection("Theme Lifecycle Snapshot", [f"{item.get('theme_name')}: {item.get('current_status')}" for item in _map_list(lifecycle.get("themes", []))[:10]] or ["Theme lifecycle unavailable."]),
+        AIMarketsExecutiveBriefSection("Portfolio / Watchlist Review", [f"Mode: {portfolio.get('mode', 'unavailable')}", f"Watchlist count: {portfolio.get('watchlist_count', 0)}", f"High-priority reviews: {portfolio.get('high_priority_review_count', 0)}"]),
+        AIMarketsExecutiveBriefSection("Catalyst Monitor", [f"Total catalysts: {catalysts.get('total_catalyst_count', 0)}", f"High-priority catalysts: {catalysts.get('high_priority_catalyst_count', 0)}", f"Risk-linked catalysts: {catalysts.get('risk_linked_catalyst_count', 0)}"]),
+        AIMarketsExecutiveBriefSection("Decision Journal Review Queue", [f"Entries: {decisions.get('entry_count', 0)}", f"Due reviews: {decisions.get('due_review_count', 0)}", f"Overdue reviews: {decisions.get('overdue_review_count', 0)}"] or ["No decision journal data."]),
+        AIMarketsExecutiveBriefSection("Risks to Monitor", [str(item.get("description")) for item in _map_list(ai.get("risks", []))[:8]] or ["No AI & Markets risks identified."]),
+        AIMarketsExecutiveBriefSection("Recommended Reading / Files", ["outputs/ai-markets/ai-markets-report.md", "outputs/ai-markets/portfolio/portfolio-intelligence.md", "outputs/ai-markets/catalysts/catalyst-monitor.md", "outputs/ai-markets/decisions/decision-review-queue.md", "outputs/dashboard/dashboard.md"]),
+        AIMarketsExecutiveBriefSection("Open Questions", [str(item.get("question")) for item in _map_list(ai.get("executive_questions", []))[:5]] or ["No executive questions currently identified."]),
+        AIMarketsExecutiveBriefSection("Source Artifact Gaps", missing or ["No missing source artifacts."]),
+    ]
+
+
+def _brief_changes(artifacts: dict[str, JsonMap]) -> list[str]:
+    changes: list[str] = []
+    lifecycle_transitions = len(_map_list(_map(artifacts.get("lifecycle")).get("transitions", [])))
+    catalyst_new = _int(_map(artifacts.get("catalysts")).get("new_catalyst_count"))
+    decision_due = _int(_map(artifacts.get("decisions")).get("due_review_count")) + _int(_map(artifacts.get("decisions")).get("overdue_review_count"))
+    if lifecycle_transitions:
+        changes.append(f"Theme lifecycle transitions: {lifecycle_transitions}.")
+    if catalyst_new:
+        changes.append(f"New catalysts: {catalyst_new}.")
+    if decision_due:
+        changes.append(f"Due or overdue decision reviews: {decision_due}.")
+    return changes
+
+
+def _brief_delta(previous: JsonMap, agenda: list[AIMarketsResearchAgendaItem], metrics: JsonMap, available: list[str], missing: list[str]) -> AIMarketsBriefDelta:
+    prev_agenda = {str(item.get("agenda_id")): item for item in _map_list(previous.get("research_agenda", []))}
+    current = {item.agenda_id: item for item in agenda}
+    priority_changes = [{"agenda_id": key, "previous_value": prev_agenda[key].get("priority"), "current_value": item.priority} for key, item in current.items() if key in prev_agenda and prev_agenda[key].get("priority") != item.priority]
+    prev_missing = set(_string_list(previous.get("source_artifacts_missing", [])))
+    return AIMarketsBriefDelta(
+        sorted(set(current) - set(prev_agenda)),
+        sorted(set(prev_agenda) - set(current)),
+        sorted(priority_changes, key=lambda item: str(item.get("agenda_id"))),
+        _int(metrics.get("total_catalyst_count")) - _int(previous.get("total_catalyst_count")),
+        _int(metrics.get("due_review_count")) + _int(metrics.get("overdue_review_count")) - (_int(previous.get("due_review_count")) + _int(previous.get("overdue_review_count"))),
+        _int(metrics.get("high_priority_review_count")) - _int(previous.get("high_priority_review_count")),
+        _int(metrics.get("theme_count")) - _int(previous.get("theme_count")),
+        sorted(set(missing).symmetric_difference(prev_missing)),
+    )
+
+
+def _brief_id(agenda: list[AIMarketsResearchAgendaItem], metrics: JsonMap, available: list[str], missing: list[str]) -> str:
+    payload = "|".join([",".join(item.agenda_id + item.priority for item in agenda), ",".join(f"{key}:{metrics.get(key)}" for key in sorted(metrics)), ",".join(available), ",".join(missing)])
+    return f"ai_markets_brief_{_digest(payload)}"
+
+
+def _agenda_sort_key(item: AIMarketsResearchAgendaItem):
+    source_rank = {"decision_review": 0, "catalyst": 1, "portfolio_review": 2, "theme_lifecycle": 3, "risk": 4, "open_question": 5, "source_activity": 6, "missing_artifact": 7}.get(item.source_type, 8)
+    return (_priority_rank(item.priority), source_rank, -len(item.related_entities), -len(item.related_themes), item.title, item.agenda_id)
 
 
 def _priority_rank(priority: str) -> int:

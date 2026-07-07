@@ -2,7 +2,6 @@
 
 ## Next Engineering Milestones
 
-- Add executive morning brief callouts for high-conviction and weakening themes.
 - Add human-reviewed AI & Markets theme acceptance and suppression notes.
 - Add configurable AI & Markets taxonomy files after MVP validation.
 - Add human-reviewed suppression rules for low-value AI & Markets open questions.

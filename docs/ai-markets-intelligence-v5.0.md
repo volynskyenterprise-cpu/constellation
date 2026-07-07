@@ -218,6 +218,44 @@ Outputs:
 
 Decision Journal is research memory only. It is not financial advice, trading software, or an autonomous decision maker.
 
+## v5.5.0 Executive Morning Brief
+
+v5.5.0 adds the AI & Markets Executive Morning Brief, the primary daily user-facing artifact for the AI & Markets domain.
+
+The brief consolidates deterministic local outputs from:
+
+- AI & Markets Intelligence
+- Theme Lifecycle
+- Portfolio Intelligence
+- Catalyst Monitoring
+- Decision Journal
+- Institutional Research Reports
+- Executive Dashboard
+- Daily and morning platform outputs
+
+Commands:
+
+```bash
+python -m constellation ai-markets brief
+python -m constellation ai-markets brief --export
+python -m constellation ai-markets brief --agenda
+python -m constellation ai-markets brief --history
+python -m constellation ai-markets brief --delta
+```
+
+Outputs:
+
+- `outputs/ai-markets/briefings/morning-brief.json`
+- `outputs/ai-markets/briefings/morning-brief.md`
+- `outputs/ai-markets/briefings/research-agenda.json`
+- `outputs/ai-markets/briefings/research-agenda.md`
+- `outputs/ai-markets/briefings/brief-history.json`
+- `outputs/ai-markets/briefings/brief-delta.json`
+
+The brief includes executive summary, what changed, what matters today, lifecycle snapshot, portfolio/watchlist review, catalyst monitor, decision journal queue, risks, research agenda, recommended files, open questions, limitations, and provenance.
+
+It is deterministic only. It does not perform market prediction, retrieve web data, call providers, provide financial advice, or make autonomous decisions.
+
 The goal is to create a durable research operating system that helps the user understand:
 
 - What changed

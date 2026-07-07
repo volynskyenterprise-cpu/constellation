@@ -408,11 +408,13 @@ python -m constellation ai-markets catalysts --calendar
 python -m constellation ai-markets decisions
 python -m constellation ai-markets decisions --queue
 python -m constellation ai-markets decisions --create-template
+python -m constellation ai-markets brief
+python -m constellation ai-markets brief --agenda
 python -m constellation ai-markets report
 python -m constellation ai-markets export
 ```
 
-AI & Markets Intelligence classifies existing local Constellation artifacts into deterministic themes, entities, catalysts, risks, prioritized executive questions, watchlists, and content ideas. Theme Lifecycle tracks whether each theme is emerging, active, strengthening, high conviction, weakening, contradicted, or archived. Portfolio Intelligence maps optional local portfolio/watchlist config and detected entities to themes, lifecycle statuses, risks, and review priorities. Catalyst Monitoring organizes catalyst categories, time horizons, priorities, risks, and changes. v5.4.0 adds Decision Journal, a private local research memory layer for decisions, review queues, outcomes, and lessons. It uses fixed keyword and exact matching only and does not provide financial advice or trading recommendations.
+AI & Markets Intelligence classifies existing local Constellation artifacts into deterministic themes, entities, catalysts, risks, prioritized executive questions, watchlists, and content ideas. Theme Lifecycle tracks whether each theme is emerging, active, strengthening, high conviction, weakening, contradicted, or archived. Portfolio Intelligence maps optional local portfolio/watchlist config and detected entities to themes, lifecycle statuses, risks, and review priorities. Catalyst Monitoring organizes catalyst categories, time horizons, priorities, risks, and changes. Decision Journal preserves private local research memory. v5.5.0 adds the Executive Morning Brief, the primary daily AI & Markets briefing artifact. It uses fixed keyword and exact matching only and does not provide financial advice or trading recommendations.
 
 Local portfolio config is optional. Use `config/portfolio.example.yaml` as a template, and keep real local configs in `config/portfolio.yaml` or `config/portfolio.local.yaml`, which are gitignored.
 
@@ -437,6 +439,8 @@ Key outputs:
 - `outputs/ai-markets/decisions/decision-journal.md`
 - `outputs/ai-markets/decisions/decision-review-queue.md`
 - `outputs/ai-markets/decisions/decision-timeline.md`
+- `outputs/ai-markets/briefings/morning-brief.md`
+- `outputs/ai-markets/briefings/research-agenda.md`
 - `outputs/ai-markets/watchlist.md`
 
 ### Research
