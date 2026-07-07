@@ -1,10 +1,10 @@
 # Constellation
 
-> **Deterministic Institutional Intelligence Platform**
-
-Constellation transforms research into explainable institutional intelligence through deterministic evidence extraction, knowledge graphs, cross-document reasoning, thesis generation, executive intelligence briefs, and operational intake pipelines.
-
-Unlike black-box AI systems, every conclusion produced by Constellation is fully traceable back to explicit evidence with complete provenance.
+> **Current Status — Phase I Complete (v4.2)**
+>
+> Constellation is a deterministic institutional intelligence platform that transforms research into evidence, knowledge graphs, evolving theses, executive dashboards, and institutional research reports.
+>
+> The core intelligence platform is complete. Future development is focused on domain-specific intelligence for AI & Markets, capital allocation, and real estate while preserving deterministic, evidence-first reasoning with complete provenance.
 
 **No hallucinations.**
 
