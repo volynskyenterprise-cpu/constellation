@@ -37,6 +37,42 @@ Question priority is deterministic. High-priority questions are those linked to 
 
 Entity detection now recognizes a broader fixed set of tickers, assets, and company-name aliases including NVDA, AMD, AVGO, MSFT, GOOGL, GOOG, AMZN, META, TSLA, PLTR, ORCL, CRWV, IREN, COIN, MSTR, IBM, NOW, INTC, MRVL, GFS, AMKR, BTC, ETH, GLD, SLV, URA, XME, and COPX. Matching remains token/regex based only; no semantic similarity, embeddings, providers, or web retrieval are used.
 
+## v5.1.0 Theme Lifecycle
+
+v5.1.0 turns AI & Markets Intelligence from a point-in-time snapshot into a deterministic longitudinal research layer.
+
+Each theme receives a lifecycle status:
+
+- `emerging`
+- `active`
+- `strengthening`
+- `high_conviction`
+- `weakening`
+- `contradicted`
+- `archived`
+
+Lifecycle status is derived from deterministic counts only: evidence count, source count, entity count, risk count, prior status, prior confidence, and explicit contradiction or conflict language. It does not infer investment conclusions and does not use AI, providers, embeddings, semantic similarity, web retrieval, or trading systems.
+
+Lifecycle outputs:
+
+- `outputs/ai-markets/theme-lifecycle.json`
+- `outputs/ai-markets/theme-lifecycle.md`
+- `outputs/ai-markets/theme-history.json`
+- `outputs/ai-markets/theme-transitions.json`
+- `outputs/ai-markets/theme-timeline.md`
+
+Lifecycle commands:
+
+```bash
+python -m constellation ai-markets lifecycle
+python -m constellation ai-markets lifecycle --export
+python -m constellation ai-markets lifecycle --history
+python -m constellation ai-markets lifecycle --transitions
+python -m constellation ai-markets theme THEME_ID
+```
+
+The AI & Markets report includes a Theme Lifecycle section, and the Executive Dashboard includes lifecycle counts, high-conviction themes, strengthening themes, weakening themes, and the lifecycle report path.
+
 The goal is to create a durable research operating system that helps the user understand:
 
 - What changed

@@ -2,6 +2,10 @@
 
 ## Next Engineering Milestones
 
+- Add portfolio intelligence views over lifecycle themes.
+- Add deterministic catalyst monitoring for lifecycle themes.
+- Add AI & Markets decision journal entries tied to lifecycle transitions.
+- Add executive morning brief callouts for high-conviction and weakening themes.
 - Add human-reviewed AI & Markets theme acceptance and suppression notes.
 - Add configurable AI & Markets taxonomy files after MVP validation.
 - Add human-reviewed suppression rules for low-value AI & Markets open questions.

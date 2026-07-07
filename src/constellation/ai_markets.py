@@ -276,6 +276,255 @@ class AIMarketsReport:
         )
 
 
+@dataclass(frozen=True)
+class AIMarketsThemeLifecycleDelta:
+    evidence_delta: int
+    source_delta: int
+    entity_delta: int
+    risk_delta: int
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class AIMarketsThemeTransition:
+    transition_id: str
+    theme_id: str
+    theme_name: str
+    transition_type: str
+    previous_value: Any
+    current_value: Any
+    reason: str
+    created_at: str
+    provenance: JsonMap
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class AIMarketsThemeLifecycleSnapshot:
+    snapshot_id: str
+    created_at: str
+    version: str
+    themes: list[JsonMap]
+    transitions: list[AIMarketsThemeTransition]
+    provenance: JsonMap
+    limitations: list[str]
+
+    def to_dict(self) -> JsonMap:
+        return {
+            "snapshot_id": self.snapshot_id,
+            "created_at": self.created_at,
+            "version": self.version,
+            "theme_count": len(self.themes),
+            "themes": self.themes,
+            "transitions": [item.to_dict() for item in self.transitions],
+            "counts": _lifecycle_counts(self.themes),
+            "provenance": self.provenance,
+            "limitations": self.limitations,
+        }
+
+
+@dataclass(frozen=True)
+class AIMarketsThemeTimeline:
+    theme_id: str
+    theme_name: str
+    transitions: list[AIMarketsThemeTransition]
+
+    def to_dict(self) -> JsonMap:
+        return {
+            "theme_id": self.theme_id,
+            "theme_name": self.theme_name,
+            "transitions": [item.to_dict() for item in self.transitions],
+        }
+
+
+class AIMarketsThemeLifecycleEngine:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+
+    def build(self, report: AIMarketsReport, history: list[JsonMap]) -> AIMarketsThemeLifecycleSnapshot:
+        now = _now_iso()
+        previous = _latest_snapshot(history)
+        previous_themes = {str(item.get("theme_id")): item for item in _map_list(previous.get("themes", []))}
+        previous_by_name = {str(item.get("theme_name")): item for item in previous_themes.values()}
+        risk_by_id = {risk.risk_id: risk for risk in report.risks}
+        current_themes: list[JsonMap] = []
+        for theme in report.themes:
+            previous_theme = previous_themes.get(theme.theme_id)
+            entry = self._theme_entry(theme, report, risk_by_id, previous_theme, previous_by_name.get(theme.name), history, now)
+            current_themes.append(entry)
+        current_ids = {theme.theme_id for theme in report.themes}
+        for previous_theme in previous_themes.values():
+            if str(previous_theme.get("theme_id")) not in current_ids:
+                current_themes.append(self._absent_theme_entry(previous_theme, history, now))
+        current_themes = sorted(current_themes, key=_lifecycle_theme_sort_key)
+        transitions = _theme_transitions(current_themes, previous_themes, now)
+        snapshot_id = _lifecycle_snapshot_id(current_themes)
+        return AIMarketsThemeLifecycleSnapshot(
+            snapshot_id=snapshot_id,
+            created_at=now,
+            version=__version__,
+            themes=current_themes,
+            transitions=transitions,
+            provenance={"ai_markets_report_id": report.report_id, "ai_markets_report_path": "outputs/ai-markets/ai-markets.json"},
+            limitations=[
+                "Theme lifecycle uses deterministic counts, status changes, and explicit risk or contradiction language only.",
+                "No prediction, financial advice, provider call, LLM inference, embeddings, semantic similarity, or web retrieval is used.",
+            ],
+        )
+
+    def _theme_entry(
+        self,
+        theme: AIMarketsTheme,
+        report: AIMarketsReport,
+        risk_by_id: dict[str, AIMarketsRisk],
+        previous_theme: JsonMap | None,
+        previous_by_name: JsonMap | None,
+        history: list[JsonMap],
+        now: str,
+    ) -> JsonMap:
+        previous = previous_theme or previous_by_name or {}
+        previous_status = str(previous.get("current_status") or "")
+        previous_confidence = str(previous.get("confidence") or "")
+        previous_evidence = _int(previous.get("evidence_count"))
+        previous_sources = _int(previous.get("source_count"))
+        previous_entities = _int(previous.get("entity_count"))
+        previous_risks = _int(previous.get("risk_count"))
+        entity_count = len(theme.related_entities)
+        risk_count = len(theme.risks)
+        catalyst_count = len(theme.catalysts)
+        open_question_count = len(theme.open_questions)
+        risk_descriptions = [risk_by_id[risk_id].description for risk_id in theme.risks if risk_id in risk_by_id]
+        status, reason = _lifecycle_status(theme, previous, entity_count, risk_count, risk_descriptions, history)
+        confidence = _confidence(theme.evidence_count, theme.source_count)
+        first_seen_at = str(previous.get("first_seen_at") or now)
+        latest_evidence_at = now if theme.related_evidence_ids else str(previous.get("latest_evidence_at") or "")
+        return {
+            "theme_id": theme.theme_id,
+            "theme_name": theme.name,
+            "current_status": status,
+            "previous_status": previous_status or None,
+            "status_changed": bool(previous_status and previous_status != status),
+            "confidence": confidence,
+            "previous_confidence": previous_confidence or None,
+            "confidence_changed": bool(previous_confidence and previous_confidence != confidence),
+            "evidence_count": theme.evidence_count,
+            "previous_evidence_count": previous_evidence,
+            "evidence_delta": theme.evidence_count - previous_evidence,
+            "source_count": theme.source_count,
+            "previous_source_count": previous_sources,
+            "source_delta": theme.source_count - previous_sources,
+            "entity_count": entity_count,
+            "previous_entity_count": previous_entities,
+            "entity_delta": entity_count - previous_entities,
+            "risk_count": risk_count,
+            "previous_risk_count": previous_risks,
+            "risk_delta": risk_count - previous_risks,
+            "catalyst_count": catalyst_count,
+            "open_question_count": open_question_count,
+            "latest_evidence_at": latest_evidence_at,
+            "first_seen_at": first_seen_at,
+            "last_seen_at": now,
+            "lifecycle_reason": reason,
+            "confidence_reason": _confidence_reason(confidence, theme.evidence_count, theme.source_count, entity_count, risk_count, previous_confidence),
+            "supporting_evidence_ids": theme.related_evidence_ids,
+            "related_entities": theme.related_entities,
+            "related_risks": theme.risks,
+            "provenance": {"matched_keywords": _string_list(theme.provenance.get("matched_keywords", [])), "risk_descriptions": risk_descriptions},
+        }
+
+    def _absent_theme_entry(self, previous_theme: JsonMap, history: list[JsonMap], now: str) -> JsonMap:
+        absent_count = _absence_count(str(previous_theme.get("theme_id")), history) + 1
+        status = "archived" if absent_count >= 2 else "weakening"
+        reason = (
+            f"Theme is archived because it has been absent for {absent_count} lifecycle snapshots."
+            if status == "archived"
+            else "Theme is weakening because it was not seen in the latest AI & Markets build."
+        )
+        return {
+            **previous_theme,
+            "current_status": status,
+            "previous_status": previous_theme.get("current_status"),
+            "status_changed": previous_theme.get("current_status") != status,
+            "previous_confidence": previous_theme.get("confidence"),
+            "confidence_changed": False,
+            "previous_evidence_count": _int(previous_theme.get("evidence_count")),
+            "evidence_count": 0,
+            "evidence_delta": -_int(previous_theme.get("evidence_count")),
+            "previous_source_count": _int(previous_theme.get("source_count")),
+            "source_count": 0,
+            "source_delta": -_int(previous_theme.get("source_count")),
+            "last_seen_at": previous_theme.get("last_seen_at"),
+            "lifecycle_reason": reason,
+            "provenance": {**_map(previous_theme.get("provenance")), "absence_count": absent_count},
+        }
+
+
+class AIMarketsThemeLifecycleStore:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.directory = root / "outputs" / "ai-markets"
+        self.lifecycle_path = self.directory / "theme-lifecycle.json"
+        self.lifecycle_report_path = self.directory / "theme-lifecycle.md"
+        self.history_path = self.directory / "theme-history.json"
+        self.transitions_path = self.directory / "theme-transitions.json"
+        self.timeline_path = self.directory / "theme-timeline.md"
+
+    def build(self, report: AIMarketsReport | None = None) -> AIMarketsThemeLifecycleSnapshot:
+        report = report or AIMarketsStore(self.root).load()
+        snapshot = AIMarketsThemeLifecycleEngine(self.root).build(report, self.history())
+        self.save(snapshot)
+        return snapshot
+
+    def load(self) -> JsonMap:
+        if not self.lifecycle_path.exists():
+            raise AIMarketsError("No AI & Markets theme lifecycle found. Run `python -m constellation ai-markets lifecycle` first.")
+        return read_json(self.lifecycle_path)
+
+    def history(self) -> list[JsonMap]:
+        if not self.history_path.exists():
+            return []
+        data = read_json(self.history_path)
+        return _map_list(data.get("snapshots", []))
+
+    def save(self, snapshot: AIMarketsThemeLifecycleSnapshot) -> None:
+        data = snapshot.to_dict()
+        write_json(self.lifecycle_path, data)
+        write_json(self.transitions_path, {"transitions": [item.to_dict() for item in snapshot.transitions]})
+        history = self.history()
+        latest_report_id = _map(_map(history[-1]).get("provenance")).get("ai_markets_report_id") if history else None
+        current_report_id = _map(data.get("provenance")).get("ai_markets_report_id")
+        if not history or (history[-1].get("snapshot_id") != snapshot.snapshot_id and latest_report_id != current_report_id):
+            history.append(data)
+        write_json(self.history_path, {"snapshots": history})
+        self.lifecycle_report_path.write_text(render_theme_lifecycle(snapshot), encoding="utf-8")
+        self.timeline_path.write_text(render_theme_timeline(history), encoding="utf-8")
+
+    def status(self) -> JsonMap:
+        if not self.lifecycle_path.exists():
+            return {"available": False, "report_path": str(self.lifecycle_report_path)}
+        data = self.load()
+        counts = _map(data.get("counts"))
+        return {
+            "available": True,
+            "snapshot_id": data.get("snapshot_id"),
+            "theme_count": _int(data.get("theme_count")),
+            "recent_transition_count": len(_map_list(data.get("transitions", []))),
+            "report_path": str(self.lifecycle_report_path),
+            **counts,
+        }
+
+    def theme(self, theme_id: str) -> JsonMap:
+        data = self.load()
+        for theme in _map_list(data.get("themes", [])):
+            if theme.get("theme_id") == theme_id:
+                return theme
+        raise AIMarketsError(f"AI & Markets theme not found: {theme_id}")
+
+
 class AIMarketsEngine:
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -338,8 +587,12 @@ class AIMarketsStore:
         write_json(self.directory / "risks.json", {"risks": [item.to_dict() for item in report.risks]})
         write_json(self.directory / "open-questions.json", {"open_questions": [item.to_dict() for item in report.open_questions]})
         write_json(self.directory / "executive-questions.json", {"executive_questions": [item.to_dict() for item in report.executive_questions]})
+        lifecycle = AIMarketsThemeLifecycleStore(self.root).build(report)
+        report_data = report.to_dict()
+        report_data["theme_lifecycle"] = lifecycle.to_dict()
+        write_json(self.json_path, report_data)
         self.report_path.parent.mkdir(parents=True, exist_ok=True)
-        self.report_path.write_text(render_report(report), encoding="utf-8")
+        self.report_path.write_text(render_report(report, lifecycle), encoding="utf-8")
         self.watchlist_path.write_text(render_watchlist(report), encoding="utf-8")
         self.content_ideas_path.write_text(render_content_ideas(report), encoding="utf-8")
         self.executive_questions_path.write_text(render_executive_questions(report), encoding="utf-8")
@@ -352,6 +605,7 @@ class AIMarketsStore:
     def status(self) -> JsonMap:
         exists = self.json_path.exists()
         report = self.load() if exists else None
+        lifecycle_status = AIMarketsThemeLifecycleStore(self.root).status()
         return {
             "available": exists,
             "report_id": report.report_id if report else None,
@@ -364,18 +618,21 @@ class AIMarketsStore:
             "executive_question_count": len(report.executive_questions) if report else 0,
             "report_path": str(self.report_path),
             "executive_questions_path": str(self.executive_questions_path),
+            "lifecycle_available": lifecycle_status.get("available", False),
+            "theme_lifecycle_report_path": lifecycle_status.get("report_path"),
         }
 
     def export(self) -> Path:
         report = self.load()
-        self.report_path.write_text(render_report(report), encoding="utf-8")
+        lifecycle = AIMarketsThemeLifecycleStore(self.root).build(report)
+        self.report_path.write_text(render_report(report, lifecycle), encoding="utf-8")
         self.watchlist_path.write_text(render_watchlist(report), encoding="utf-8")
         self.content_ideas_path.write_text(render_content_ideas(report), encoding="utf-8")
         self.executive_questions_path.write_text(render_executive_questions(report), encoding="utf-8")
         return self.report_path
 
 
-def render_report(report: AIMarketsReport) -> str:
+def render_report(report: AIMarketsReport, lifecycle: AIMarketsThemeLifecycleSnapshot | None = None) -> str:
     lines = [
         "# AI & Markets Intelligence",
         "",
@@ -416,6 +673,9 @@ def render_report(report: AIMarketsReport) -> str:
         "## Top Executive Questions",
         "",
         *_bullet([f"{item.question} ({item.priority}, evidence={len(item.evidence_ids)}, themes={len(item.related_themes)})" for item in report.executive_questions[:5]] or ["No executive questions found."]),
+        "## Theme Lifecycle",
+        "",
+        *_theme_lifecycle_report_lines(lifecycle),
         "## Watchlist",
         "",
         *_bullet([entity.symbol for entity in report.entities]),
@@ -472,6 +732,61 @@ def render_executive_questions(report: AIMarketsReport) -> str:
     if not report.executive_questions:
         lines.extend(["No executive questions found.", ""])
     return "\n".join(lines)
+
+
+def render_theme_lifecycle(snapshot: AIMarketsThemeLifecycleSnapshot) -> str:
+    data = snapshot.to_dict()
+    lines = [
+        "# AI & Markets Theme Lifecycle",
+        "",
+        f"- Snapshot ID: `{snapshot.snapshot_id}`",
+        f"- Created: `{snapshot.created_at}`",
+        f"- Theme count: {len(snapshot.themes)}",
+        "",
+    ]
+    lines.extend(_theme_lifecycle_report_lines(snapshot))
+    lines.extend(["## Recent Theme Transitions", ""])
+    transitions = _map_list(data.get("transitions", []))
+    lines.extend(_bullet([f"{item.get('theme_name')} {item.get('transition_type')}: {item.get('reason')}" for item in transitions[:20]] or ["No recent theme transitions."]))
+    lines.extend(["## Lifecycle Limitations", ""])
+    lines.extend(_bullet(snapshot.limitations))
+    return "\n".join(lines)
+
+
+def render_theme_timeline(history: list[JsonMap]) -> str:
+    lines = ["# AI & Markets Theme Timeline", ""]
+    for snapshot in reversed(history[-20:]):
+        lines.extend([f"## {snapshot.get('snapshot_id', '')}", "", f"- Created: `{snapshot.get('created_at', '')}`", f"- Themes: {snapshot.get('theme_count', 0)}", ""])
+        for transition in _map_list(snapshot.get("transitions", []))[:20]:
+            lines.append(f"- {transition.get('theme_name')} {transition.get('transition_type')}: {transition.get('previous_value')} -> {transition.get('current_value')}")
+        lines.append("")
+    if not history:
+        lines.extend(["No lifecycle history recorded.", ""])
+    return "\n".join(lines)
+
+
+def _theme_lifecycle_report_lines(lifecycle: AIMarketsThemeLifecycleSnapshot | None) -> list[str]:
+    if lifecycle is None:
+        return ["- Theme lifecycle has not been generated.", ""]
+    groups = {
+        "High Conviction Themes": "high_conviction",
+        "Strengthening Themes": "strengthening",
+        "Active Themes": "active",
+        "Emerging Themes": "emerging",
+        "Weakening Themes": "weakening",
+        "Contradicted Themes": "contradicted",
+        "Archived Themes": "archived",
+    }
+    lines: list[str] = []
+    for title, status in groups.items():
+        lines.extend([f"### {title}", ""])
+        items = [theme for theme in lifecycle.themes if theme.get("current_status") == status]
+        lines.extend(_bullet([f"{theme.get('theme_name')} evidence={theme.get('evidence_count')} sources={theme.get('source_count')} reason={theme.get('lifecycle_reason')}" for theme in items] or [f"No {title.lower()}."]))
+    lines.extend(["### Recent Theme Transitions", ""])
+    lines.extend(_bullet([f"{item.theme_name} {item.transition_type}: {item.reason}" for item in lifecycle.transitions[:10]] or ["No recent theme transitions."]))
+    lines.extend(["### Lifecycle Limitations", ""])
+    lines.extend(_bullet(lifecycle.limitations))
+    return lines
 
 
 def _records(artifacts: dict[str, JsonMap]) -> list[JsonMap]:
@@ -740,6 +1055,163 @@ def _question_sort_key(question: AIMarketsOpenQuestion):
 
 def _total_open_question_count(report: AIMarketsReport) -> int:
     return sum(_int(question.provenance.get("variant_count")) or 1 for question in report.open_questions)
+
+
+LIFECYCLE_STATUS_PRIORITY = {
+    "high_conviction": 0,
+    "strengthening": 1,
+    "active": 2,
+    "emerging": 3,
+    "weakening": 4,
+    "contradicted": 5,
+    "archived": 6,
+}
+
+
+def _lifecycle_status(
+    theme: AIMarketsTheme,
+    previous: JsonMap,
+    entity_count: int,
+    risk_count: int,
+    risk_descriptions: list[str],
+    history: list[JsonMap],
+) -> tuple[str, str]:
+    previous_evidence = _int(previous.get("evidence_count"))
+    previous_sources = _int(previous.get("source_count"))
+    previous_entities = _int(previous.get("entity_count"))
+    previous_risks = _int(previous.get("risk_count"))
+    previous_confidence = str(previous.get("confidence") or "")
+    explicit_conflict = any("contradiction" in text.lower() or "conflict" in text.lower() for text in risk_descriptions)
+    if explicit_conflict or (risk_count > theme.evidence_count and risk_count >= 2):
+        return "contradicted", "Theme is contradicted because explicit conflict language or risk dominance is attached to the theme."
+    if previous and (theme.evidence_count < previous_evidence or _confidence_rank(theme.confidence) < _confidence_rank(previous_confidence)):
+        return "weakening", f"Theme is weakening because evidence or confidence declined from the prior snapshot."
+    if previous and risk_count > previous_risks and theme.evidence_count <= previous_evidence:
+        return "weakening", "Theme is weakening because risk count increased without new supporting evidence."
+    appeared_before = _theme_seen_count(theme.theme_id, history) > 0
+    if theme.evidence_count >= 4 and theme.source_count >= 3 and theme.confidence == "high" and risk_count <= theme.evidence_count and (appeared_before or not history):
+        return "high_conviction", "Theme is high conviction because evidence_count >= 4, source_count >= 3, confidence is high, and risks do not exceed evidence."
+    if previous and (theme.evidence_count > previous_evidence or theme.source_count > previous_sources or entity_count > previous_entities) and risk_count <= theme.evidence_count:
+        return "strengthening", f"Theme is strengthening because evidence/source/entity count increased from the prior snapshot."
+    if not previous or theme.evidence_count <= 1:
+        return "emerging", "Theme is emerging because it is newly detected or has only one supporting evidence item."
+    return "active", "Theme is active because it has repeated evidence but does not meet strengthening or high-conviction thresholds."
+
+
+def _confidence_reason(confidence: str, evidence_count: int, source_count: int, entity_count: int, risk_count: int, previous_confidence: str) -> str:
+    prior = previous_confidence or "none"
+    if confidence == "high":
+        rule = "4+ evidence items or 3+ sources"
+    elif confidence == "medium":
+        rule = "2-3 evidence items or 2 sources"
+    else:
+        rule = "1 evidence item or 1 source"
+    return f"Confidence is {confidence} using rule {rule}; evidence_count={evidence_count}, source_count={source_count}, entity_count={entity_count}, risk_count={risk_count}, prior_confidence={prior}."
+
+
+def _theme_transitions(themes: list[JsonMap], previous_themes: dict[str, JsonMap], created_at: str) -> list[AIMarketsThemeTransition]:
+    transitions: list[AIMarketsThemeTransition] = []
+    for theme in themes:
+        theme_id = str(theme.get("theme_id"))
+        previous = previous_themes.get(theme_id, {})
+        if not previous:
+            transitions.append(_transition(theme, "new_theme", None, theme.get("current_status"), "Theme appeared in lifecycle tracking.", created_at))
+            continue
+        checks = [
+            ("status_changed", previous.get("current_status"), theme.get("current_status")),
+            ("confidence_changed", previous.get("confidence"), theme.get("confidence")),
+            ("evidence_changed", previous.get("evidence_count"), theme.get("evidence_count")),
+            ("source_changed", previous.get("source_count"), theme.get("source_count")),
+            ("entity_changed", previous.get("entity_count"), theme.get("entity_count")),
+            ("risk_changed", previous.get("risk_count"), theme.get("risk_count")),
+        ]
+        for transition_type, previous_value, current_value in checks:
+            if previous_value != current_value:
+                transitions.append(_transition(theme, transition_type, previous_value, current_value, f"{transition_type} from {previous_value} to {current_value}.", created_at))
+        if theme.get("current_status") == "archived" and previous.get("current_status") != "archived":
+            transitions.append(_transition(theme, "archived_theme", previous.get("current_status"), "archived", "Theme reached archived status after repeated absence.", created_at))
+    return sorted(transitions, key=_transition_sort_key)
+
+
+def _transition(theme: JsonMap, transition_type: str, previous_value: Any, current_value: Any, reason: str, created_at: str) -> AIMarketsThemeTransition:
+    payload = f"{theme.get('theme_id')}|{transition_type}|{previous_value}|{current_value}"
+    return AIMarketsThemeTransition(
+        transition_id=f"transition_{_digest(payload)}",
+        theme_id=str(theme.get("theme_id", "")),
+        theme_name=str(theme.get("theme_name", "")),
+        transition_type=transition_type,
+        previous_value=previous_value,
+        current_value=current_value,
+        reason=reason,
+        created_at=created_at,
+        provenance={"theme_lifecycle_snapshot": "outputs/ai-markets/theme-lifecycle.json"},
+    )
+
+
+def _lifecycle_snapshot_id(themes: list[JsonMap]) -> str:
+    payload = "|".join(
+        f"{theme.get('theme_id')}:{theme.get('current_status')}:{theme.get('confidence')}:{theme.get('evidence_count')}:{theme.get('source_count')}:{theme.get('entity_count')}:{theme.get('risk_count')}"
+        for theme in themes
+    )
+    return f"ai_markets_lifecycle_{_digest(payload)}"
+
+
+def _lifecycle_counts(themes: list[JsonMap]) -> JsonMap:
+    return {
+        "high_conviction_theme_count": sum(1 for theme in themes if theme.get("current_status") == "high_conviction"),
+        "strengthening_theme_count": sum(1 for theme in themes if theme.get("current_status") == "strengthening"),
+        "active_theme_count": sum(1 for theme in themes if theme.get("current_status") == "active"),
+        "emerging_theme_count": sum(1 for theme in themes if theme.get("current_status") == "emerging"),
+        "weakening_theme_count": sum(1 for theme in themes if theme.get("current_status") == "weakening"),
+        "contradicted_theme_count": sum(1 for theme in themes if theme.get("current_status") == "contradicted"),
+        "archived_theme_count": sum(1 for theme in themes if theme.get("current_status") == "archived"),
+    }
+
+
+def _lifecycle_theme_sort_key(theme: JsonMap):
+    return (
+        LIFECYCLE_STATUS_PRIORITY.get(str(theme.get("current_status")), 99),
+        -_int(theme.get("evidence_count")),
+        -_int(theme.get("source_count")),
+        str(theme.get("theme_name", "")),
+        str(theme.get("theme_id", "")),
+    )
+
+
+def _transition_sort_key(transition: AIMarketsThemeTransition):
+    return (-_timestamp_key(transition.created_at), transition.transition_type, transition.theme_name, transition.transition_id)
+
+
+def _timestamp_key(value: str) -> int:
+    if not value:
+        return 0
+    try:
+        return int(datetime.fromisoformat(value).timestamp())
+    except ValueError:
+        return 0
+
+
+def _latest_snapshot(history: list[JsonMap]) -> JsonMap:
+    return history[-1] if history else {}
+
+
+def _theme_seen_count(theme_id: str, history: list[JsonMap]) -> int:
+    return sum(1 for snapshot in history for theme in _map_list(snapshot.get("themes", [])) if theme.get("theme_id") == theme_id and theme.get("current_status") != "archived")
+
+
+def _absence_count(theme_id: str, history: list[JsonMap]) -> int:
+    count = 0
+    for snapshot in reversed(history):
+        theme = next((item for item in _map_list(snapshot.get("themes", [])) if item.get("theme_id") == theme_id), None)
+        if theme and theme.get("current_status") in {"weakening", "archived"} and _int(theme.get("evidence_count")) == 0:
+            count += 1
+        else:
+            break
+    return count
+
+
+def _confidence_rank(confidence: str) -> int:
+    return {"low": 0, "medium": 1, "high": 2}.get(confidence, -1)
 
 
 def _short(text: str) -> str:

@@ -7,7 +7,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from constellation.ai_markets import AIMarketsStore, _normalize_question
+from constellation.ai_markets import AIMarketsStore, AIMarketsThemeLifecycleStore, _normalize_question
 from constellation.cli import main
 from constellation.dashboard import ExecutiveDashboardStore
 from constellation.io import write_json
@@ -246,6 +246,147 @@ class AIMarketsTests(unittest.TestCase):
             self.assertEqual([item.question_id for item in first.open_questions], [item.question_id for item in second.open_questions])
             self.assertEqual([item.question_id for item in first.executive_questions], [item.question_id for item in second.executive_questions])
 
+    def test_lifecycle_snapshot_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_artifacts(root)
+
+            AIMarketsStore(root).build()
+            lifecycle = AIMarketsThemeLifecycleStore(root).load()
+
+            self.assertTrue(lifecycle["snapshot_id"])
+            self.assertTrue(lifecycle["themes"])
+            self.assertTrue((root / "outputs" / "ai-markets" / "theme-lifecycle.md").exists())
+
+    def test_lifecycle_status_assignment(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_artifacts(root, repeated=True)
+
+            AIMarketsStore(root).build()
+            themes = AIMarketsThemeLifecycleStore(root).load()["themes"]
+            statuses = {theme["current_status"] for theme in themes}
+
+            self.assertTrue(statuses.intersection({"emerging", "active", "high_conviction"}))
+
+    def test_strengthening_transition_generation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_artifacts(root)
+            AIMarketsStore(root).build()
+            _write_artifacts(root, repeated=True)
+
+            AIMarketsStore(root).build()
+            lifecycle = AIMarketsThemeLifecycleStore(root).load()
+
+            self.assertTrue(any(item["transition_type"] == "evidence_changed" for item in lifecycle["transitions"]))
+
+    def test_high_conviction_theme_detection(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_high_conviction_artifacts(root)
+
+            AIMarketsStore(root).build()
+            lifecycle = AIMarketsThemeLifecycleStore(root).load()
+
+            self.assertTrue(any(theme["current_status"] == "high_conviction" for theme in lifecycle["themes"]))
+
+    def test_contradicted_theme_detection(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_contradiction_artifacts(root)
+
+            AIMarketsStore(root).build()
+            lifecycle = AIMarketsThemeLifecycleStore(root).load()
+
+            self.assertTrue(any(theme["current_status"] == "contradicted" for theme in lifecycle["themes"]))
+
+    def test_archived_theme_detection(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_artifacts(root)
+            AIMarketsStore(root).build()
+            write_json(root / "outputs" / "reports" / "latest-report.json", {"report_id": "empty_1", "evidence_references": [], "sections": []})
+
+            AIMarketsStore(root).build()
+            write_json(root / "outputs" / "reports" / "latest-report.json", {"report_id": "empty_2", "evidence_references": [], "sections": []})
+            AIMarketsStore(root).build()
+            write_json(root / "outputs" / "reports" / "latest-report.json", {"report_id": "empty_3", "evidence_references": [], "sections": []})
+            AIMarketsStore(root).build()
+
+            lifecycle = AIMarketsThemeLifecycleStore(root).load()
+            self.assertTrue(any(theme["current_status"] == "archived" for theme in lifecycle["themes"]))
+
+    def test_lifecycle_history_duplicate_avoidance(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_artifacts(root)
+            store = AIMarketsStore(root)
+
+            store.build()
+            store.build()
+            history = AIMarketsThemeLifecycleStore(root).history()
+
+            self.assertEqual(len(history), 1)
+
+    def test_cli_lifecycle_and_theme_detail(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_artifacts(root)
+            AIMarketsStore(root).build()
+            theme_id = AIMarketsThemeLifecycleStore(root).load()["themes"][0]["theme_id"]
+
+            lifecycle_out = io.StringIO()
+            with redirect_stdout(lifecycle_out):
+                lifecycle_exit = main(["ai-markets", "--root", str(root), "lifecycle"])
+            theme_out = io.StringIO()
+            with redirect_stdout(theme_out):
+                theme_exit = main(["ai-markets", "--root", str(root), "theme", theme_id])
+
+            self.assertEqual(lifecycle_exit, 0)
+            self.assertEqual(theme_exit, 0)
+            self.assertIn("lifecycle_available:", lifecycle_out.getvalue())
+            self.assertIn("current_lifecycle_status:", theme_out.getvalue())
+
+    def test_report_dashboard_and_workflow_lifecycle_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_artifacts(root)
+            AIMarketsStore(root).build()
+
+            report_text = (root / "outputs" / "ai-markets" / "ai-markets-report.md").read_text(encoding="utf-8")
+            dashboard = ExecutiveDashboardStore(root).generate(overwrite=True)
+
+            self.assertIn("## Theme Lifecycle", report_text)
+            self.assertTrue(dashboard.ai_markets_summary["lifecycle_available"])
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            run = WorkflowStore(root).run("Morning")
+            ai_step = next(step for step in run.executed_steps if step["command"] == "ai-markets build")
+            self.assertIn("high_conviction_theme_count", ai_step["details"])
+
+    def test_lifecycle_deterministic_sorting(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_high_conviction_artifacts(root)
+
+            AIMarketsStore(root).build()
+            themes = AIMarketsThemeLifecycleStore(root).load()["themes"]
+            sort_keys = [(theme["current_status"], -theme["evidence_count"], theme["theme_name"]) for theme in themes]
+
+            self.assertEqual(sort_keys, sorted(sort_keys, key=lambda item: ({"high_conviction": 0, "strengthening": 1, "active": 2, "emerging": 3, "weakening": 4, "contradicted": 5, "archived": 6}[item[0]], item[1], item[2])))
+
     def test_no_provider_calls(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -341,6 +482,24 @@ def _write_entity_artifacts(root: Path) -> None:
         {"evidence_id": "ev_e4", "source_id": "source-d", "summary": "Ethereum and ETH adoption remains an open question?"},
     ]
     write_json(root / "outputs" / "reports" / "latest-report.json", {"report_id": "report_e", "evidence_references": refs, "sections": []})
+
+
+def _write_high_conviction_artifacts(root: Path) -> None:
+    refs = [
+        {"evidence_id": "ev_h1", "source_id": "source-a", "summary": "NVDA GPU compute supports AI infrastructure."},
+        {"evidence_id": "ev_h2", "source_id": "source-b", "summary": "AMD accelerator demand supports AI infrastructure."},
+        {"evidence_id": "ev_h3", "source_id": "source-c", "summary": "AVGO chip demand supports AI infrastructure."},
+        {"evidence_id": "ev_h4", "source_id": "source-d", "summary": "Data center semiconductor demand supports AI infrastructure."},
+    ]
+    write_json(root / "outputs" / "reports" / "latest-report.json", {"report_id": "report_h", "evidence_references": refs, "sections": []})
+
+
+def _write_contradiction_artifacts(root: Path) -> None:
+    refs = [
+        {"evidence_id": "ev_c1", "source_id": "source-a", "summary": "AI infrastructure demand faces contradiction risk."},
+        {"evidence_id": "ev_c2", "source_id": "source-b", "summary": "AI infrastructure conflict risk."},
+    ]
+    write_json(root / "outputs" / "reports" / "latest-report.json", {"report_id": "report_c", "evidence_references": refs, "sections": []})
 
 
 if __name__ == "__main__":

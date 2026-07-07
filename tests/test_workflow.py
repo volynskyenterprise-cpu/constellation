@@ -291,6 +291,7 @@ _MORNING_COMMANDS = [
     "dashboard",
     "report latest",
     "ai-markets build",
+    "ai-markets lifecycle",
 ]
 
 

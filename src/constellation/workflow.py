@@ -8,7 +8,7 @@ from time import perf_counter
 from typing import Any, Callable
 
 from . import __version__
-from .ai_markets import AIMarketsStore
+from .ai_markets import AIMarketsStore, AIMarketsThemeLifecycleStore
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .daily import DailyPipelineStore
 from .dashboard import ExecutiveDashboardStore
@@ -155,6 +155,7 @@ class WorkflowEngine:
             "dashboard": self._dashboard,
             "report latest": self._report_latest,
             "ai-markets build": self._ai_markets_build,
+            "ai-markets lifecycle": self._ai_markets_lifecycle,
         }
 
     def run(self, definition: WorkflowDefinition) -> WorkflowRun:
@@ -314,6 +315,7 @@ class WorkflowEngine:
 
     def _ai_markets_build(self, arguments: JsonMap) -> JsonMap:
         report = AIMarketsStore(self.root).build()
+        lifecycle_status = AIMarketsThemeLifecycleStore(self.root).status()
         total_questions = sum(_int(_map(question.provenance).get("variant_count")) or 1 for question in report.open_questions)
         return {
             "status": "completed",
@@ -323,6 +325,27 @@ class WorkflowEngine:
             "risk_count": len(report.risks),
             "total_open_question_count": total_questions,
             "executive_question_count": len(report.executive_questions),
+            "lifecycle_available": lifecycle_status.get("available", False),
+            "high_conviction_theme_count": lifecycle_status.get("high_conviction_theme_count", 0),
+            "strengthening_theme_count": lifecycle_status.get("strengthening_theme_count", 0),
+            "active_theme_count": lifecycle_status.get("active_theme_count", 0),
+            "emerging_theme_count": lifecycle_status.get("emerging_theme_count", 0),
+            "weakening_theme_count": lifecycle_status.get("weakening_theme_count", 0),
+            "contradicted_theme_count": lifecycle_status.get("contradicted_theme_count", 0),
+            "recent_theme_transition_count": lifecycle_status.get("recent_transition_count", 0),
+            "theme_lifecycle_report_path": lifecycle_status.get("report_path"),
+        }
+
+    def _ai_markets_lifecycle(self, arguments: JsonMap) -> JsonMap:
+        snapshot = AIMarketsThemeLifecycleStore(self.root).build()
+        counts = _map(snapshot.to_dict().get("counts"))
+        return {
+            "status": "completed",
+            "snapshot_id": snapshot.snapshot_id,
+            "theme_count": len(snapshot.themes),
+            "recent_theme_transition_count": len(snapshot.transitions),
+            "theme_lifecycle_report_path": str(AIMarketsThemeLifecycleStore(self.root).lifecycle_report_path),
+            **counts,
         }
 
 
@@ -445,6 +468,15 @@ def render_workflow_report(run: WorkflowRun) -> str:
                 f"- Risks: {details.get('risk_count', 0)}",
                 f"- Total open questions: {details.get('total_open_question_count', 0)}",
                 f"- Executive questions: {details.get('executive_question_count', 0)}",
+                f"- Lifecycle available: {details.get('lifecycle_available', False)}",
+                f"- High conviction themes: {details.get('high_conviction_theme_count', 0)}",
+                f"- Strengthening themes: {details.get('strengthening_theme_count', 0)}",
+                f"- Active themes: {details.get('active_theme_count', 0)}",
+                f"- Emerging themes: {details.get('emerging_theme_count', 0)}",
+                f"- Weakening themes: {details.get('weakening_theme_count', 0)}",
+                f"- Contradicted themes: {details.get('contradicted_theme_count', 0)}",
+                f"- Recent theme transitions: {details.get('recent_theme_transition_count', 0)}",
+                f"- Theme lifecycle report: `{details.get('theme_lifecycle_report_path', '')}`",
                 "",
             ]
         )
@@ -490,6 +522,7 @@ def _built_in_workflows() -> list[WorkflowDefinition]:
                 _step("Executive Dashboard", "dashboard", {"overwrite": True}),
                 _step("Institutional Research Report", "report latest"),
                 _step("AI & Markets Intelligence", "ai-markets build"),
+                _step("AI & Markets Theme Lifecycle", "ai-markets lifecycle"),
             ],
         ),
         WorkflowDefinition(

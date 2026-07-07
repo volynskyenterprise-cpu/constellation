@@ -465,6 +465,9 @@ def _ai_markets_summary(report: JsonMap) -> JsonMap:
     entities = _map_list(report.get("entities", []))
     open_questions = _map_list(report.get("open_questions", []))
     executive_questions = _map_list(report.get("executive_questions", []))
+    lifecycle = _map(report.get("theme_lifecycle"))
+    lifecycle_themes = _map_list(lifecycle.get("themes", []))
+    lifecycle_counts = _map(lifecycle.get("counts"))
     return {
         "available": bool(report),
         "report_id": report.get("report_id"),
@@ -481,6 +484,19 @@ def _ai_markets_summary(report: JsonMap) -> JsonMap:
         "top_executive_questions": [str(question.get("question", "")) for question in executive_questions[:5] if question.get("question")],
         "latest_ai_markets_report_path": "outputs/ai-markets/ai-markets-report.md" if report else None,
         "executive_questions_path": "outputs/ai-markets/executive-questions.md" if report else None,
+        "lifecycle_available": bool(lifecycle),
+        "high_conviction_theme_count": lifecycle_counts.get("high_conviction_theme_count", 0),
+        "strengthening_theme_count": lifecycle_counts.get("strengthening_theme_count", 0),
+        "active_theme_count": lifecycle_counts.get("active_theme_count", 0),
+        "emerging_theme_count": lifecycle_counts.get("emerging_theme_count", 0),
+        "weakening_theme_count": lifecycle_counts.get("weakening_theme_count", 0),
+        "contradicted_theme_count": lifecycle_counts.get("contradicted_theme_count", 0),
+        "archived_theme_count": lifecycle_counts.get("archived_theme_count", 0),
+        "recent_theme_transition_count": len(_map_list(lifecycle.get("transitions", []))),
+        "top_strengthening_themes": [str(theme.get("theme_name", "")) for theme in lifecycle_themes if theme.get("current_status") == "strengthening"][:5],
+        "high_conviction_themes": [str(theme.get("theme_name", "")) for theme in lifecycle_themes if theme.get("current_status") == "high_conviction"][:5],
+        "weakening_themes": [str(theme.get("theme_name", "")) for theme in lifecycle_themes if theme.get("current_status") == "weakening"][:5],
+        "theme_lifecycle_report_path": "outputs/ai-markets/theme-lifecycle.md" if lifecycle else None,
     }
 
 

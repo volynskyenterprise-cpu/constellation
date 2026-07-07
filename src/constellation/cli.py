@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from .artifacts import ArtifactError
-from .ai_markets import AIMarketsError, AIMarketsStore
+from .ai_markets import AIMarketsError, AIMarketsStore, AIMarketsThemeLifecycleStore
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .daily import DailyPipelineError, DailyPipelineStore
 from .dashboard import ExecutiveDashboardError, ExecutiveDashboardStore
@@ -272,10 +272,16 @@ def main(argv: list[str] | None = None) -> int:
     ai_markets_subparsers.add_parser("build", help="Build deterministic AI & Markets intelligence.")
     ai_markets_subparsers.add_parser("status", help="Show AI & Markets status.")
     ai_markets_subparsers.add_parser("themes", help="List AI & Markets themes.")
+    ai_markets_theme_parser = ai_markets_subparsers.add_parser("theme", help="Show one AI & Markets theme.")
+    ai_markets_theme_parser.add_argument("theme_id", help="AI & Markets theme ID.")
     ai_markets_subparsers.add_parser("entities", help="List AI & Markets entities.")
     ai_markets_subparsers.add_parser("risks", help="List AI & Markets risks.")
     ai_markets_questions_parser = ai_markets_subparsers.add_parser("questions", help="List AI & Markets open questions.")
     ai_markets_questions_parser.add_argument("--executive", action="store_true", help="Show only prioritized executive questions.")
+    ai_markets_lifecycle_parser = ai_markets_subparsers.add_parser("lifecycle", help="Show AI & Markets theme lifecycle.")
+    ai_markets_lifecycle_parser.add_argument("--export", action="store_true", help="Export lifecycle Markdown.")
+    ai_markets_lifecycle_parser.add_argument("--history", action="store_true", help="Show lifecycle history.")
+    ai_markets_lifecycle_parser.add_argument("--transitions", action="store_true", help="Show lifecycle transitions.")
     ai_markets_subparsers.add_parser("report", help="Print AI & Markets report path.")
     ai_markets_subparsers.add_parser("export", help="Export AI & Markets Markdown outputs.")
 
@@ -1045,8 +1051,28 @@ def main(argv: list[str] | None = None) -> int:
                 _print_ai_markets_status(store.status())
                 return 0
             if args.ai_markets_command == "themes":
+                lifecycle = AIMarketsThemeLifecycleStore(args.root.resolve()).load() if (args.root.resolve() / "outputs" / "ai-markets" / "theme-lifecycle.json").exists() else {}
+                lifecycle_by_id = {str(item.get("theme_id")): item for item in _map_list(_map(lifecycle).get("themes", []))}
                 for theme in store.load().themes:
-                    print(f"{theme.theme_id} name={theme.name} status={theme.status} confidence={theme.confidence} evidence={theme.evidence_count}")
+                    lifecycle_status = _map(lifecycle_by_id.get(theme.theme_id)).get("current_status") or ""
+                    print(f"{theme.theme_id} name={theme.name} lifecycle={lifecycle_status} status={theme.status} confidence={theme.confidence} evidence={theme.evidence_count}")
+                return 0
+            if args.ai_markets_command == "theme":
+                lifecycle_store = AIMarketsThemeLifecycleStore(args.root.resolve())
+                if not lifecycle_store.lifecycle_path.exists():
+                    lifecycle_store.build(store.load())
+                theme = lifecycle_store.theme(args.theme_id)
+                print(f"theme_id: {theme.get('theme_id')}")
+                print(f"theme_name: {theme.get('theme_name')}")
+                print(f"current_lifecycle_status: {theme.get('current_status')}")
+                print(f"confidence: {theme.get('confidence')}")
+                print(f"evidence_count: {theme.get('evidence_count')}")
+                print(f"source_count: {theme.get('source_count')}")
+                print(f"entity_count: {theme.get('entity_count')}")
+                print(f"risk_count: {theme.get('risk_count')}")
+                print(f"status_reason: {theme.get('lifecycle_reason')}")
+                print(f"related_entities: {', '.join(_string_list(theme.get('related_entities', [])))}")
+                print(f"related_risks: {', '.join(_string_list(theme.get('related_risks', [])))}")
                 return 0
             if args.ai_markets_command == "entities":
                 for entity in store.load().entities:
@@ -1069,6 +1095,20 @@ def main(argv: list[str] | None = None) -> int:
                     print("all_deduplicated_questions:")
                 for question in questions:
                     print(f"{question.question_id} priority={question.priority} question={question.question}")
+                return 0
+            if args.ai_markets_command == "lifecycle":
+                lifecycle_store = AIMarketsThemeLifecycleStore(args.root.resolve())
+                if args.history:
+                    for snapshot in lifecycle_store.history():
+                        print(f"{snapshot.get('snapshot_id')} themes={snapshot.get('theme_count', 0)} created_at={snapshot.get('created_at', '')}")
+                    return 0
+                if args.transitions:
+                    data = lifecycle_store.load()
+                    for transition in _map_list(data.get("transitions", [])):
+                        print(f"{transition.get('transition_id')} theme={transition.get('theme_name')} type={transition.get('transition_type')} previous={transition.get('previous_value')} current={transition.get('current_value')}")
+                    return 0
+                snapshot = lifecycle_store.build(store.load()) if args.export or not lifecycle_store.lifecycle_path.exists() else lifecycle_store.load()
+                _print_ai_markets_lifecycle_status(lifecycle_store.status())
                 return 0
             if args.ai_markets_command == "report":
                 report = store.load()
@@ -1305,5 +1345,38 @@ def _print_ai_markets_status(status) -> None:
     print(f"total_open_question_count: {status.get('total_open_question_count', 0)}")
     print(f"deduplicated_open_question_count: {status.get('deduplicated_open_question_count', 0)}")
     print(f"executive_question_count: {status.get('executive_question_count', 0)}")
+    print(f"lifecycle_available: {status.get('lifecycle_available', False)}")
     print(f"report_path: {status.get('report_path')}")
     print(f"executive_questions_path: {status.get('executive_questions_path')}")
+    print(f"theme_lifecycle_report_path: {status.get('theme_lifecycle_report_path')}")
+
+
+def _print_ai_markets_lifecycle_status(status) -> None:
+    print(f"lifecycle_available: {status.get('available')}")
+    print(f"snapshot_id: {status.get('snapshot_id') or ''}")
+    print(f"theme_count: {status.get('theme_count', 0)}")
+    print(f"high_conviction_count: {status.get('high_conviction_theme_count', 0)}")
+    print(f"strengthening_count: {status.get('strengthening_theme_count', 0)}")
+    print(f"active_count: {status.get('active_theme_count', 0)}")
+    print(f"emerging_count: {status.get('emerging_theme_count', 0)}")
+    print(f"weakening_count: {status.get('weakening_theme_count', 0)}")
+    print(f"contradicted_count: {status.get('contradicted_theme_count', 0)}")
+    print(f"archived_count: {status.get('archived_theme_count', 0)}")
+    print(f"recent_transitions: {status.get('recent_transition_count', 0)}")
+    print(f"theme_lifecycle_report_path: {status.get('report_path')}")
+
+
+def _map(value):
+    return value if isinstance(value, dict) else {}
+
+
+def _map_list(value):
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _string_list(value):
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]

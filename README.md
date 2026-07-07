@@ -393,11 +393,15 @@ python -m constellation ai-markets entities
 python -m constellation ai-markets risks
 python -m constellation ai-markets questions
 python -m constellation ai-markets questions --executive
+python -m constellation ai-markets lifecycle
+python -m constellation ai-markets lifecycle --history
+python -m constellation ai-markets lifecycle --transitions
+python -m constellation ai-markets theme THEME_ID
 python -m constellation ai-markets report
 python -m constellation ai-markets export
 ```
 
-AI & Markets Intelligence classifies existing local Constellation artifacts into deterministic themes, entities, catalysts, risks, prioritized executive questions, watchlists, and content ideas. It uses fixed keyword and ticker/company matching only, deduplicates open questions without semantic inference, and does not provide financial advice or trading recommendations.
+AI & Markets Intelligence classifies existing local Constellation artifacts into deterministic themes, entities, catalysts, risks, prioritized executive questions, watchlists, and content ideas. v5.1.0 adds Theme Lifecycle, which tracks whether each theme is emerging, active, strengthening, high conviction, weakening, contradicted, or archived using deterministic counts and prior lifecycle history. It uses fixed keyword and ticker/company matching only, deduplicates open questions without semantic inference, and does not provide financial advice or trading recommendations.
 
 Key outputs:
 
@@ -405,6 +409,11 @@ Key outputs:
 - `outputs/ai-markets/open-questions.json`
 - `outputs/ai-markets/executive-questions.json`
 - `outputs/ai-markets/executive-questions.md`
+- `outputs/ai-markets/theme-lifecycle.json`
+- `outputs/ai-markets/theme-lifecycle.md`
+- `outputs/ai-markets/theme-history.json`
+- `outputs/ai-markets/theme-transitions.json`
+- `outputs/ai-markets/theme-timeline.md`
 - `outputs/ai-markets/watchlist.md`
 
 ### Research

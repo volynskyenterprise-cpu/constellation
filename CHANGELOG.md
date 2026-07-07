@@ -2,6 +2,20 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 5.1.0 - AI & Markets Theme Lifecycle
+
+- Added deterministic AI & Markets theme lifecycle tracking.
+- Added lifecycle statuses: emerging, active, strengthening, high_conviction, weakening, contradicted, and archived.
+- Added lifecycle snapshots, history, transitions, and timeline outputs under `outputs/ai-markets/`.
+- Added `python -m constellation ai-markets lifecycle`.
+- Added `python -m constellation ai-markets lifecycle --export`.
+- Added `python -m constellation ai-markets lifecycle --history`.
+- Added `python -m constellation ai-markets lifecycle --transitions`.
+- Added `python -m constellation ai-markets theme THEME_ID`.
+- Updated AI & Markets reports with a Theme Lifecycle section.
+- Integrated lifecycle counts into the Executive Dashboard and Workflow Automation report.
+- Preserved deterministic local-only behavior with no providers, OpenAI, LLM inference, embeddings, semantic search, web retrieval, Gmail, trading execution, financial advice, scheduling, or autonomous decisions.
+
 ## 5.0.1 - AI & Markets Signal Refinement
 
 - Added deterministic open-question normalization and deduplication.
