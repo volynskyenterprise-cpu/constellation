@@ -2,6 +2,20 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 4.2.0 - Institutional Research Reports
+
+- Added deterministic Institutional Research Report engine.
+- Added `python -m constellation report latest`.
+- Added `python -m constellation report latest --export`.
+- Added `python -m constellation report status`.
+- Added `python -m constellation report history`.
+- Added `python -m constellation report show REPORT_ID`.
+- Added report outputs under `outputs/reports/`.
+- Added report sections for executive summary, changes, evidence, thesis intelligence, evolution, source activity, risks, open questions, actions, references, source documents, limitations, and provenance.
+- Integrated report summary into Executive Dashboard.
+- Added Morning workflow report generation after dashboard refresh.
+- Preserved deterministic local-only behavior with no providers, OpenAI, LLM inference, embeddings, semantic search, web retrieval, Gmail, scheduling, or autonomous decisions.
+
 ## 4.1.0 - Knowledge Evolution Engine
 
 - Added deterministic Knowledge Evolution Engine.

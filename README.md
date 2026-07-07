@@ -67,6 +67,7 @@ Current capabilities include:
 - ✅ Source Monitoring
 - Workflow Automation Engine
 - Knowledge Evolution Engine
+- Institutional Research Reports
 - ✅ Institutional Intelligence Platform
 - ✅ Operational Intake Pipeline
 - ✅ Google Drive Connector
@@ -369,6 +370,18 @@ python -m constellation evolution compare SNAPSHOT_A SNAPSHOT_B
 
 Knowledge Evolution compares longitudinal institutional state from existing local artifacts. It reports evidence gained/removed, graph growth, thesis changes, source activity trends, research volume trends, workflow execution trends, and a deterministic longitudinal health score.
 
+### Institutional Research Reports
+
+```bash
+python -m constellation report latest
+python -m constellation report latest --export
+python -m constellation report status
+python -m constellation report history
+python -m constellation report show REPORT_ID
+```
+
+Institutional Research Reports turn existing dashboard, daily, morning, evolution, thesis, evidence graph, memory, source monitor, workflow, intake, and Google Drive artifacts into polished Markdown research reports. Reports are deterministic presentation artifacts and do not call providers or infer unsupported claims.
+
 ### Research
 
 ```bash
@@ -487,6 +500,7 @@ Current guarantees include:
 - ✅ Source Monitoring
 - Workflow Automation Engine
 - Knowledge Evolution Engine
+- Institutional Research Reports
 - ✅ Institutional Intelligence
 - ✅ Intake Pipeline
 - ✅ Google Drive Connector

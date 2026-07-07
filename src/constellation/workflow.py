@@ -20,6 +20,7 @@ from .memory import InstitutionalMemoryStore
 from .models import JsonMap
 from .morning import MorningExecutiveStore
 from .research import ResearchError, ResearchOrganization, SUPPORTED_RESEARCH_INPUTS
+from .reports import InstitutionalResearchReportStore
 from .source_monitor import SourceMonitorStore
 from .thesis import ThesisError, ThesisStore
 from .thesis_intelligence import ThesisStore as ThesisIntelligenceStore
@@ -151,6 +152,7 @@ class WorkflowEngine:
             "thesis build": self._thesis_build,
             "daily": self._daily,
             "dashboard": self._dashboard,
+            "report latest": self._report_latest,
         }
 
     def run(self, definition: WorkflowDefinition) -> WorkflowRun:
@@ -304,6 +306,10 @@ class WorkflowEngine:
         dashboard = ExecutiveDashboardStore(self.root).generate(overwrite=bool(arguments.get("overwrite", False)))
         return {"status": "completed", "dashboard_id": dashboard.dashboard_id}
 
+    def _report_latest(self, arguments: JsonMap) -> JsonMap:
+        report = InstitutionalResearchReportStore(self.root).generate()
+        return {"status": "completed", "report_id": report.report_id, "sections": len(report.sections), "evidence_references": len(report.evidence_references)}
+
 
 class WorkflowStore:
     def __init__(self, root: Path) -> None:
@@ -396,6 +402,20 @@ def render_workflow_report(run: WorkflowRun) -> str:
                 "",
             ]
         )
+    report_steps = [step for step in run.executed_steps if step.get("command") == "report latest"]
+    if report_steps:
+        details = _map(report_steps[-1].get("details"))
+        lines.extend(
+            [
+                "",
+                "## Institutional Research Report",
+                "",
+                f"- Latest report ID: `{details.get('report_id', '')}`",
+                f"- Sections: {details.get('sections', 0)}",
+                f"- Evidence references: {details.get('evidence_references', 0)}",
+                "",
+            ]
+        )
     lines.extend(["", "## Failed Steps", ""])
     if not run.failed_steps:
         lines.extend(["- None", ""])
@@ -436,6 +456,7 @@ def _built_in_workflows() -> list[WorkflowDefinition]:
                 _step("Evidence Graph Build", "evidence-graph build"),
                 _step("Daily Intelligence Pipeline", "daily", {"overwrite": True}),
                 _step("Executive Dashboard", "dashboard", {"overwrite": True}),
+                _step("Institutional Research Report", "report latest"),
             ],
         ),
         WorkflowDefinition(

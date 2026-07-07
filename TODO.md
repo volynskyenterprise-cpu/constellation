@@ -2,6 +2,10 @@
 
 ## Next Engineering Milestones
 
+- Add report templates for daily, weekly, executive, and source-specific research reports.
+- Add report comparison across historical report IDs.
+- Add report approval packages for human review.
+- Add report section filters for thesis, source, and evidence review modes.
 - Add explicit acceptance/rejection notes for Knowledge Evolution trend records.
 - Add evolution diff views filtered by thesis, source, and research category.
 - Add longitudinal health score weighting configuration.

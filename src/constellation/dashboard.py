@@ -29,6 +29,7 @@ EXPECTED_ARTIFACTS = {
     "source_monitor": Path("outputs/source-monitor/latest-monitor.json"),
     "latest_workflow": Path("outputs/workflows/latest-workflow.json"),
     "knowledge_evolution": Path("outputs/evolution/evolution.json"),
+    "institutional_report": Path("outputs/reports/latest-report.json"),
 }
 
 
@@ -48,6 +49,7 @@ class ExecutiveDashboard:
     source_monitoring_summary: JsonMap
     workflow_automation_summary: JsonMap
     knowledge_evolution_summary: JsonMap
+    institutional_research_report_summary: JsonMap
     current_risks_gaps: list[str]
     recommended_next_actions: list[str]
     key_output_files: list[JsonMap]
@@ -71,6 +73,7 @@ class ExecutiveDashboard:
             "source_monitoring_summary": self.source_monitoring_summary,
             "workflow_automation_summary": self.workflow_automation_summary,
             "knowledge_evolution_summary": self.knowledge_evolution_summary,
+            "institutional_research_report_summary": self.institutional_research_report_summary,
             "current_risks_gaps": self.current_risks_gaps,
             "recommended_next_actions": self.recommended_next_actions,
             "key_output_files": self.key_output_files,
@@ -96,6 +99,7 @@ class ExecutiveDashboard:
             source_monitoring_summary=_map(data.get("source_monitoring_summary")),
             workflow_automation_summary=_map(data.get("workflow_automation_summary")),
             knowledge_evolution_summary=_map(data.get("knowledge_evolution_summary")),
+            institutional_research_report_summary=_map(data.get("institutional_research_report_summary")),
             current_risks_gaps=_string_list(data.get("current_risks_gaps", [])),
             recommended_next_actions=_string_list(data.get("recommended_next_actions", [])),
             key_output_files=_map_list(data.get("key_output_files", [])),
@@ -123,6 +127,7 @@ class ExecutiveDashboardBuilder:
         monitor = _map(artifacts.get("source_monitor"))
         workflow = _map(artifacts.get("latest_workflow"))
         evolution = _map(artifacts.get("knowledge_evolution"))
+        report = _map(artifacts.get("institutional_report"))
         theses = _map_list(thesis_store.get("theses", []))
         graph_nodes = _map_list(evidence_graph.get("nodes", []))
         graph_edges = _map_list(evidence_graph.get("edges", []))
@@ -137,6 +142,7 @@ class ExecutiveDashboardBuilder:
         monitor_summary = _source_monitor_summary(monitor)
         workflow_summary = _workflow_summary(workflow)
         evolution_summary = _evolution_summary(evolution)
+        report_summary = _report_summary(report)
         risks_gaps = _risks_gaps(morning, theses)
         actions = _actions(morning, status, risks_gaps)
         key_files = _key_files(self.root, status)
@@ -150,10 +156,11 @@ class ExecutiveDashboardBuilder:
             "current_gaps_or_risks": len(risks_gaps),
             "last_workflow_status": workflow_summary.get("status"),
             "longitudinal_health_score": evolution_summary.get("longitudinal_health_score"),
+            "latest_report_id": report_summary.get("latest_report_id"),
             "next_files_to_inspect": [item["path"] for item in key_files[:5]],
         }
         dashboard = ExecutiveDashboard(
-            dashboard_id=_dashboard_id(daily_run, morning, snapshot, evidence_graph, thesis_store, intake, drive, monitor, workflow, evolution),
+            dashboard_id=_dashboard_id(daily_run, morning, snapshot, evidence_graph, thesis_store, intake, drive, monitor, workflow, evolution, report),
             created_at=created_at,
             version=__version__,
             executive_summary=executive_summary,
@@ -167,6 +174,7 @@ class ExecutiveDashboardBuilder:
             source_monitoring_summary=monitor_summary,
             workflow_automation_summary=workflow_summary,
             knowledge_evolution_summary=evolution_summary,
+            institutional_research_report_summary=report_summary,
             current_risks_gaps=risks_gaps,
             recommended_next_actions=actions,
             key_output_files=key_files,
@@ -263,6 +271,9 @@ def render_dashboard_markdown(dashboard: ExecutiveDashboard) -> str:
         "## Knowledge Evolution Summary",
         "",
         *_summary_lines(dashboard.knowledge_evolution_summary),
+        "## Institutional Research Report Summary",
+        "",
+        *_summary_lines(dashboard.institutional_research_report_summary),
         "## Current Risks / Gaps",
         "",
         *_string_lines(dashboard.current_risks_gaps),
@@ -421,6 +432,20 @@ def _evolution_summary(evolution: JsonMap) -> JsonMap:
         "most_active_research_areas": [item.get("subject") for item in research_trends[:5]],
         "recent_trend_changes": len(trends),
         "longitudinal_health_score": delta.get("longitudinal_health_score", 0),
+    }
+
+
+def _report_summary(report: JsonMap) -> JsonMap:
+    sections = _map_list(report.get("sections", []))
+    return {
+        "available": bool(report),
+        "latest_report_id": report.get("report_id"),
+        "report_created_at": report.get("created_at"),
+        "sections_available": sum(1 for section in sections if section.get("available")),
+        "risks_gaps_count": len(_list(report.get("risks_gaps", []))),
+        "open_questions_count": len(_list(report.get("open_questions", []))),
+        "evidence_references_count": len(_list(report.get("evidence_references", []))),
+        "report_path": "outputs/reports/latest-report.md" if report else None,
     }
 
 

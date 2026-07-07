@@ -289,6 +289,7 @@ _MORNING_COMMANDS = [
     "evidence-graph build",
     "daily",
     "dashboard",
+    "report latest",
 ]
 
 

@@ -20,6 +20,7 @@ from .memory import InstitutionalMemoryError, InstitutionalMemoryStore
 from .morning import MorningExecutiveError, MorningExecutiveStore
 from .pkos import PKOSError, PKOSKnowledgeOrganization
 from .prompts import PromptUnavailable
+from .reports import InstitutionalResearchReportError, InstitutionalResearchReportStore, report_summary
 from .research import ResearchError, ResearchOrganization
 from .source_monitor import SourceMonitorError, SourceMonitorStore
 from .state import WorkflowStateError
@@ -253,6 +254,16 @@ def main(argv: list[str] | None = None) -> int:
     evolution_compare_parser = evolution_subparsers.add_parser("compare", help="Compare two institutional memory snapshot IDs.")
     evolution_compare_parser.add_argument("snapshot_id_a", help="Prior institutional memory snapshot ID.")
     evolution_compare_parser.add_argument("snapshot_id_b", help="Current institutional memory snapshot ID.")
+
+    report_parser = subparsers.add_parser("report", help="Generate and inspect deterministic institutional research reports.")
+    report_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    report_subparsers = report_parser.add_subparsers(dest="report_command", required=True)
+    report_latest_parser = report_subparsers.add_parser("latest", help="Generate the latest institutional research report.")
+    report_latest_parser.add_argument("--export", action="store_true", help="Write Markdown report after generation.")
+    report_subparsers.add_parser("status", help="Show report input artifact availability.")
+    report_subparsers.add_parser("history", help="List report history.")
+    report_show_parser = report_subparsers.add_parser("show", help="Show one report summary as JSON.")
+    report_show_parser.add_argument("report_id", help="Report ID from report history.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -982,6 +993,33 @@ def main(argv: list[str] | None = None) -> int:
         except KnowledgeEvolutionError as exc:
             print(f"error: {exc}")
             return 1
+    if args.command == "report":
+        store = InstitutionalResearchReportStore(args.root.resolve())
+        try:
+            if args.report_command == "latest":
+                report = store.generate()
+                _print_report_summary(report, store)
+                if args.export:
+                    print(f"report_markdown: {store.export(report)}")
+                return 0
+            if args.report_command == "status":
+                _print_report_status(store.status())
+                return 0
+            if args.report_command == "history":
+                history = store.history()
+                if not history:
+                    print("No institutional research reports found.")
+                    return 0
+                for report in history:
+                    print(f"{report.report_id} created_at={report.created_at} sections={len(report.sections)} evidence={len(report.evidence_references)}")
+                return 0
+            if args.report_command == "show":
+                report = store.show(args.report_id)
+                print(json.dumps(report_summary(report), indent=2, sort_keys=True))
+                return 0
+        except InstitutionalResearchReportError as exc:
+            print(f"error: {exc}")
+            return 1
     return 2
 
 
@@ -1156,3 +1194,25 @@ def _print_evolution_status(status) -> None:
         print(f"graph_edge_growth: {status.get('graph_edge_growth')}")
         print(f"trend_count: {status.get('trend_count')}")
         print(f"longitudinal_health_score: {status.get('longitudinal_health_score')}")
+
+
+def _print_report_summary(report, store) -> None:
+    summary = report_summary(report)
+    print(f"report_id: {summary['report_id']}")
+    print(f"created_at: {summary['created_at']}")
+    print(f"sections_available: {summary['sections_available']}")
+    print(f"section_count: {summary['section_count']}")
+    print(f"risks_gaps_count: {summary['risks_gaps_count']}")
+    print(f"open_questions_count: {summary['open_questions_count']}")
+    print(f"evidence_references_count: {summary['evidence_references_count']}")
+    print(f"thesis_references_count: {summary['thesis_references_count']}")
+    print(f"report_path: {store.markdown_path}")
+
+
+def _print_report_status(status) -> None:
+    print(f"latest_report_exists: {status.get('latest_report_exists')}")
+    print(f"available_inputs: {status.get('available_inputs')}/{status.get('total_inputs')}")
+    print(f"latest_report_path: {status.get('latest_report_path')}")
+    for name, item in status.get("inputs", {}).items():
+        state = "available" if item.get("exists") else "unavailable"
+        print(f"{state}: {name}: {item.get('path')}")

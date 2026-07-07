@@ -41,6 +41,7 @@ outputs/dashboard/
 outputs/source-monitor/
 outputs/workflows/
 outputs/evolution/
+outputs/reports/
 outputs/intelligence/
 outputs/intake/
 outputs/google-drive/
