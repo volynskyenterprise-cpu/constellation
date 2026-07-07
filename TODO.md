@@ -2,6 +2,10 @@
 
 ## Next Engineering Milestones
 
+- Add human-reviewed AI & Markets theme acceptance and suppression notes.
+- Add configurable AI & Markets taxonomy files after MVP validation.
+- Add domain-specific report variants for weekly market review and source review.
+- Add deterministic sector/source filters for AI & Markets watchlists.
 - Add report templates for daily, weekly, executive, and source-specific research reports.
 - Add report comparison across historical report IDs.
 - Add report approval packages for human review.

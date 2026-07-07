@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from .artifacts import ArtifactError
+from .ai_markets import AIMarketsError, AIMarketsStore
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .daily import DailyPipelineError, DailyPipelineStore
 from .dashboard import ExecutiveDashboardError, ExecutiveDashboardStore
@@ -264,6 +265,18 @@ def main(argv: list[str] | None = None) -> int:
     report_subparsers.add_parser("history", help="List report history.")
     report_show_parser = report_subparsers.add_parser("show", help="Show one report summary as JSON.")
     report_show_parser.add_argument("report_id", help="Report ID from report history.")
+
+    ai_markets_parser = subparsers.add_parser("ai-markets", help="Build and inspect deterministic AI & Markets intelligence.")
+    ai_markets_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    ai_markets_subparsers = ai_markets_parser.add_subparsers(dest="ai_markets_command", required=True)
+    ai_markets_subparsers.add_parser("build", help="Build deterministic AI & Markets intelligence.")
+    ai_markets_subparsers.add_parser("status", help="Show AI & Markets status.")
+    ai_markets_subparsers.add_parser("themes", help="List AI & Markets themes.")
+    ai_markets_subparsers.add_parser("entities", help="List AI & Markets entities.")
+    ai_markets_subparsers.add_parser("risks", help="List AI & Markets risks.")
+    ai_markets_subparsers.add_parser("questions", help="List AI & Markets open questions.")
+    ai_markets_subparsers.add_parser("report", help="Print AI & Markets report path.")
+    ai_markets_subparsers.add_parser("export", help="Export AI & Markets Markdown outputs.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -1020,6 +1033,46 @@ def main(argv: list[str] | None = None) -> int:
         except InstitutionalResearchReportError as exc:
             print(f"error: {exc}")
             return 1
+    if args.command == "ai-markets":
+        store = AIMarketsStore(args.root.resolve())
+        try:
+            if args.ai_markets_command == "build":
+                report = store.build()
+                _print_ai_markets_summary(report, store)
+                return 0
+            if args.ai_markets_command == "status":
+                _print_ai_markets_status(store.status())
+                return 0
+            if args.ai_markets_command == "themes":
+                for theme in store.load().themes:
+                    print(f"{theme.theme_id} name={theme.name} status={theme.status} confidence={theme.confidence} evidence={theme.evidence_count}")
+                return 0
+            if args.ai_markets_command == "entities":
+                for entity in store.load().entities:
+                    print(f"{entity.entity_id} symbol={entity.symbol} name={entity.name} evidence={entity.evidence_count}")
+                return 0
+            if args.ai_markets_command == "risks":
+                for risk in store.load().risks:
+                    print(f"{risk.risk_id} severity={risk.severity} description={risk.description}")
+                return 0
+            if args.ai_markets_command == "questions":
+                for question in store.load().open_questions:
+                    print(f"{question.question_id} priority={question.priority} question={question.question}")
+                return 0
+            if args.ai_markets_command == "report":
+                report = store.load()
+                print(f"ai_markets_report_id: {report.report_id}")
+                print(f"ai_markets_report: {store.report_path}")
+                return 0
+            if args.ai_markets_command == "export":
+                output_path = store.export()
+                print(f"ai_markets_report: {output_path}")
+                print(f"watchlist: {store.watchlist_path}")
+                print(f"content_ideas: {store.content_ideas_path}")
+                return 0
+        except AIMarketsError as exc:
+            print(f"error: {exc}")
+            return 1
     return 2
 
 
@@ -1216,3 +1269,22 @@ def _print_report_status(status) -> None:
     for name, item in status.get("inputs", {}).items():
         state = "available" if item.get("exists") else "unavailable"
         print(f"{state}: {name}: {item.get('path')}")
+
+
+def _print_ai_markets_summary(report, store) -> None:
+    print(f"ai_markets_report_id: {report.report_id}")
+    print(f"theme_count: {len(report.themes)}")
+    print(f"entity_count: {len(report.entities)}")
+    print(f"risk_count: {len(report.risks)}")
+    print(f"open_question_count: {len(report.open_questions)}")
+    print(f"report_path: {store.report_path}")
+
+
+def _print_ai_markets_status(status) -> None:
+    print(f"available: {status.get('available')}")
+    print(f"report_id: {status.get('report_id') or ''}")
+    print(f"theme_count: {status.get('theme_count', 0)}")
+    print(f"entity_count: {status.get('entity_count', 0)}")
+    print(f"risk_count: {status.get('risk_count', 0)}")
+    print(f"open_question_count: {status.get('open_question_count', 0)}")
+    print(f"report_path: {status.get('report_path')}")

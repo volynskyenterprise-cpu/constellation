@@ -68,6 +68,7 @@ Current capabilities include:
 - Workflow Automation Engine
 - Knowledge Evolution Engine
 - Institutional Research Reports
+- AI & Markets Intelligence
 - ✅ Institutional Intelligence Platform
 - ✅ Operational Intake Pipeline
 - ✅ Google Drive Connector
@@ -382,6 +383,21 @@ python -m constellation report show REPORT_ID
 
 Institutional Research Reports turn existing dashboard, daily, morning, evolution, thesis, evidence graph, memory, source monitor, workflow, intake, and Google Drive artifacts into polished Markdown research reports. Reports are deterministic presentation artifacts and do not call providers or infer unsupported claims.
 
+### AI & Markets Intelligence
+
+```bash
+python -m constellation ai-markets build
+python -m constellation ai-markets status
+python -m constellation ai-markets themes
+python -m constellation ai-markets entities
+python -m constellation ai-markets risks
+python -m constellation ai-markets questions
+python -m constellation ai-markets report
+python -m constellation ai-markets export
+```
+
+AI & Markets Intelligence classifies existing local Constellation artifacts into deterministic themes, entities, catalysts, risks, open questions, watchlists, and content ideas. It uses fixed keyword and ticker matching only and does not provide financial advice or trading recommendations.
+
 ### Research
 
 ```bash
@@ -501,6 +517,7 @@ Current guarantees include:
 - Workflow Automation Engine
 - Knowledge Evolution Engine
 - Institutional Research Reports
+- AI & Markets Intelligence
 - ✅ Institutional Intelligence
 - ✅ Intake Pipeline
 - ✅ Google Drive Connector

@@ -8,6 +8,7 @@ from time import perf_counter
 from typing import Any, Callable
 
 from . import __version__
+from .ai_markets import AIMarketsStore
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .daily import DailyPipelineStore
 from .dashboard import ExecutiveDashboardStore
@@ -153,6 +154,7 @@ class WorkflowEngine:
             "daily": self._daily,
             "dashboard": self._dashboard,
             "report latest": self._report_latest,
+            "ai-markets build": self._ai_markets_build,
         }
 
     def run(self, definition: WorkflowDefinition) -> WorkflowRun:
@@ -310,6 +312,10 @@ class WorkflowEngine:
         report = InstitutionalResearchReportStore(self.root).generate()
         return {"status": "completed", "report_id": report.report_id, "sections": len(report.sections), "evidence_references": len(report.evidence_references)}
 
+    def _ai_markets_build(self, arguments: JsonMap) -> JsonMap:
+        report = AIMarketsStore(self.root).build()
+        return {"status": "completed", "report_id": report.report_id, "theme_count": len(report.themes), "entity_count": len(report.entities), "risk_count": len(report.risks)}
+
 
 class WorkflowStore:
     def __init__(self, root: Path) -> None:
@@ -416,6 +422,21 @@ def render_workflow_report(run: WorkflowRun) -> str:
                 "",
             ]
         )
+    ai_markets_steps = [step for step in run.executed_steps if step.get("command") == "ai-markets build"]
+    if ai_markets_steps:
+        details = _map(ai_markets_steps[-1].get("details"))
+        lines.extend(
+            [
+                "",
+                "## AI & Markets Intelligence",
+                "",
+                f"- Latest AI & Markets report ID: `{details.get('report_id', '')}`",
+                f"- Themes: {details.get('theme_count', 0)}",
+                f"- Entities: {details.get('entity_count', 0)}",
+                f"- Risks: {details.get('risk_count', 0)}",
+                "",
+            ]
+        )
     lines.extend(["", "## Failed Steps", ""])
     if not run.failed_steps:
         lines.extend(["- None", ""])
@@ -457,6 +478,7 @@ def _built_in_workflows() -> list[WorkflowDefinition]:
                 _step("Daily Intelligence Pipeline", "daily", {"overwrite": True}),
                 _step("Executive Dashboard", "dashboard", {"overwrite": True}),
                 _step("Institutional Research Report", "report latest"),
+                _step("AI & Markets Intelligence", "ai-markets build"),
             ],
         ),
         WorkflowDefinition(

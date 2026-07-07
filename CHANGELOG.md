@@ -2,6 +2,23 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 5.0.0 - AI & Markets Intelligence MVP
+
+- Added deterministic AI & Markets Intelligence domain layer.
+- Added fixed AI & Markets theme taxonomy and ticker/entity detection.
+- Added `python -m constellation ai-markets build`.
+- Added `python -m constellation ai-markets status`.
+- Added `python -m constellation ai-markets themes`.
+- Added `python -m constellation ai-markets entities`.
+- Added `python -m constellation ai-markets risks`.
+- Added `python -m constellation ai-markets questions`.
+- Added `python -m constellation ai-markets report`.
+- Added `python -m constellation ai-markets export`.
+- Added AI & Markets outputs under `outputs/ai-markets/`.
+- Integrated AI & Markets Summary into Executive Dashboard.
+- Added AI & Markets generation to Morning workflow after Institutional Research Reports.
+- Preserved deterministic local-only behavior with no providers, OpenAI, LLM inference, embeddings, semantic search, web retrieval, Gmail, trading execution, financial advice, scheduling, or autonomous decisions.
+
 ## 4.2.0 - Institutional Research Reports
 
 - Added deterministic Institutional Research Report engine.

@@ -290,6 +290,7 @@ _MORNING_COMMANDS = [
     "daily",
     "dashboard",
     "report latest",
+    "ai-markets build",
 ]
 
 

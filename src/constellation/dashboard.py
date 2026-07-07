@@ -30,6 +30,7 @@ EXPECTED_ARTIFACTS = {
     "latest_workflow": Path("outputs/workflows/latest-workflow.json"),
     "knowledge_evolution": Path("outputs/evolution/evolution.json"),
     "institutional_report": Path("outputs/reports/latest-report.json"),
+    "ai_markets": Path("outputs/ai-markets/ai-markets.json"),
 }
 
 
@@ -50,6 +51,7 @@ class ExecutiveDashboard:
     workflow_automation_summary: JsonMap
     knowledge_evolution_summary: JsonMap
     institutional_research_report_summary: JsonMap
+    ai_markets_summary: JsonMap
     current_risks_gaps: list[str]
     recommended_next_actions: list[str]
     key_output_files: list[JsonMap]
@@ -74,6 +76,7 @@ class ExecutiveDashboard:
             "workflow_automation_summary": self.workflow_automation_summary,
             "knowledge_evolution_summary": self.knowledge_evolution_summary,
             "institutional_research_report_summary": self.institutional_research_report_summary,
+            "ai_markets_summary": self.ai_markets_summary,
             "current_risks_gaps": self.current_risks_gaps,
             "recommended_next_actions": self.recommended_next_actions,
             "key_output_files": self.key_output_files,
@@ -100,6 +103,7 @@ class ExecutiveDashboard:
             workflow_automation_summary=_map(data.get("workflow_automation_summary")),
             knowledge_evolution_summary=_map(data.get("knowledge_evolution_summary")),
             institutional_research_report_summary=_map(data.get("institutional_research_report_summary")),
+            ai_markets_summary=_map(data.get("ai_markets_summary")),
             current_risks_gaps=_string_list(data.get("current_risks_gaps", [])),
             recommended_next_actions=_string_list(data.get("recommended_next_actions", [])),
             key_output_files=_map_list(data.get("key_output_files", [])),
@@ -128,6 +132,7 @@ class ExecutiveDashboardBuilder:
         workflow = _map(artifacts.get("latest_workflow"))
         evolution = _map(artifacts.get("knowledge_evolution"))
         report = _map(artifacts.get("institutional_report"))
+        ai_markets = _map(artifacts.get("ai_markets"))
         theses = _map_list(thesis_store.get("theses", []))
         graph_nodes = _map_list(evidence_graph.get("nodes", []))
         graph_edges = _map_list(evidence_graph.get("edges", []))
@@ -143,6 +148,7 @@ class ExecutiveDashboardBuilder:
         workflow_summary = _workflow_summary(workflow)
         evolution_summary = _evolution_summary(evolution)
         report_summary = _report_summary(report)
+        ai_markets_summary = _ai_markets_summary(ai_markets)
         risks_gaps = _risks_gaps(morning, theses)
         actions = _actions(morning, status, risks_gaps)
         key_files = _key_files(self.root, status)
@@ -157,10 +163,11 @@ class ExecutiveDashboardBuilder:
             "last_workflow_status": workflow_summary.get("status"),
             "longitudinal_health_score": evolution_summary.get("longitudinal_health_score"),
             "latest_report_id": report_summary.get("latest_report_id"),
+            "ai_markets_active_themes": ai_markets_summary.get("active_themes"),
             "next_files_to_inspect": [item["path"] for item in key_files[:5]],
         }
         dashboard = ExecutiveDashboard(
-            dashboard_id=_dashboard_id(daily_run, morning, snapshot, evidence_graph, thesis_store, intake, drive, monitor, workflow, evolution, report),
+            dashboard_id=_dashboard_id(daily_run, morning, snapshot, evidence_graph, thesis_store, intake, drive, monitor, workflow, evolution, report, ai_markets),
             created_at=created_at,
             version=__version__,
             executive_summary=executive_summary,
@@ -175,6 +182,7 @@ class ExecutiveDashboardBuilder:
             workflow_automation_summary=workflow_summary,
             knowledge_evolution_summary=evolution_summary,
             institutional_research_report_summary=report_summary,
+            ai_markets_summary=ai_markets_summary,
             current_risks_gaps=risks_gaps,
             recommended_next_actions=actions,
             key_output_files=key_files,
@@ -274,6 +282,9 @@ def render_dashboard_markdown(dashboard: ExecutiveDashboard) -> str:
         "## Institutional Research Report Summary",
         "",
         *_summary_lines(dashboard.institutional_research_report_summary),
+        "## AI & Markets Summary",
+        "",
+        *_summary_lines(dashboard.ai_markets_summary),
         "## Current Risks / Gaps",
         "",
         *_string_lines(dashboard.current_risks_gaps),
@@ -446,6 +457,22 @@ def _report_summary(report: JsonMap) -> JsonMap:
         "open_questions_count": len(_list(report.get("open_questions", []))),
         "evidence_references_count": len(_list(report.get("evidence_references", []))),
         "report_path": "outputs/reports/latest-report.md" if report else None,
+    }
+
+
+def _ai_markets_summary(report: JsonMap) -> JsonMap:
+    themes = _map_list(report.get("themes", []))
+    return {
+        "available": bool(report),
+        "report_id": report.get("report_id"),
+        "active_themes": sum(1 for theme in themes if theme.get("status") == "active"),
+        "strengthening_themes": sum(1 for theme in themes if theme.get("status") == "strengthening"),
+        "weakening_themes": sum(1 for theme in themes if theme.get("status") == "weakening"),
+        "high_confidence_themes": sum(1 for theme in themes if theme.get("confidence") == "high"),
+        "entity_count": len(_list(report.get("entities", []))),
+        "risk_count": len(_list(report.get("risks", []))),
+        "open_question_count": len(_list(report.get("open_questions", []))),
+        "latest_ai_markets_report_path": "outputs/ai-markets/ai-markets-report.md" if report else None,
     }
 
 

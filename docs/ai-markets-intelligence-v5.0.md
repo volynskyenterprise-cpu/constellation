@@ -34,6 +34,37 @@ The goal is to create a durable research operating system that helps the user un
 - What risks or contradictions are emerging
 - What deserves attention next
 
+## MVP Implementation
+
+The v5.0 MVP implements deterministic AI & Markets classification from existing local Constellation artifacts only.
+
+Commands:
+
+```bash
+python -m constellation ai-markets build
+python -m constellation ai-markets status
+python -m constellation ai-markets themes
+python -m constellation ai-markets entities
+python -m constellation ai-markets risks
+python -m constellation ai-markets questions
+python -m constellation ai-markets report
+python -m constellation ai-markets export
+```
+
+Outputs:
+
+- `outputs/ai-markets/ai-markets.json`
+- `outputs/ai-markets/themes.json`
+- `outputs/ai-markets/entities.json`
+- `outputs/ai-markets/catalysts.json`
+- `outputs/ai-markets/risks.json`
+- `outputs/ai-markets/open-questions.json`
+- `outputs/ai-markets/ai-markets-report.md`
+- `outputs/ai-markets/watchlist.md`
+- `outputs/ai-markets/content-ideas.md`
+
+The MVP uses fixed keyword and ticker matching only. It does not call providers, OpenAI, web retrieval, embeddings, semantic search, Gmail, or trading systems. It does not provide financial advice.
+
 ---
 
 ## Core Thesis
