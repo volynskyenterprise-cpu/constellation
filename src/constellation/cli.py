@@ -274,7 +274,8 @@ def main(argv: list[str] | None = None) -> int:
     ai_markets_subparsers.add_parser("themes", help="List AI & Markets themes.")
     ai_markets_subparsers.add_parser("entities", help="List AI & Markets entities.")
     ai_markets_subparsers.add_parser("risks", help="List AI & Markets risks.")
-    ai_markets_subparsers.add_parser("questions", help="List AI & Markets open questions.")
+    ai_markets_questions_parser = ai_markets_subparsers.add_parser("questions", help="List AI & Markets open questions.")
+    ai_markets_questions_parser.add_argument("--executive", action="store_true", help="Show only prioritized executive questions.")
     ai_markets_subparsers.add_parser("report", help="Print AI & Markets report path.")
     ai_markets_subparsers.add_parser("export", help="Export AI & Markets Markdown outputs.")
 
@@ -1056,7 +1057,17 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"{risk.risk_id} severity={risk.severity} description={risk.description}")
                 return 0
             if args.ai_markets_command == "questions":
-                for question in store.load().open_questions:
+                report = store.load()
+                questions = report.executive_questions if args.executive else report.open_questions
+                print(f"total_open_questions: {sum(int(question.provenance.get('variant_count', 1)) for question in report.open_questions)}")
+                print(f"deduplicated_open_questions: {len(report.open_questions)}")
+                print(f"executive_questions: {len(report.executive_questions)}")
+                print("top_executive_questions:")
+                for question in report.executive_questions[:10]:
+                    print(f"{question.question_id} priority={question.priority} evidence={len(question.evidence_ids)} themes={len(question.related_themes)} question={question.question}")
+                if not args.executive:
+                    print("all_deduplicated_questions:")
+                for question in questions:
                     print(f"{question.question_id} priority={question.priority} question={question.question}")
                 return 0
             if args.ai_markets_command == "report":
@@ -1069,6 +1080,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"ai_markets_report: {output_path}")
                 print(f"watchlist: {store.watchlist_path}")
                 print(f"content_ideas: {store.content_ideas_path}")
+                print(f"executive_questions: {store.executive_questions_path}")
                 return 0
         except AIMarketsError as exc:
             print(f"error: {exc}")
@@ -1276,8 +1288,11 @@ def _print_ai_markets_summary(report, store) -> None:
     print(f"theme_count: {len(report.themes)}")
     print(f"entity_count: {len(report.entities)}")
     print(f"risk_count: {len(report.risks)}")
-    print(f"open_question_count: {len(report.open_questions)}")
+    print(f"total_open_question_count: {sum(int(question.provenance.get('variant_count', 1)) for question in report.open_questions)}")
+    print(f"deduplicated_open_question_count: {len(report.open_questions)}")
+    print(f"executive_question_count: {len(report.executive_questions)}")
     print(f"report_path: {store.report_path}")
+    print(f"executive_questions_path: {store.executive_questions_path}")
 
 
 def _print_ai_markets_status(status) -> None:
@@ -1285,6 +1300,10 @@ def _print_ai_markets_status(status) -> None:
     print(f"report_id: {status.get('report_id') or ''}")
     print(f"theme_count: {status.get('theme_count', 0)}")
     print(f"entity_count: {status.get('entity_count', 0)}")
+    print(f"high_confidence_entity_count: {status.get('high_confidence_entity_count', 0)}")
     print(f"risk_count: {status.get('risk_count', 0)}")
-    print(f"open_question_count: {status.get('open_question_count', 0)}")
+    print(f"total_open_question_count: {status.get('total_open_question_count', 0)}")
+    print(f"deduplicated_open_question_count: {status.get('deduplicated_open_question_count', 0)}")
+    print(f"executive_question_count: {status.get('executive_question_count', 0)}")
     print(f"report_path: {status.get('report_path')}")
+    print(f"executive_questions_path: {status.get('executive_questions_path')}")

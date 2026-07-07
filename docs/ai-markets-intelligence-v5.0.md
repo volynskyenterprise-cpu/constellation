@@ -24,6 +24,19 @@ AI & Markets Intelligence is designed to help track, organize, and evolve instit
 
 The goal is not to predict markets automatically.
 
+## v5.0.1 Signal Refinement
+
+v5.0.1 refines the MVP output into a more executive-useful signal layer.
+
+Open questions are now normalized and deduplicated deterministically. The full archive remains in `outputs/ai-markets/open-questions.json`, while the top prioritized executive questions are written to:
+
+- `outputs/ai-markets/executive-questions.json`
+- `outputs/ai-markets/executive-questions.md`
+
+Question priority is deterministic. High-priority questions are those linked to multiple themes, multiple evidence records, high-priority entities, or explicit terms such as risk, bottleneck, catalyst, liquidity, capex, power, margin, regulation, adoption, acceleration, slowdown, contradiction, or weakening.
+
+Entity detection now recognizes a broader fixed set of tickers, assets, and company-name aliases including NVDA, AMD, AVGO, MSFT, GOOGL, GOOG, AMZN, META, TSLA, PLTR, ORCL, CRWV, IREN, COIN, MSTR, IBM, NOW, INTC, MRVL, GFS, AMKR, BTC, ETH, GLD, SLV, URA, XME, and COPX. Matching remains token/regex based only; no semantic similarity, embeddings, providers, or web retrieval are used.
+
 The goal is to create a durable research operating system that helps the user understand:
 
 - What changed
@@ -59,6 +72,8 @@ Outputs:
 - `outputs/ai-markets/catalysts.json`
 - `outputs/ai-markets/risks.json`
 - `outputs/ai-markets/open-questions.json`
+- `outputs/ai-markets/executive-questions.json`
+- `outputs/ai-markets/executive-questions.md`
 - `outputs/ai-markets/ai-markets-report.md`
 - `outputs/ai-markets/watchlist.md`
 - `outputs/ai-markets/content-ideas.md`

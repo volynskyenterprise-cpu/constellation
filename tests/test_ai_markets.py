@@ -7,7 +7,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from constellation.ai_markets import AIMarketsStore
+from constellation.ai_markets import AIMarketsStore, _normalize_question
 from constellation.cli import main
 from constellation.dashboard import ExecutiveDashboardStore
 from constellation.io import write_json
@@ -82,6 +82,73 @@ class AIMarketsTests(unittest.TestCase):
             self.assertTrue(report.risks)
             self.assertTrue(report.open_questions)
 
+    def test_question_normalization(self) -> None:
+        self.assertEqual(_normalize_question("Is is NVDA power a bottleneck??"), "is nvda power a bottleneck?")
+        self.assertEqual(_normalize_question("What evidence confirms BTC liquidity?"), "what evidence confirms btc liquidity?")
+
+    def test_duplicate_question_collapse(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_question_artifacts(root)
+
+            report = AIMarketsStore(root).build()
+
+            normalized = [question.normalized_question for question in report.open_questions]
+            self.assertEqual(normalized.count("what evidence confirms btc liquidity?"), 1)
+            btc_question = next(question for question in report.open_questions if question.normalized_question == "what evidence confirms btc liquidity?")
+            self.assertGreaterEqual(len(btc_question.supporting_text), 2)
+
+    def test_executive_question_ranking_and_priority(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_question_artifacts(root)
+
+            report = AIMarketsStore(root).build()
+
+            self.assertLessEqual(len(report.executive_questions), 10)
+            self.assertEqual(report.executive_questions[0].priority, "high")
+            self.assertTrue(any(question.priority == "high" and "power" in question.question.lower() for question in report.executive_questions))
+
+    def test_expanded_ticker_and_company_detection(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_entity_artifacts(root)
+
+            report = AIMarketsStore(root).build()
+
+            symbols = {entity.symbol for entity in report.entities}
+            self.assertIn("AMD", symbols)
+            self.assertIn("GOOGL", symbols)
+            self.assertIn("COIN", symbols)
+            self.assertIn("ETH", symbols)
+
+    def test_ticker_false_positive_avoidance(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            write_json(
+                root / "outputs" / "reports" / "latest-report.json",
+                {"evidence_references": [{"evidence_id": "ev_noise", "source_id": "source-n", "summary": "The random word advancement should not create a ticker match."}]},
+            )
+
+            report = AIMarketsStore(root).build()
+
+            self.assertNotIn("AMD", {entity.symbol for entity in report.entities})
+
+    def test_executive_question_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_question_artifacts(root)
+
+            AIMarketsStore(root).build()
+
+            self.assertTrue((root / "outputs" / "ai-markets" / "executive-questions.json").exists())
+            self.assertTrue((root / "outputs" / "ai-markets" / "executive-questions.md").exists())
+
     def test_report_export(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -137,6 +204,8 @@ class AIMarketsTests(unittest.TestCase):
 
             self.assertTrue(dashboard.ai_markets_summary["available"])
             self.assertGreater(dashboard.ai_markets_summary["entity_count"], 0)
+            self.assertIn("executive_question_count", dashboard.ai_markets_summary)
+            self.assertIn("top_executive_questions", dashboard.ai_markets_summary)
 
     def test_workflow_integration(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -147,6 +216,35 @@ class AIMarketsTests(unittest.TestCase):
 
             self.assertIn("ai-markets build", [step["command"] for step in run.executed_steps])
             self.assertTrue((root / "outputs" / "ai-markets" / "ai-markets.json").exists())
+            ai_step = next(step for step in run.executed_steps if step["command"] == "ai-markets build")
+            self.assertIn("executive_question_count", ai_step["details"])
+
+    def test_cli_questions_executive(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_question_artifacts(root)
+            AIMarketsStore(root).build()
+
+            output = io.StringIO()
+            with redirect_stdout(output):
+                exit_code = main(["ai-markets", "--root", str(root), "questions", "--executive"])
+
+            self.assertEqual(exit_code, 0)
+            self.assertIn("executive_questions:", output.getvalue())
+
+    def test_deterministic_output_across_repeated_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_question_artifacts(root)
+            store = AIMarketsStore(root)
+
+            first = store.build()
+            second = store.build()
+
+            self.assertEqual([item.question_id for item in first.open_questions], [item.question_id for item in second.open_questions])
+            self.assertEqual([item.question_id for item in first.executive_questions], [item.question_id for item in second.executive_questions])
 
     def test_no_provider_calls(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -222,6 +320,27 @@ def _write_artifacts(root: Path, *, repeated: bool = False) -> None:
     write_json(root / "outputs" / "source-monitor" / "latest-monitor.json", {"monitor_id": "monitor_1"})
     write_json(root / "outputs" / "intake" / "intake-manifest.json", {"manifest_id": "manifest_1"})
     write_json(root / "outputs" / "google-drive" / "google-drive-sync-manifest.json", {"sync_id": "sync_1"})
+
+
+def _write_question_artifacts(root: Path) -> None:
+    refs = [
+        {"evidence_id": "ev_q1", "source_id": "source-a", "summary": "Is NVDA power a bottleneck for AI infrastructure?"},
+        {"evidence_id": "ev_q2", "source_id": "source-b", "summary": "Does NVDA power bottleneck create data center risk?"},
+        {"evidence_id": "ev_q3", "source_id": "source-c", "summary": "What evidence confirms BTC liquidity?"},
+        {"evidence_id": "ev_q4", "source_id": "source-d", "summary": "What evidence confirms BTC liquidity??"},
+        {"evidence_id": "ev_q5", "source_id": "source-e", "summary": "Open question: does robotics adoption accelerate?"},
+    ]
+    write_json(root / "outputs" / "reports" / "latest-report.json", {"report_id": "report_q", "evidence_references": refs, "sections": []})
+
+
+def _write_entity_artifacts(root: Path) -> None:
+    refs = [
+        {"evidence_id": "ev_e1", "source_id": "source-a", "summary": "Advanced Micro Devices competes in AI accelerators."},
+        {"evidence_id": "ev_e2", "source_id": "source-b", "summary": "Google and Alphabet expand AI infrastructure capex."},
+        {"evidence_id": "ev_e3", "source_id": "source-c", "summary": "Coinbase supports crypto market structure."},
+        {"evidence_id": "ev_e4", "source_id": "source-d", "summary": "Ethereum and ETH adoption remains an open question?"},
+    ]
+    write_json(root / "outputs" / "reports" / "latest-report.json", {"report_id": "report_e", "evidence_references": refs, "sections": []})
 
 
 if __name__ == "__main__":

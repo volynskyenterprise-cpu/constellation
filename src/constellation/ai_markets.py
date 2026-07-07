@@ -40,6 +40,7 @@ ENTITY_MAP = {
     "AVGO": ("Broadcom", "equity"),
     "MSFT": ("Microsoft", "equity"),
     "GOOGL": ("Alphabet", "equity"),
+    "GOOG": ("Alphabet", "equity"),
     "AMZN": ("Amazon", "equity"),
     "META": ("Meta", "equity"),
     "TSLA": ("Tesla", "equity"),
@@ -47,13 +48,70 @@ ENTITY_MAP = {
     "ORCL": ("Oracle", "equity"),
     "CRWV": ("CoreWeave", "equity"),
     "IREN": ("IREN", "equity"),
+    "COIN": ("Coinbase", "equity"),
+    "MSTR": ("MicroStrategy", "equity"),
+    "IBM": ("IBM", "equity"),
+    "NOW": ("ServiceNow", "equity"),
+    "INTC": ("Intel", "equity"),
+    "MRVL": ("Marvell", "equity"),
+    "GFS": ("GlobalFoundries", "equity"),
+    "AMKR": ("Amkor", "equity"),
     "BTC": ("Bitcoin", "asset"),
+    "ETH": ("Ethereum", "asset"),
     "GLD": ("Gold ETF", "fund"),
     "SLV": ("Silver ETF", "fund"),
     "URA": ("Uranium ETF", "fund"),
     "XME": ("Metals and Mining ETF", "fund"),
     "COPX": ("Copper Miners ETF", "fund"),
 }
+
+ENTITY_ALIASES = {
+    "NVDA": ["nvda", "nvidia"],
+    "AMD": ["amd", "advanced micro devices"],
+    "AVGO": ["avgo", "broadcom"],
+    "MSFT": ["msft", "microsoft"],
+    "GOOGL": ["googl", "google", "alphabet"],
+    "GOOG": ["goog"],
+    "AMZN": ["amzn", "amazon"],
+    "META": ["meta"],
+    "TSLA": ["tsla", "tesla"],
+    "PLTR": ["pltr", "palantir"],
+    "ORCL": ["orcl", "oracle"],
+    "CRWV": ["crwv", "coreweave"],
+    "IREN": ["iren"],
+    "COIN": ["coin", "coinbase"],
+    "MSTR": ["mstr", "microstrategy", "strategy"],
+    "IBM": ["ibm"],
+    "NOW": ["now", "servicenow"],
+    "INTC": ["intc", "intel"],
+    "MRVL": ["mrvl", "marvell"],
+    "GFS": ["gfs", "globalfoundries"],
+    "AMKR": ["amkr", "amkor"],
+    "BTC": ["btc", "bitcoin"],
+    "ETH": ["eth", "ethereum"],
+    "GLD": ["gld", "gold"],
+    "SLV": ["slv", "silver"],
+    "URA": ["ura", "uranium"],
+    "XME": ["xme"],
+    "COPX": ["copx"],
+}
+
+HIGH_PRIORITY_ENTITIES = {"NVDA", "AMD", "AVGO", "MSFT", "GOOGL", "GOOG", "AMZN", "META", "TSLA", "BTC", "ETH", "COIN", "MSTR"}
+QUESTION_PRIORITY_TERMS = [
+    "bottleneck",
+    "risk",
+    "contradiction",
+    "catalyst",
+    "weakening",
+    "acceleration",
+    "slowdown",
+    "liquidity",
+    "capex",
+    "power",
+    "margin",
+    "regulation",
+    "adoption",
+]
 
 CATALYST_WORDS = ["catalyst", "launch", "approval", "earnings", "deadline", "buildout", "deployment", "release"]
 RISK_WORDS = ["risk", "gap", "constraint", "shortage", "concern", "weakening", "contradiction", "delay"]
@@ -159,6 +217,11 @@ class AIMarketsOpenQuestion:
     evidence_needed: str
     status: str
     provenance: JsonMap
+    normalized_question: str
+    evidence_ids: list[str]
+    source_ids: list[str]
+    supporting_text: list[str]
+    latest_mention: str | None
 
     def to_dict(self) -> JsonMap:
         return self.__dict__.copy()
@@ -174,6 +237,7 @@ class AIMarketsReport:
     catalysts: list[AIMarketsCatalyst]
     risks: list[AIMarketsRisk]
     open_questions: list[AIMarketsOpenQuestion]
+    executive_questions: list[AIMarketsOpenQuestion]
     evidence_references: list[str]
     provenance: JsonMap
     limitations: list[str]
@@ -188,6 +252,7 @@ class AIMarketsReport:
             "catalysts": [item.to_dict() for item in self.catalysts],
             "risks": [item.to_dict() for item in self.risks],
             "open_questions": [item.to_dict() for item in self.open_questions],
+            "executive_questions": [item.to_dict() for item in self.executive_questions],
             "evidence_references": self.evidence_references,
             "provenance": self.provenance,
             "limitations": self.limitations,
@@ -204,6 +269,7 @@ class AIMarketsReport:
             catalysts=[_catalyst_from_dict(item) for item in _map_list(data.get("catalysts", []))],
             risks=[_risk_from_dict(item) for item in _map_list(data.get("risks", []))],
             open_questions=[_question_from_dict(item) for item in _map_list(data.get("open_questions", []))],
+            executive_questions=[_question_from_dict(item) for item in _map_list(data.get("executive_questions", []))],
             evidence_references=_string_list(data.get("evidence_references", [])),
             provenance=_map(data.get("provenance")),
             limitations=_string_list(data.get("limitations", [])),
@@ -222,6 +288,7 @@ class AIMarketsEngine:
         catalysts = _catalysts(records)
         risks = _risks(records)
         questions = _questions(records)
+        executive_questions = _executive_questions(questions)
         themes = _attach_related(themes, entities, catalysts, risks, questions)
         evidence_refs = sorted({record["evidence_id"] for record in records if record.get("evidence_id")})
         missing = [name for name, path in INPUTS.items() if not (self.root / path).exists()]
@@ -241,6 +308,7 @@ class AIMarketsEngine:
             catalysts=catalysts,
             risks=risks,
             open_questions=questions,
+            executive_questions=executive_questions,
             evidence_references=evidence_refs,
             provenance={name: str(path) for name, path in INPUTS.items()},
             limitations=limitations,
@@ -255,6 +323,7 @@ class AIMarketsStore:
         self.report_path = self.directory / "ai-markets-report.md"
         self.watchlist_path = self.directory / "watchlist.md"
         self.content_ideas_path = self.directory / "content-ideas.md"
+        self.executive_questions_path = self.directory / "executive-questions.md"
 
     def build(self) -> AIMarketsReport:
         report = AIMarketsEngine(self.root).build()
@@ -268,10 +337,12 @@ class AIMarketsStore:
         write_json(self.directory / "catalysts.json", {"catalysts": [item.to_dict() for item in report.catalysts]})
         write_json(self.directory / "risks.json", {"risks": [item.to_dict() for item in report.risks]})
         write_json(self.directory / "open-questions.json", {"open_questions": [item.to_dict() for item in report.open_questions]})
+        write_json(self.directory / "executive-questions.json", {"executive_questions": [item.to_dict() for item in report.executive_questions]})
         self.report_path.parent.mkdir(parents=True, exist_ok=True)
         self.report_path.write_text(render_report(report), encoding="utf-8")
         self.watchlist_path.write_text(render_watchlist(report), encoding="utf-8")
         self.content_ideas_path.write_text(render_content_ideas(report), encoding="utf-8")
+        self.executive_questions_path.write_text(render_executive_questions(report), encoding="utf-8")
 
     def load(self) -> AIMarketsReport:
         if not self.json_path.exists():
@@ -286,9 +357,13 @@ class AIMarketsStore:
             "report_id": report.report_id if report else None,
             "theme_count": len(report.themes) if report else 0,
             "entity_count": len(report.entities) if report else 0,
+            "high_confidence_entity_count": sum(1 for entity in report.entities if entity.evidence_count >= 4) if report else 0,
             "risk_count": len(report.risks) if report else 0,
-            "open_question_count": len(report.open_questions) if report else 0,
+            "total_open_question_count": _total_open_question_count(report) if report else 0,
+            "deduplicated_open_question_count": len(report.open_questions) if report else 0,
+            "executive_question_count": len(report.executive_questions) if report else 0,
             "report_path": str(self.report_path),
+            "executive_questions_path": str(self.executive_questions_path),
         }
 
     def export(self) -> Path:
@@ -296,6 +371,7 @@ class AIMarketsStore:
         self.report_path.write_text(render_report(report), encoding="utf-8")
         self.watchlist_path.write_text(render_watchlist(report), encoding="utf-8")
         self.content_ideas_path.write_text(render_content_ideas(report), encoding="utf-8")
+        self.executive_questions_path.write_text(render_executive_questions(report), encoding="utf-8")
         return self.report_path
 
 
@@ -313,7 +389,11 @@ def render_report(report: AIMarketsReport) -> str:
         f"- Entities: {len(report.entities)}",
         f"- Catalysts: {len(report.catalysts)}",
         f"- Risks: {len(report.risks)}",
-        f"- Open questions: {len(report.open_questions)}",
+        f"- Total open question mentions: {_total_open_question_count(report)}",
+        f"- Deduplicated open questions: {len(report.open_questions)}",
+        f"- Executive questions: {len(report.executive_questions)}",
+        "- Executive questions path: `outputs/ai-markets/executive-questions.md`",
+        "- Full open question archive: `outputs/ai-markets/open-questions.json`",
         "",
         "## What Changed",
         "",
@@ -333,9 +413,9 @@ def render_report(report: AIMarketsReport) -> str:
         "## Risks",
         "",
         *_bullet([f"{item.description} ({item.severity})" for item in report.risks]),
-        "## Open Questions",
+        "## Top Executive Questions",
         "",
-        *_bullet([item.question for item in report.open_questions]),
+        *_bullet([f"{item.question} ({item.priority}, evidence={len(item.evidence_ids)}, themes={len(item.related_themes)})" for item in report.executive_questions[:5]] or ["No executive questions found."]),
         "## Watchlist",
         "",
         *_bullet([entity.symbol for entity in report.entities]),
@@ -367,6 +447,33 @@ def render_content_ideas(report: AIMarketsReport) -> str:
     return "\n".join(lines)
 
 
+def render_executive_questions(report: AIMarketsReport) -> str:
+    lines = [
+        "# AI & Markets Executive Questions",
+        "",
+        f"- Report ID: `{report.report_id}`",
+        f"- Total open question mentions: {_total_open_question_count(report)}",
+        f"- Deduplicated open questions: {len(report.open_questions)}",
+        f"- Executive questions: {len(report.executive_questions)}",
+        "",
+    ]
+    for index, question in enumerate(report.executive_questions, start=1):
+        lines.extend(
+            [
+                f"## {index}. {question.question}",
+                "",
+                f"- Priority: {question.priority}",
+                f"- Evidence records: {len(question.evidence_ids)}",
+                f"- Related themes: {', '.join(question.related_themes) or 'None'}",
+                f"- Source IDs: {', '.join(question.source_ids) or 'None'}",
+                "",
+            ]
+        )
+    if not report.executive_questions:
+        lines.extend(["No executive questions found.", ""])
+    return "\n".join(lines)
+
+
 def _records(artifacts: dict[str, JsonMap]) -> list[JsonMap]:
     records: list[JsonMap] = []
     for ref in _map_list(_map(artifacts.get("institutional_report")).get("evidence_references", [])):
@@ -379,8 +486,10 @@ def _records(artifacts: dict[str, JsonMap]) -> list[JsonMap]:
         records.append({"evidence_id": str(thesis.get("thesis_id", "")), "source": _first(_string_list(thesis.get("source_ids", []))), "text": " ".join(str(thesis.get(k, "")) for k in ["title", "status", "category", "thesis_id"]), "provenance": "outputs/thesis/theses.json"})
     for section in _map_list(_map(artifacts.get("institutional_report")).get("sections", [])):
         records.append({"evidence_id": "", "source": "report_section", "text": " ".join([str(section.get("title", "")), str(section.get("summary", "")), " ".join(_string_list(section.get("items", [])))]), "provenance": "outputs/reports/latest-report.json"})
-    for item in _map_list(_map(artifacts.get("dashboard")).get("current_risks_gaps", [])):
+    for item in _string_list(_map(artifacts.get("dashboard")).get("current_risks_gaps", [])):
         records.append({"evidence_id": "", "source": "dashboard", "text": str(item), "provenance": "outputs/dashboard/dashboard.json"})
+    for index, record in enumerate(records):
+        record["record_index"] = index
     return records
 
 
@@ -415,12 +524,14 @@ def _themes(records: list[JsonMap]) -> list[AIMarketsTheme]:
 def _entities(records: list[JsonMap], themes: list[AIMarketsTheme]) -> list[AIMarketsEntity]:
     entities = []
     for symbol, (name, entity_type) in ENTITY_MAP.items():
-        matched = [record for record in records if _symbol_match(str(record.get("text", "")), symbol) or name.lower() in str(record.get("text", "")).lower()]
+        matched = [record for record in records if _entity_match(str(record.get("text", "")), symbol)]
         if not matched:
             continue
         evidence_ids = sorted({str(record.get("evidence_id")) for record in matched if record.get("evidence_id")})
         related_themes = sorted(theme.name for theme in themes if set(theme.related_evidence_ids).intersection(evidence_ids) or _contains_any(" ".join(str(record.get("text", "")) for record in matched), THEME_KEYWORDS[theme.name]))
-        entities.append(AIMarketsEntity(f"entity_{symbol.lower()}", symbol, name, entity_type, related_themes, len(evidence_ids), _now_iso(), {"matched_symbol": symbol}))
+        matched_text = sorted({alias for record in matched for alias in _matched_aliases(str(record.get("text", "")), symbol)})
+        sources = sorted({str(record.get("source")) for record in matched if record.get("source")})
+        entities.append(AIMarketsEntity(f"entity_{symbol.lower()}", symbol, name, entity_type, related_themes, len(evidence_ids), _now_iso(), {"matched_symbol": symbol, "matched_text": matched_text, "sources": sources}))
     return sorted(entities, key=lambda item: item.symbol)
 
 
@@ -450,13 +561,54 @@ def _risks(records: list[JsonMap]) -> list[AIMarketsRisk]:
 
 
 def _questions(records: list[JsonMap]) -> list[AIMarketsOpenQuestion]:
-    results = []
+    grouped: dict[str, list[JsonMap]] = {}
     for record in records:
-        text = str(record.get("text", ""))
-        if _contains_any(text, QUESTION_WORDS):
-            question = _short(text)
-            results.append(AIMarketsOpenQuestion(f"question_{_digest(question)}", question, _matched_themes(text), "medium", "Additional explicit evidence record or source document.", "open", {"provenance": record.get("provenance")}))
-    return _unique(results, "question_id")
+        text = _strip_url_noise(str(record.get("text", "")))
+        if _is_question_text(text):
+            question = _short(_question_candidate(text))
+            normalized = _normalize_question(question)
+            if normalized:
+                item = record.copy()
+                item["question"] = question
+                item["normalized_question"] = normalized
+                grouped.setdefault(normalized, []).append(item)
+    results = []
+    for normalized in sorted(grouped):
+        matched = grouped[normalized]
+        variants = sorted({str(item.get("question", "")) for item in matched if item.get("question")})
+        canonical = sorted(variants, key=lambda value: (len(value), value.lower(), value))[0] if variants else normalized
+        themes = sorted({theme for item in matched for theme in _matched_themes(str(item.get("text", "")))})
+        entities = sorted({entity for item in matched for entity in _matched_entities(str(item.get("text", "")))})
+        evidence_ids = sorted({str(item.get("evidence_id")) for item in matched if item.get("evidence_id")})
+        source_ids = sorted({str(item.get("source")) for item in matched if item.get("source")})
+        latest_index = max((_int(item.get("record_index")) for item in matched), default=0)
+        priority = _question_priority(canonical, themes, entities, evidence_ids)
+        results.append(
+            AIMarketsOpenQuestion(
+                f"question_{_digest(normalized)}",
+                canonical,
+                themes,
+                priority,
+                "Additional explicit evidence record or source document.",
+                "open",
+                {
+                    "provenance": sorted({str(item.get("provenance")) for item in matched if item.get("provenance")}),
+                    "variant_count": len(variants),
+                    "latest_record_index": latest_index,
+                    "related_entities": entities,
+                },
+                normalized,
+                evidence_ids,
+                source_ids,
+                variants,
+                str(latest_index),
+            )
+        )
+    return sorted(results, key=_question_sort_key)
+
+
+def _executive_questions(questions: list[AIMarketsOpenQuestion]) -> list[AIMarketsOpenQuestion]:
+    return sorted(questions, key=_question_sort_key)[:10]
 
 
 def _attach_related(themes, entities, catalysts, risks, questions):
@@ -496,7 +648,7 @@ def _matched_themes(text: str) -> list[str]:
 
 
 def _matched_entities(text: str) -> list[str]:
-    return sorted(symbol for symbol, (name, _) in ENTITY_MAP.items() if _symbol_match(text, symbol) or name.lower() in text.lower())
+    return sorted(symbol for symbol in ENTITY_MAP if _entity_match(text, symbol))
 
 
 def _content_ideas(report: AIMarketsReport) -> list[str]:
@@ -510,6 +662,84 @@ def _contains_any(text: str, needles: list[str]) -> bool:
 
 def _symbol_match(text: str, symbol: str) -> bool:
     return re.search(rf"(?<![A-Z0-9]){re.escape(symbol)}(?![A-Z0-9])", text.upper()) is not None
+
+
+def _entity_match(text: str, symbol: str) -> bool:
+    return bool(_matched_aliases(text, symbol))
+
+
+def _matched_aliases(text: str, symbol: str) -> list[str]:
+    aliases = ENTITY_ALIASES.get(symbol, [symbol])
+    return sorted({alias for alias in aliases if _token_match(text, alias)})
+
+
+def _token_match(text: str, value: str) -> bool:
+    return re.search(rf"(?<![A-Za-z0-9]){re.escape(value)}(?![A-Za-z0-9])", text, flags=re.IGNORECASE) is not None
+
+
+def _normalize_question(question: str) -> str:
+    clean = question.lower().replace("?", " ? ")
+    clean = re.sub(r"[^\w\s?]", " ", clean)
+    clean = re.sub(r"(?:\s*\?\s*)+", "?", clean)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    prefixes = ["is", "are", "does"]
+    changed = True
+    while changed:
+        changed = False
+        for prefix in prefixes:
+            repeated = f"{prefix} {prefix} "
+            if clean.startswith(repeated):
+                clean = clean[len(prefix) + 1 :]
+                changed = True
+    clean = clean.replace(" ?", "?")
+    return clean
+
+
+def _is_question_text(text: str) -> bool:
+    lower = text.lower()
+    if "0 open questions identified" in lower or "no open questions" in lower:
+        return False
+    if any(marker in lower for marker in ["open question", "needs review", "what evidence", "unclear"]):
+        return True
+    return re.search(r"\b(what|why|how|does|do|can|should|is|are)\b[^?]{0,180}\?", text, flags=re.IGNORECASE) is not None
+
+
+def _question_candidate(text: str) -> str:
+    clean = re.sub(r"\beg_(evidence_)?ev_[A-Za-z0-9_]+\b", " ", text)
+    clean = re.sub(r"\bev_[A-Za-z0-9_]+\b", " ", clean)
+    clean = " ".join(clean.split())
+    match = re.search(r"\b(open question|what|why|how|does|do|can|should|is|are)\b.*", clean, flags=re.IGNORECASE)
+    return match.group(0) if match else clean
+
+
+def _strip_url_noise(text: str) -> str:
+    return re.sub(r"https?://\S+", "", text)
+
+
+def _question_priority(question: str, themes: list[str], entities: list[str], evidence_ids: list[str]) -> str:
+    lower = question.lower()
+    if (
+        len(themes) >= 2
+        or len(evidence_ids) >= 2
+        or any(entity in HIGH_PRIORITY_ENTITIES for entity in entities)
+        or any(term in lower for term in QUESTION_PRIORITY_TERMS)
+    ):
+        return "high"
+    if len(themes) >= 1 and len(evidence_ids) >= 1:
+        return "medium"
+    if _contains_any(question, [keyword for keywords in THEME_KEYWORDS.values() for keyword in keywords]):
+        return "medium"
+    return "low"
+
+
+def _question_sort_key(question: AIMarketsOpenQuestion):
+    priority_rank = {"high": 0, "medium": 1, "low": 2}.get(question.priority, 3)
+    latest = _int(_map(question.provenance).get("latest_record_index"))
+    return (priority_rank, -len(question.evidence_ids), -len(question.related_themes), -latest, question.question_id)
+
+
+def _total_open_question_count(report: AIMarketsReport) -> int:
+    return sum(_int(question.provenance.get("variant_count")) or 1 for question in report.open_questions)
 
 
 def _short(text: str) -> str:
@@ -556,7 +786,21 @@ def _risk_from_dict(data):
 
 
 def _question_from_dict(data):
-    return AIMarketsOpenQuestion(_require_str(data, "question_id"), _require_str(data, "question"), _string_list(data.get("related_themes", [])), _require_str(data, "priority"), _require_str(data, "evidence_needed"), _require_str(data, "status"), _map(data.get("provenance")))
+    question = _require_str(data, "question")
+    return AIMarketsOpenQuestion(
+        _require_str(data, "question_id"),
+        question,
+        _string_list(data.get("related_themes", [])),
+        _require_str(data, "priority"),
+        _require_str(data, "evidence_needed"),
+        _require_str(data, "status"),
+        _map(data.get("provenance")),
+        str(data.get("normalized_question") or _normalize_question(question)),
+        _string_list(data.get("evidence_ids", [])),
+        _string_list(data.get("source_ids", [])),
+        _string_list(data.get("supporting_text", [question])),
+        data.get("latest_mention") if isinstance(data.get("latest_mention"), str) else None,
+    )
 
 
 def _read_optional_json(path: Path) -> JsonMap:

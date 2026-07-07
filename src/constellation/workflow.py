@@ -314,7 +314,16 @@ class WorkflowEngine:
 
     def _ai_markets_build(self, arguments: JsonMap) -> JsonMap:
         report = AIMarketsStore(self.root).build()
-        return {"status": "completed", "report_id": report.report_id, "theme_count": len(report.themes), "entity_count": len(report.entities), "risk_count": len(report.risks)}
+        total_questions = sum(_int(_map(question.provenance).get("variant_count")) or 1 for question in report.open_questions)
+        return {
+            "status": "completed",
+            "report_id": report.report_id,
+            "theme_count": len(report.themes),
+            "entity_count": len(report.entities),
+            "risk_count": len(report.risks),
+            "total_open_question_count": total_questions,
+            "executive_question_count": len(report.executive_questions),
+        }
 
 
 class WorkflowStore:
@@ -434,6 +443,8 @@ def render_workflow_report(run: WorkflowRun) -> str:
                 f"- Themes: {details.get('theme_count', 0)}",
                 f"- Entities: {details.get('entity_count', 0)}",
                 f"- Risks: {details.get('risk_count', 0)}",
+                f"- Total open questions: {details.get('total_open_question_count', 0)}",
+                f"- Executive questions: {details.get('executive_question_count', 0)}",
                 "",
             ]
         )
@@ -694,6 +705,10 @@ def _now_iso() -> str:
 
 def _map(value: Any) -> JsonMap:
     return value if isinstance(value, dict) else {}
+
+
+def _int(value: Any) -> int:
+    return value if isinstance(value, int) else 0
 
 
 def _map_list(value: Any) -> list[JsonMap]:

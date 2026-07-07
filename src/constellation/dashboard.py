@@ -462,6 +462,9 @@ def _report_summary(report: JsonMap) -> JsonMap:
 
 def _ai_markets_summary(report: JsonMap) -> JsonMap:
     themes = _map_list(report.get("themes", []))
+    entities = _map_list(report.get("entities", []))
+    open_questions = _map_list(report.get("open_questions", []))
+    executive_questions = _map_list(report.get("executive_questions", []))
     return {
         "available": bool(report),
         "report_id": report.get("report_id"),
@@ -469,10 +472,15 @@ def _ai_markets_summary(report: JsonMap) -> JsonMap:
         "strengthening_themes": sum(1 for theme in themes if theme.get("status") == "strengthening"),
         "weakening_themes": sum(1 for theme in themes if theme.get("status") == "weakening"),
         "high_confidence_themes": sum(1 for theme in themes if theme.get("confidence") == "high"),
-        "entity_count": len(_list(report.get("entities", []))),
+        "entity_count": len(entities),
+        "high_confidence_entity_count": sum(1 for entity in entities if _int(entity.get("evidence_count")) >= 4),
         "risk_count": len(_list(report.get("risks", []))),
-        "open_question_count": len(_list(report.get("open_questions", []))),
+        "total_open_question_count": sum(_int(_map(question.get("provenance")).get("variant_count")) or 1 for question in open_questions),
+        "deduplicated_open_question_count": len(open_questions),
+        "executive_question_count": len(executive_questions),
+        "top_executive_questions": [str(question.get("question", "")) for question in executive_questions[:5] if question.get("question")],
         "latest_ai_markets_report_path": "outputs/ai-markets/ai-markets-report.md" if report else None,
+        "executive_questions_path": "outputs/ai-markets/executive-questions.md" if report else None,
     }
 
 

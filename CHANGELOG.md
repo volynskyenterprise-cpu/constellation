@@ -2,6 +2,17 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 5.0.1 - AI & Markets Signal Refinement
+
+- Added deterministic open-question normalization and deduplication.
+- Added prioritized executive questions with `executive-questions.json` and `executive-questions.md`.
+- Updated `python -m constellation ai-markets questions` to show total, deduplicated, and executive question counts, with optional `--executive` output.
+- Expanded deterministic ticker, asset, and company-name matching for AI & Markets entities.
+- Updated the AI & Markets report to show top executive questions and link to full question archives.
+- Added AI & Markets executive question and high-confidence entity fields to the Executive Dashboard.
+- Added AI & Markets question counts to Workflow Automation reports.
+- Preserved deterministic local-only behavior with no providers, OpenAI, LLM inference, embeddings, semantic search, web retrieval, Gmail, trading execution, financial advice, scheduling, or autonomous decisions.
+
 ## 5.0.0 - AI & Markets Intelligence MVP
 
 - Added deterministic AI & Markets Intelligence domain layer.
