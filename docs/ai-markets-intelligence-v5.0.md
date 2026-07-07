@@ -73,6 +73,49 @@ python -m constellation ai-markets theme THEME_ID
 
 The AI & Markets report includes a Theme Lifecycle section, and the Executive Dashboard includes lifecycle counts, high-conviction themes, strengthening themes, weakening themes, and the lifecycle report path.
 
+## v5.2.0 Portfolio Intelligence
+
+v5.2.0 adds deterministic Portfolio Intelligence for AI & Markets research organization.
+
+This is not trading software and is not financial advice. It does not generate buy, sell, or allocation recommendations. It maps optional local portfolio/watchlist config and detected entities to themes, lifecycle status, risks, open questions, and research priority.
+
+Optional local config:
+
+- `config/portfolio.yaml`
+- `config/portfolio.local.yaml`
+
+These files are gitignored. Use `config/portfolio.example.yaml` as a non-private template.
+
+Portfolio Intelligence commands:
+
+```bash
+python -m constellation ai-markets portfolio
+python -m constellation ai-markets portfolio --export
+python -m constellation ai-markets portfolio --exposures
+python -m constellation ai-markets portfolio --risks
+python -m constellation ai-markets portfolio --watchlist
+python -m constellation ai-markets portfolio --questions
+python -m constellation ai-markets portfolio --history
+python -m constellation ai-markets portfolio --delta
+```
+
+Outputs:
+
+- `outputs/ai-markets/portfolio/portfolio-intelligence.json`
+- `outputs/ai-markets/portfolio/portfolio-intelligence.md`
+- `outputs/ai-markets/portfolio/portfolio-exposures.json`
+- `outputs/ai-markets/portfolio/portfolio-exposures.md`
+- `outputs/ai-markets/portfolio/portfolio-risks.json`
+- `outputs/ai-markets/portfolio/portfolio-risks.md`
+- `outputs/ai-markets/portfolio/portfolio-watchlist.json`
+- `outputs/ai-markets/portfolio/portfolio-watchlist.md`
+- `outputs/ai-markets/portfolio/portfolio-questions.json`
+- `outputs/ai-markets/portfolio/portfolio-questions.md`
+- `outputs/ai-markets/portfolio/portfolio-history.json`
+- `outputs/ai-markets/portfolio/portfolio-delta.json`
+
+If no local config exists, Portfolio Intelligence runs in `detected_entities_only` mode using the entities already detected by AI & Markets Intelligence.
+
 The goal is to create a durable research operating system that helps the user understand:
 
 - What changed

@@ -8,7 +8,7 @@ from time import perf_counter
 from typing import Any, Callable
 
 from . import __version__
-from .ai_markets import AIMarketsStore, AIMarketsThemeLifecycleStore
+from .ai_markets import AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .daily import DailyPipelineStore
 from .dashboard import ExecutiveDashboardStore
@@ -156,6 +156,7 @@ class WorkflowEngine:
             "report latest": self._report_latest,
             "ai-markets build": self._ai_markets_build,
             "ai-markets lifecycle": self._ai_markets_lifecycle,
+            "ai-markets portfolio": self._ai_markets_portfolio,
         }
 
     def run(self, definition: WorkflowDefinition) -> WorkflowRun:
@@ -316,6 +317,7 @@ class WorkflowEngine:
     def _ai_markets_build(self, arguments: JsonMap) -> JsonMap:
         report = AIMarketsStore(self.root).build()
         lifecycle_status = AIMarketsThemeLifecycleStore(self.root).status()
+        portfolio_status = AIMarketsPortfolioStore(self.root).status()
         total_questions = sum(_int(_map(question.provenance).get("variant_count")) or 1 for question in report.open_questions)
         return {
             "status": "completed",
@@ -334,6 +336,14 @@ class WorkflowEngine:
             "contradicted_theme_count": lifecycle_status.get("contradicted_theme_count", 0),
             "recent_theme_transition_count": lifecycle_status.get("recent_transition_count", 0),
             "theme_lifecycle_report_path": lifecycle_status.get("report_path"),
+            "portfolio_intelligence_available": portfolio_status.get("available", False),
+            "portfolio_mode": portfolio_status.get("mode"),
+            "position_count": portfolio_status.get("position_count", 0),
+            "watchlist_count": portfolio_status.get("watchlist_count", 0),
+            "theme_exposure_count": portfolio_status.get("theme_exposure_count", 0),
+            "portfolio_risk_count": portfolio_status.get("risk_count", 0),
+            "high_priority_review_count": portfolio_status.get("high_priority_review_count", 0),
+            "portfolio_report_path": portfolio_status.get("report_path"),
         }
 
     def _ai_markets_lifecycle(self, arguments: JsonMap) -> JsonMap:
@@ -346,6 +356,22 @@ class WorkflowEngine:
             "recent_theme_transition_count": len(snapshot.transitions),
             "theme_lifecycle_report_path": str(AIMarketsThemeLifecycleStore(self.root).lifecycle_report_path),
             **counts,
+        }
+
+    def _ai_markets_portfolio(self, arguments: JsonMap) -> JsonMap:
+        snapshot = AIMarketsPortfolioStore(self.root).build()
+        data = snapshot.to_dict()
+        return {
+            "status": "completed",
+            "snapshot_id": snapshot.snapshot_id,
+            "portfolio_intelligence_available": True,
+            "portfolio_mode": snapshot.mode,
+            "position_count": len(snapshot.positions),
+            "watchlist_count": len(snapshot.watchlist),
+            "theme_exposure_count": len(snapshot.exposures),
+            "portfolio_risk_count": len(snapshot.risks),
+            "high_priority_review_count": data.get("high_priority_review_count", 0),
+            "portfolio_report_path": str(AIMarketsPortfolioStore(self.root).report_path),
         }
 
 
@@ -477,6 +503,14 @@ def render_workflow_report(run: WorkflowRun) -> str:
                 f"- Contradicted themes: {details.get('contradicted_theme_count', 0)}",
                 f"- Recent theme transitions: {details.get('recent_theme_transition_count', 0)}",
                 f"- Theme lifecycle report: `{details.get('theme_lifecycle_report_path', '')}`",
+                f"- Portfolio intelligence available: {details.get('portfolio_intelligence_available', False)}",
+                f"- Portfolio mode: {details.get('portfolio_mode', '')}",
+                f"- Positions: {details.get('position_count', 0)}",
+                f"- Watchlist items: {details.get('watchlist_count', 0)}",
+                f"- Theme exposures: {details.get('theme_exposure_count', 0)}",
+                f"- Portfolio risks: {details.get('portfolio_risk_count', 0)}",
+                f"- High-priority reviews: {details.get('high_priority_review_count', 0)}",
+                f"- Portfolio report: `{details.get('portfolio_report_path', '')}`",
                 "",
             ]
         )
@@ -523,6 +557,7 @@ def _built_in_workflows() -> list[WorkflowDefinition]:
                 _step("Institutional Research Report", "report latest"),
                 _step("AI & Markets Intelligence", "ai-markets build"),
                 _step("AI & Markets Theme Lifecycle", "ai-markets lifecycle"),
+                _step("AI & Markets Portfolio Intelligence", "ai-markets portfolio"),
             ],
         ),
         WorkflowDefinition(

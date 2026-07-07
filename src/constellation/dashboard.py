@@ -468,6 +468,9 @@ def _ai_markets_summary(report: JsonMap) -> JsonMap:
     lifecycle = _map(report.get("theme_lifecycle"))
     lifecycle_themes = _map_list(lifecycle.get("themes", []))
     lifecycle_counts = _map(lifecycle.get("counts"))
+    portfolio = _map(report.get("portfolio_intelligence"))
+    portfolio_exposures = _map_list(portfolio.get("exposures", []))
+    portfolio_items = _map_list(portfolio.get("positions", [])) + _map_list(portfolio.get("watchlist", [])) + _map_list(portfolio.get("detected_entities", []))
     return {
         "available": bool(report),
         "report_id": report.get("report_id"),
@@ -497,6 +500,17 @@ def _ai_markets_summary(report: JsonMap) -> JsonMap:
         "high_conviction_themes": [str(theme.get("theme_name", "")) for theme in lifecycle_themes if theme.get("current_status") == "high_conviction"][:5],
         "weakening_themes": [str(theme.get("theme_name", "")) for theme in lifecycle_themes if theme.get("current_status") == "weakening"][:5],
         "theme_lifecycle_report_path": "outputs/ai-markets/theme-lifecycle.md" if lifecycle else None,
+        "portfolio_intelligence_available": bool(portfolio),
+        "portfolio_mode": portfolio.get("mode"),
+        "position_count": portfolio.get("position_count", 0),
+        "watchlist_count": portfolio.get("watchlist_count", 0),
+        "portfolio_theme_exposure_count": portfolio.get("theme_exposure_count", 0),
+        "portfolio_risk_count": portfolio.get("risk_count", 0),
+        "high_priority_review_count": portfolio.get("high_priority_review_count", 0),
+        "top_priority_symbols": [str(item.get("symbol", "")) for item in portfolio_items if item.get("research_priority") == "high"][:5],
+        "top_priority_themes": [str(item.get("theme_name", "")) for item in portfolio_exposures if item.get("research_priority") == "high"][:5],
+        "portfolio_report_path": "outputs/ai-markets/portfolio/portfolio-intelligence.md" if portfolio else None,
+        "portfolio_exposures_path": "outputs/ai-markets/portfolio/portfolio-exposures.md" if portfolio else None,
     }
 
 

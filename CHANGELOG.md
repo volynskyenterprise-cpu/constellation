@@ -2,6 +2,16 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 5.2.0 - AI & Markets Portfolio Intelligence
+
+- Added deterministic AI & Markets Portfolio Intelligence.
+- Added optional local portfolio/watchlist config convention with `config/portfolio.example.yaml`.
+- Added gitignore protection for local/private portfolio config files.
+- Added portfolio exposures, risks, watchlist, questions, history, and delta outputs under `outputs/ai-markets/portfolio/`.
+- Added `python -m constellation ai-markets portfolio` and inspection flags for exposures, risks, watchlist, questions, history, and delta.
+- Integrated Portfolio Intelligence into AI & Markets reports, watchlists, Executive Dashboard, and Morning workflow.
+- Preserved research-only behavior with no trading recommendations, financial advice, providers, OpenAI, LLM inference, embeddings, semantic search, web retrieval, Gmail, or autonomous decisions.
+
 ## 5.1.0 - AI & Markets Theme Lifecycle
 
 - Added deterministic AI & Markets theme lifecycle tracking.

@@ -1,0 +1,27 @@
+portfolio:
+  name: example_ai_markets_portfolio
+  description: Example watchlist and exposure map. Do not store real private holdings in the repository.
+  base_currency: USD
+  positions:
+    - symbol: NVDA
+      name: Nvidia
+      asset_type: equity
+      category: AI Infrastructure
+      conviction: watchlist
+      notes: Example only.
+    - symbol: BTC
+      name: Bitcoin
+      asset_type: crypto
+      category: Digital Assets
+      conviction: watchlist
+      notes: Example only.
+  watchlist:
+    - symbol: AVGO
+      name: Broadcom
+      asset_type: equity
+    - symbol: IREN
+      name: IREN
+      asset_type: equity
+    - symbol: GLD
+      name: Gold ETF
+      asset_type: etf

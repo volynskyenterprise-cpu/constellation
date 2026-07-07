@@ -10,6 +10,7 @@ from typing import Any
 from . import __version__
 from .io import read_json, write_json
 from .models import JsonMap
+from .simple_yaml import load_yaml
 
 
 class AIMarketsError(RuntimeError):
@@ -525,6 +526,274 @@ class AIMarketsThemeLifecycleStore:
         raise AIMarketsError(f"AI & Markets theme not found: {theme_id}")
 
 
+@dataclass(frozen=True)
+class AIMarketsPortfolioPosition:
+    symbol: str
+    name: str
+    asset_type: str
+    category: str
+    source: str
+    related_themes: list[str]
+    lifecycle_statuses: list[str]
+    related_risks: list[str]
+    related_questions: list[str]
+    evidence_count: int
+    source_count: int
+    confidence: str
+    research_priority: str
+    priority_reason: str
+    provenance: JsonMap
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class AIMarketsPortfolioWatchlistItem(AIMarketsPortfolioPosition):
+    pass
+
+
+@dataclass(frozen=True)
+class AIMarketsPortfolioExposure:
+    theme_id: str
+    theme_name: str
+    lifecycle_status: str
+    confidence: str
+    related_symbols: list[str]
+    position_symbols: list[str]
+    watchlist_symbols: list[str]
+    detected_symbols: list[str]
+    evidence_count: int
+    source_count: int
+    risk_count: int
+    question_count: int
+    exposure_type: str
+    research_priority: str
+    priority_reason: str
+    provenance: JsonMap
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class AIMarketsPortfolioRisk:
+    risk_id: str
+    description: str
+    related_symbols: list[str]
+    related_themes: list[str]
+    severity: str
+    source_risk_id: str
+    evidence_ids: list[str]
+    priority: str
+    provenance: JsonMap
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class AIMarketsPortfolioQuestion:
+    question_id: str
+    question: str
+    related_symbols: list[str]
+    related_themes: list[str]
+    priority: str
+    source_question_id: str
+    provenance: JsonMap
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class AIMarketsPortfolioDelta:
+    prior_snapshot_id: str | None
+    current_snapshot_id: str
+    position_count_change: int
+    watchlist_count_change: int
+    theme_exposure_count_change: int
+    risk_count_change: int
+    high_priority_review_count_change: int
+    new_symbols: list[str]
+    removed_symbols: list[str]
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class AIMarketsPortfolioSnapshot:
+    snapshot_id: str
+    created_at: str
+    config_available: bool
+    config_path: str | None
+    mode: str
+    positions: list[AIMarketsPortfolioPosition]
+    watchlist: list[AIMarketsPortfolioWatchlistItem]
+    detected_entities: list[AIMarketsPortfolioWatchlistItem]
+    exposures: list[AIMarketsPortfolioExposure]
+    risks: list[AIMarketsPortfolioRisk]
+    questions: list[AIMarketsPortfolioQuestion]
+    delta: AIMarketsPortfolioDelta
+    provenance: JsonMap
+    limitations: list[str]
+
+    def to_dict(self) -> JsonMap:
+        return {
+            "snapshot_id": self.snapshot_id,
+            "created_at": self.created_at,
+            "config_available": self.config_available,
+            "config_path": self.config_path,
+            "mode": self.mode,
+            "position_count": len(self.positions),
+            "watchlist_count": len(self.watchlist),
+            "detected_entity_count": len(self.detected_entities),
+            "theme_exposure_count": len(self.exposures),
+            "risk_count": len(self.risks),
+            "question_count": len(self.questions),
+            "high_priority_review_count": _portfolio_high_priority_count(self.positions + self.watchlist + self.detected_entities, self.exposures, self.risks),
+            "positions": [item.to_dict() for item in self.positions],
+            "watchlist": [item.to_dict() for item in self.watchlist],
+            "detected_entities": [item.to_dict() for item in self.detected_entities],
+            "exposures": [item.to_dict() for item in self.exposures],
+            "risks": [item.to_dict() for item in self.risks],
+            "questions": [item.to_dict() for item in self.questions],
+            "delta": self.delta.to_dict(),
+            "provenance": self.provenance,
+            "limitations": self.limitations,
+        }
+
+
+@dataclass(frozen=True)
+class AIMarketsPortfolioReport:
+    snapshot: AIMarketsPortfolioSnapshot
+
+    def to_dict(self) -> JsonMap:
+        return self.snapshot.to_dict()
+
+
+class AIMarketsPortfolioEngine:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+
+    def build(self, report: AIMarketsReport, lifecycle: AIMarketsThemeLifecycleSnapshot | None, history: list[JsonMap]) -> AIMarketsPortfolioSnapshot:
+        config, config_path = _portfolio_config(self.root)
+        positions_config = _map_list(_map(config.get("portfolio")).get("positions", []))
+        watchlist_config = _map_list(_map(config.get("portfolio")).get("watchlist", []))
+        config_available = config_path is not None
+        lifecycle_data = lifecycle.to_dict() if lifecycle else _read_optional_json(self.root / "outputs" / "ai-markets" / "theme-lifecycle.json")
+        lifecycle_by_name = {str(item.get("theme_name")): item for item in _map_list(lifecycle_data.get("themes", []))}
+        risks_by_theme = _risks_by_theme(report.risks)
+        questions_by_theme = _questions_by_theme(report.open_questions)
+        entity_items = [_portfolio_item_from_entity(entity, "detected_entity", report, lifecycle_by_name, risks_by_theme, questions_by_theme) for entity in report.entities]
+        positions = [_portfolio_item_from_config(item, "portfolio_config", report, lifecycle_by_name, risks_by_theme, questions_by_theme) for item in positions_config]
+        watchlist = [_portfolio_item_from_config(item, "watchlist_config", report, lifecycle_by_name, risks_by_theme, questions_by_theme) for item in watchlist_config]
+        configured_symbols = {item.symbol for item in positions + watchlist}
+        detected_entities = [item for item in entity_items if item.symbol not in configured_symbols]
+        mode = "portfolio" if positions else "watchlist" if watchlist else "detected_entities_only"
+        exposures = _portfolio_exposures(report, lifecycle_by_name, positions, watchlist, detected_entities, risks_by_theme, questions_by_theme)
+        risks = _portfolio_risks(report.risks, positions + watchlist + detected_entities)
+        questions = _portfolio_questions(report.open_questions, positions + watchlist + detected_entities)
+        snapshot_id = _portfolio_snapshot_id(mode, positions, watchlist, detected_entities, exposures, risks, questions)
+        delta = _portfolio_delta(history[-1] if history else {}, snapshot_id, positions, watchlist, exposures, risks)
+        return AIMarketsPortfolioSnapshot(
+            snapshot_id=snapshot_id,
+            created_at=_now_iso(),
+            config_available=config_available,
+            config_path=str(config_path) if config_path else None,
+            mode=mode,
+            positions=sorted(positions, key=_portfolio_item_sort_key),
+            watchlist=sorted(watchlist, key=_portfolio_item_sort_key),
+            detected_entities=sorted(detected_entities, key=_portfolio_item_sort_key),
+            exposures=sorted(exposures, key=_portfolio_exposure_sort_key),
+            risks=sorted(risks, key=_portfolio_risk_sort_key),
+            questions=sorted(questions, key=_portfolio_question_sort_key),
+            delta=delta,
+            provenance={
+                "ai_markets_report_id": report.report_id,
+                "theme_lifecycle_snapshot_id": lifecycle.snapshot_id if lifecycle else lifecycle_data.get("snapshot_id"),
+            },
+            limitations=[
+                "Portfolio Intelligence is research organization only and is not financial advice.",
+                "No trading recommendations, provider calls, LLM inference, embeddings, semantic similarity, web retrieval, or external services are used.",
+                "Local portfolio config is optional and should not contain private holdings in the repository.",
+            ],
+        )
+
+
+class AIMarketsPortfolioStore:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.directory = root / "outputs" / "ai-markets" / "portfolio"
+        self.json_path = self.directory / "portfolio-intelligence.json"
+        self.report_path = self.directory / "portfolio-intelligence.md"
+        self.exposures_json_path = self.directory / "portfolio-exposures.json"
+        self.exposures_path = self.directory / "portfolio-exposures.md"
+        self.risks_json_path = self.directory / "portfolio-risks.json"
+        self.risks_path = self.directory / "portfolio-risks.md"
+        self.watchlist_json_path = self.directory / "portfolio-watchlist.json"
+        self.watchlist_path = self.directory / "portfolio-watchlist.md"
+        self.questions_json_path = self.directory / "portfolio-questions.json"
+        self.questions_path = self.directory / "portfolio-questions.md"
+        self.history_path = self.directory / "portfolio-history.json"
+        self.delta_path = self.directory / "portfolio-delta.json"
+
+    def build(self, report: AIMarketsReport | None = None, lifecycle: AIMarketsThemeLifecycleSnapshot | None = None) -> AIMarketsPortfolioSnapshot:
+        report = report or AIMarketsStore(self.root).load()
+        lifecycle = lifecycle or AIMarketsThemeLifecycleStore(self.root).build(report)
+        snapshot = AIMarketsPortfolioEngine(self.root).build(report, lifecycle, self.history())
+        self.save(snapshot)
+        return snapshot
+
+    def load(self) -> JsonMap:
+        if not self.json_path.exists():
+            raise AIMarketsError("No AI & Markets portfolio intelligence found. Run `python -m constellation ai-markets portfolio` first.")
+        return read_json(self.json_path)
+
+    def history(self) -> list[JsonMap]:
+        if not self.history_path.exists():
+            return []
+        return _map_list(read_json(self.history_path).get("snapshots", []))
+
+    def save(self, snapshot: AIMarketsPortfolioSnapshot) -> None:
+        data = snapshot.to_dict()
+        write_json(self.json_path, data)
+        write_json(self.exposures_json_path, {"exposures": [item.to_dict() for item in snapshot.exposures]})
+        write_json(self.risks_json_path, {"risks": [item.to_dict() for item in snapshot.risks]})
+        write_json(self.watchlist_json_path, {"positions": [item.to_dict() for item in snapshot.positions], "watchlist": [item.to_dict() for item in snapshot.watchlist], "detected_entities": [item.to_dict() for item in snapshot.detected_entities]})
+        write_json(self.questions_json_path, {"questions": [item.to_dict() for item in snapshot.questions]})
+        write_json(self.delta_path, snapshot.delta.to_dict())
+        history = self.history()
+        if not history or history[-1].get("snapshot_id") != snapshot.snapshot_id:
+            history.append(data)
+        write_json(self.history_path, {"snapshots": history})
+        self.report_path.write_text(render_portfolio_report(snapshot), encoding="utf-8")
+        self.exposures_path.write_text(render_portfolio_exposures(snapshot), encoding="utf-8")
+        self.risks_path.write_text(render_portfolio_risks(snapshot), encoding="utf-8")
+        self.watchlist_path.write_text(render_portfolio_watchlist(snapshot), encoding="utf-8")
+        self.questions_path.write_text(render_portfolio_questions(snapshot), encoding="utf-8")
+
+    def status(self) -> JsonMap:
+        if not self.json_path.exists():
+            return {"available": False, "report_path": str(self.report_path), "exposures_path": str(self.exposures_path)}
+        data = self.load()
+        return {
+            "available": True,
+            "snapshot_id": data.get("snapshot_id"),
+            "mode": data.get("mode"),
+            "config_available": data.get("config_available"),
+            "position_count": data.get("position_count", 0),
+            "watchlist_count": data.get("watchlist_count", 0),
+            "detected_entity_count": data.get("detected_entity_count", 0),
+            "theme_exposure_count": data.get("theme_exposure_count", 0),
+            "risk_count": data.get("risk_count", 0),
+            "high_priority_review_count": data.get("high_priority_review_count", 0),
+            "report_path": str(self.report_path),
+            "exposures_path": str(self.exposures_path),
+        }
+
+
 class AIMarketsEngine:
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -588,12 +857,14 @@ class AIMarketsStore:
         write_json(self.directory / "open-questions.json", {"open_questions": [item.to_dict() for item in report.open_questions]})
         write_json(self.directory / "executive-questions.json", {"executive_questions": [item.to_dict() for item in report.executive_questions]})
         lifecycle = AIMarketsThemeLifecycleStore(self.root).build(report)
+        portfolio = AIMarketsPortfolioStore(self.root).build(report, lifecycle)
         report_data = report.to_dict()
         report_data["theme_lifecycle"] = lifecycle.to_dict()
+        report_data["portfolio_intelligence"] = portfolio.to_dict()
         write_json(self.json_path, report_data)
         self.report_path.parent.mkdir(parents=True, exist_ok=True)
-        self.report_path.write_text(render_report(report, lifecycle), encoding="utf-8")
-        self.watchlist_path.write_text(render_watchlist(report), encoding="utf-8")
+        self.report_path.write_text(render_report(report, lifecycle, portfolio), encoding="utf-8")
+        self.watchlist_path.write_text(render_watchlist(report, portfolio), encoding="utf-8")
         self.content_ideas_path.write_text(render_content_ideas(report), encoding="utf-8")
         self.executive_questions_path.write_text(render_executive_questions(report), encoding="utf-8")
 
@@ -606,6 +877,7 @@ class AIMarketsStore:
         exists = self.json_path.exists()
         report = self.load() if exists else None
         lifecycle_status = AIMarketsThemeLifecycleStore(self.root).status()
+        portfolio_status = AIMarketsPortfolioStore(self.root).status()
         return {
             "available": exists,
             "report_id": report.report_id if report else None,
@@ -620,19 +892,28 @@ class AIMarketsStore:
             "executive_questions_path": str(self.executive_questions_path),
             "lifecycle_available": lifecycle_status.get("available", False),
             "theme_lifecycle_report_path": lifecycle_status.get("report_path"),
+            "portfolio_intelligence_available": portfolio_status.get("available", False),
+            "portfolio_mode": portfolio_status.get("mode"),
+            "position_count": portfolio_status.get("position_count", 0),
+            "watchlist_count": portfolio_status.get("watchlist_count", 0),
+            "portfolio_theme_exposure_count": portfolio_status.get("theme_exposure_count", 0),
+            "portfolio_risk_count": portfolio_status.get("risk_count", 0),
+            "high_priority_review_count": portfolio_status.get("high_priority_review_count", 0),
+            "portfolio_report_path": portfolio_status.get("report_path"),
         }
 
     def export(self) -> Path:
         report = self.load()
         lifecycle = AIMarketsThemeLifecycleStore(self.root).build(report)
-        self.report_path.write_text(render_report(report, lifecycle), encoding="utf-8")
-        self.watchlist_path.write_text(render_watchlist(report), encoding="utf-8")
+        portfolio = AIMarketsPortfolioStore(self.root).build(report, lifecycle)
+        self.report_path.write_text(render_report(report, lifecycle, portfolio), encoding="utf-8")
+        self.watchlist_path.write_text(render_watchlist(report, portfolio), encoding="utf-8")
         self.content_ideas_path.write_text(render_content_ideas(report), encoding="utf-8")
         self.executive_questions_path.write_text(render_executive_questions(report), encoding="utf-8")
         return self.report_path
 
 
-def render_report(report: AIMarketsReport, lifecycle: AIMarketsThemeLifecycleSnapshot | None = None) -> str:
+def render_report(report: AIMarketsReport, lifecycle: AIMarketsThemeLifecycleSnapshot | None = None, portfolio: AIMarketsPortfolioSnapshot | None = None) -> str:
     lines = [
         "# AI & Markets Intelligence",
         "",
@@ -676,6 +957,9 @@ def render_report(report: AIMarketsReport, lifecycle: AIMarketsThemeLifecycleSna
         "## Theme Lifecycle",
         "",
         *_theme_lifecycle_report_lines(lifecycle),
+        "## Portfolio Intelligence",
+        "",
+        *_portfolio_report_lines(portfolio),
         "## Watchlist",
         "",
         *_bullet([entity.symbol for entity in report.entities]),
@@ -695,9 +979,12 @@ def render_report(report: AIMarketsReport, lifecycle: AIMarketsThemeLifecycleSna
     return "\n".join(lines)
 
 
-def render_watchlist(report: AIMarketsReport) -> str:
+def render_watchlist(report: AIMarketsReport, portfolio: AIMarketsPortfolioSnapshot | None = None) -> str:
     lines = ["# AI & Markets Watchlist", ""]
     lines.extend(_bullet([f"{entity.symbol} - {entity.name}: {', '.join(entity.related_themes) or 'No related theme'}" for entity in report.entities]))
+    if portfolio:
+        lines.extend(["## Portfolio Intelligence Watchlist", ""])
+        lines.extend(_bullet([f"{item.symbol} - {item.name} ({item.source}) priority={item.research_priority}" for item in portfolio.positions + portfolio.watchlist + portfolio.detected_entities]))
     return "\n".join(lines)
 
 
@@ -765,6 +1052,91 @@ def render_theme_timeline(history: list[JsonMap]) -> str:
     return "\n".join(lines)
 
 
+def render_portfolio_report(snapshot: AIMarketsPortfolioSnapshot) -> str:
+    data = snapshot.to_dict()
+    lines = [
+        "# AI & Markets Portfolio Intelligence",
+        "",
+        "This is research organization only. This is not financial advice. No trading recommendations are generated.",
+        "",
+        "## Executive Summary",
+        "",
+        f"- Snapshot ID: `{snapshot.snapshot_id}`",
+        f"- Mode: {snapshot.mode}",
+        f"- Config available: {snapshot.config_available}",
+        f"- Positions: {len(snapshot.positions)}",
+        f"- Watchlist items: {len(snapshot.watchlist)}",
+        f"- Detected entities: {len(snapshot.detected_entities)}",
+        f"- Theme exposures: {len(snapshot.exposures)}",
+        f"- Portfolio-linked risks: {len(snapshot.risks)}",
+        f"- High-priority reviews: {data.get('high_priority_review_count', 0)}",
+        "",
+        "## Portfolio / Watchlist Mode",
+        "",
+        f"- Mode: {snapshot.mode}",
+        f"- Config path: {snapshot.config_path or 'Unavailable'}",
+        "",
+        "## Theme Exposure",
+        "",
+        *_bullet([f"{item.theme_name} ({item.lifecycle_status}) symbols={', '.join(item.related_symbols)} priority={item.research_priority}" for item in snapshot.exposures] or ["No theme exposures found."]),
+        "## High-Priority Reviews",
+        "",
+        *_bullet([f"{item.symbol}: {item.priority_reason}" for item in snapshot.positions + snapshot.watchlist + snapshot.detected_entities if item.research_priority == "high"] or ["No high-priority reviews found."]),
+        "## Entity / Asset Map",
+        "",
+        *_bullet([f"{item.symbol} - {item.name}: {', '.join(item.related_themes) or 'No related theme'}" for item in snapshot.positions + snapshot.watchlist + snapshot.detected_entities]),
+        "## Lifecycle Exposure",
+        "",
+        *_bullet([f"{item.theme_name}: {item.lifecycle_status}, {item.confidence}" for item in snapshot.exposures]),
+        "## Risk Map",
+        "",
+        *_bullet([f"{item.risk_id} ({item.priority}): {item.description}" for item in snapshot.risks] or ["No portfolio-linked risks found."]),
+        "## Open Questions",
+        "",
+        *_bullet([f"{item.question_id} ({item.priority}): {item.question}" for item in snapshot.questions] or ["No portfolio-linked questions found."]),
+        "## Watchlist",
+        "",
+        *_bullet([item.symbol for item in snapshot.watchlist + snapshot.detected_entities]),
+        "## Recent Changes",
+        "",
+        *_bullet(_portfolio_delta_lines(snapshot.delta)),
+        "## Evidence References",
+        "",
+        *_bullet(sorted({evidence for item in snapshot.risks for evidence in item.evidence_ids})[:50] or ["No linked evidence IDs found."]),
+        "## Limitations",
+        "",
+        *_bullet(snapshot.limitations),
+        "## Provenance",
+        "",
+        *_bullet([f"{key}: {value}" for key, value in snapshot.provenance.items()]),
+    ]
+    return "\n".join(lines)
+
+
+def render_portfolio_exposures(snapshot: AIMarketsPortfolioSnapshot) -> str:
+    lines = ["# AI & Markets Portfolio Exposures", ""]
+    lines.extend(_bullet([f"{item.theme_name} ({item.lifecycle_status}) symbols={', '.join(item.related_symbols)} priority={item.research_priority}" for item in snapshot.exposures] or ["No theme exposures found."]))
+    return "\n".join(lines)
+
+
+def render_portfolio_risks(snapshot: AIMarketsPortfolioSnapshot) -> str:
+    lines = ["# AI & Markets Portfolio Risks", ""]
+    lines.extend(_bullet([f"{item.risk_id} severity={item.severity} priority={item.priority} symbols={', '.join(item.related_symbols)} description={item.description}" for item in snapshot.risks] or ["No portfolio-linked risks found."]))
+    return "\n".join(lines)
+
+
+def render_portfolio_watchlist(snapshot: AIMarketsPortfolioSnapshot) -> str:
+    lines = ["# AI & Markets Portfolio Watchlist", ""]
+    lines.extend(_bullet([f"{item.symbol} - {item.name} ({item.source}) priority={item.research_priority}" for item in snapshot.positions + snapshot.watchlist + snapshot.detected_entities]))
+    return "\n".join(lines)
+
+
+def render_portfolio_questions(snapshot: AIMarketsPortfolioSnapshot) -> str:
+    lines = ["# AI & Markets Portfolio Questions", ""]
+    lines.extend(_bullet([f"{item.question_id} priority={item.priority} symbols={', '.join(item.related_symbols)} question={item.question}" for item in snapshot.questions] or ["No portfolio-linked questions found."]))
+    return "\n".join(lines)
+
+
 def _theme_lifecycle_report_lines(lifecycle: AIMarketsThemeLifecycleSnapshot | None) -> list[str]:
     if lifecycle is None:
         return ["- Theme lifecycle has not been generated.", ""]
@@ -787,6 +1159,23 @@ def _theme_lifecycle_report_lines(lifecycle: AIMarketsThemeLifecycleSnapshot | N
     lines.extend(["### Lifecycle Limitations", ""])
     lines.extend(_bullet(lifecycle.limitations))
     return lines
+
+
+def _portfolio_report_lines(portfolio: AIMarketsPortfolioSnapshot | None) -> list[str]:
+    if portfolio is None:
+        return ["- Portfolio Intelligence has not been generated.", ""]
+    return [
+        f"- Mode: {portfolio.mode}",
+        f"- Config available: {portfolio.config_available}",
+        f"- Positions: {len(portfolio.positions)}",
+        f"- Watchlist items: {len(portfolio.watchlist)}",
+        f"- Detected entities: {len(portfolio.detected_entities)}",
+        f"- Theme exposures: {len(portfolio.exposures)}",
+        f"- Portfolio-linked risks: {len(portfolio.risks)}",
+        f"- High-priority reviews: {portfolio.to_dict().get('high_priority_review_count', 0)}",
+        "- Portfolio report: `outputs/ai-markets/portfolio/portfolio-intelligence.md`",
+        "",
+    ]
 
 
 def _records(artifacts: dict[str, JsonMap]) -> list[JsonMap]:
@@ -1084,6 +1473,8 @@ def _lifecycle_status(
     explicit_conflict = any("contradiction" in text.lower() or "conflict" in text.lower() for text in risk_descriptions)
     if explicit_conflict or (risk_count > theme.evidence_count and risk_count >= 2):
         return "contradicted", "Theme is contradicted because explicit conflict language or risk dominance is attached to the theme."
+    if previous and theme.evidence_count == previous_evidence and theme.source_count == previous_sources and entity_count == previous_entities and risk_count == previous_risks and previous.get("current_status"):
+        return str(previous.get("current_status")), "Theme lifecycle status is unchanged because deterministic counts match the prior snapshot."
     if previous and (theme.evidence_count < previous_evidence or _confidence_rank(theme.confidence) < _confidence_rank(previous_confidence)):
         return "weakening", f"Theme is weakening because evidence or confidence declined from the prior snapshot."
     if previous and risk_count > previous_risks and theme.evidence_count <= previous_evidence:
@@ -1212,6 +1603,239 @@ def _absence_count(theme_id: str, history: list[JsonMap]) -> int:
 
 def _confidence_rank(confidence: str) -> int:
     return {"low": 0, "medium": 1, "high": 2}.get(confidence, -1)
+
+
+def _portfolio_config(root: Path) -> tuple[JsonMap, Path | None]:
+    for relative in ["config/portfolio.local.yaml", "config/portfolio.yaml"]:
+        path = root / relative
+        if path.exists():
+            return load_yaml(path), path
+    return {}, None
+
+
+def _portfolio_item_from_config(
+    data: JsonMap,
+    source: str,
+    report: AIMarketsReport,
+    lifecycle_by_name: dict[str, JsonMap],
+    risks_by_theme: dict[str, list[AIMarketsRisk]],
+    questions_by_theme: dict[str, list[AIMarketsOpenQuestion]],
+) -> AIMarketsPortfolioPosition:
+    symbol = str(data.get("symbol", "")).upper()
+    entity = next((item for item in report.entities if item.symbol == symbol), None)
+    name = str(data.get("name") or (entity.name if entity else symbol))
+    asset_type = str(data.get("asset_type") or (entity.entity_type if entity else "unknown"))
+    category = str(data.get("category") or "")
+    related_themes = entity.related_themes if entity else sorted(name for name in lifecycle_by_name if category.lower() and category.lower() in name.lower())
+    return _portfolio_item(symbol, name, asset_type, category, source, related_themes, entity, lifecycle_by_name, risks_by_theme, questions_by_theme, {"config_source": source, "notes": str(data.get("notes", ""))})
+
+
+def _portfolio_item_from_entity(
+    entity: AIMarketsEntity,
+    source: str,
+    report: AIMarketsReport,
+    lifecycle_by_name: dict[str, JsonMap],
+    risks_by_theme: dict[str, list[AIMarketsRisk]],
+    questions_by_theme: dict[str, list[AIMarketsOpenQuestion]],
+) -> AIMarketsPortfolioWatchlistItem:
+    item = _portfolio_item(entity.symbol, entity.name, entity.entity_type, "", source, entity.related_themes, entity, lifecycle_by_name, risks_by_theme, questions_by_theme, entity.provenance)
+    return AIMarketsPortfolioWatchlistItem(**item.to_dict())
+
+
+def _portfolio_item(
+    symbol: str,
+    name: str,
+    asset_type: str,
+    category: str,
+    source: str,
+    related_themes: list[str],
+    entity: AIMarketsEntity | None,
+    lifecycle_by_name: dict[str, JsonMap],
+    risks_by_theme: dict[str, list[AIMarketsRisk]],
+    questions_by_theme: dict[str, list[AIMarketsOpenQuestion]],
+    provenance: JsonMap,
+) -> AIMarketsPortfolioPosition:
+    lifecycle_statuses = sorted({str(_map(lifecycle_by_name.get(theme)).get("current_status")) for theme in related_themes if lifecycle_by_name.get(theme)})
+    related_risks = sorted({risk.risk_id for theme in related_themes for risk in risks_by_theme.get(theme, [])})
+    related_questions = sorted({question.question_id for theme in related_themes for question in questions_by_theme.get(theme, [])})
+    evidence_count = entity.evidence_count if entity else 0
+    source_count = max([_int(_map(lifecycle_by_name.get(theme)).get("source_count")) for theme in related_themes] or [0])
+    confidence = _confidence(evidence_count, source_count)
+    priority, reason = _portfolio_priority(lifecycle_statuses, len(related_risks), confidence, evidence_count, source != "detected_entity", False)
+    return AIMarketsPortfolioPosition(symbol, name, asset_type, category, source, related_themes, lifecycle_statuses, related_risks, related_questions, evidence_count, source_count, confidence, priority, reason, provenance)
+
+
+def _portfolio_exposures(
+    report: AIMarketsReport,
+    lifecycle_by_name: dict[str, JsonMap],
+    positions: list[AIMarketsPortfolioPosition],
+    watchlist: list[AIMarketsPortfolioWatchlistItem],
+    detected: list[AIMarketsPortfolioWatchlistItem],
+    risks_by_theme: dict[str, list[AIMarketsRisk]],
+    questions_by_theme: dict[str, list[AIMarketsOpenQuestion]],
+) -> list[AIMarketsPortfolioExposure]:
+    items: list[AIMarketsPortfolioExposure] = []
+    all_items = positions + watchlist + detected
+    for theme in report.themes:
+        related = [item for item in all_items if theme.name in item.related_themes]
+        if not related:
+            continue
+        position_symbols = sorted(item.symbol for item in positions if theme.name in item.related_themes)
+        watchlist_symbols = sorted(item.symbol for item in watchlist if theme.name in item.related_themes)
+        detected_symbols = sorted(item.symbol for item in detected if theme.name in item.related_themes)
+        lifecycle = _map(lifecycle_by_name.get(theme.name))
+        lifecycle_status = str(lifecycle.get("current_status") or theme.status)
+        risk_count = len(risks_by_theme.get(theme.name, []))
+        question_count = len(questions_by_theme.get(theme.name, []))
+        exposure_type = "configured_position" if position_symbols else "configured_watchlist" if watchlist_symbols else "detected_entity_only"
+        changed = bool(lifecycle.get("status_changed") or lifecycle.get("confidence_changed"))
+        priority, reason = _portfolio_priority([lifecycle_status], risk_count, theme.confidence, theme.evidence_count, bool(position_symbols or watchlist_symbols), changed, theme.evidence_count == 0)
+        items.append(
+            AIMarketsPortfolioExposure(
+                theme.theme_id,
+                theme.name,
+                lifecycle_status,
+                theme.confidence,
+                sorted({item.symbol for item in related}),
+                position_symbols,
+                watchlist_symbols,
+                detected_symbols,
+                theme.evidence_count,
+                theme.source_count,
+                risk_count,
+                question_count,
+                exposure_type,
+                priority,
+                reason,
+                {"theme_lifecycle_snapshot": lifecycle.get("snapshot_id"), "source": "outputs/ai-markets/ai-markets.json"},
+            )
+        )
+    return items
+
+
+def _portfolio_risks(risks: list[AIMarketsRisk], items: list[AIMarketsPortfolioPosition]) -> list[AIMarketsPortfolioRisk]:
+    results = []
+    for risk in risks:
+        symbols = sorted({item.symbol for item in items if set(item.related_themes).intersection(risk.related_themes) or item.symbol in risk.related_entities})
+        if not symbols:
+            continue
+        priority = "high" if risk.severity == "high" or len(symbols) >= 2 else "medium" if risk.severity == "medium" else "low"
+        results.append(AIMarketsPortfolioRisk(f"portfolio_{risk.risk_id}", risk.description, symbols, risk.related_themes, risk.severity, risk.risk_id, risk.evidence_ids, priority, risk.provenance))
+    return results
+
+
+def _portfolio_questions(questions: list[AIMarketsOpenQuestion], items: list[AIMarketsPortfolioPosition]) -> list[AIMarketsPortfolioQuestion]:
+    results = []
+    for question in questions:
+        symbols = sorted({item.symbol for item in items if set(item.related_themes).intersection(question.related_themes)})
+        if not symbols:
+            continue
+        results.append(AIMarketsPortfolioQuestion(f"portfolio_{question.question_id}", question.question, symbols, question.related_themes, question.priority, question.question_id, question.provenance))
+    return results
+
+
+def _portfolio_priority(statuses: list[str], risk_count: int, confidence: str, evidence_count: int, configured: bool, lifecycle_changed: bool, no_current_evidence: bool = False) -> tuple[str, str]:
+    if any(status in {"contradicted", "weakening"} for status in statuses):
+        return "high", "Review because a related theme is contradicted or weakening."
+    if lifecycle_changed:
+        return "high", "Review because lifecycle status or confidence changed recently."
+    if risk_count >= 3:
+        return "high", "Review because three or more risks are attached."
+    if confidence == "high" and risk_count > 0:
+        return "high", "Review because high-confidence evidence has attached risk."
+    if configured and evidence_count == 0:
+        return "high", "Review because configured exposure has no current evidence."
+    if configured and any(status == "emerging" for status in statuses):
+        return "high", "Review because configured exposure is tied to an emerging theme."
+    if any(status == "active" for status in statuses) and evidence_count > 0:
+        return "medium", "Monitor because active theme has supporting evidence."
+    if confidence == "medium" or 1 <= risk_count <= 2:
+        return "medium", "Monitor because medium confidence or limited risks are attached."
+    return "low", "Monitor because exposure is detected only or has limited evidence and no attached risks."
+
+
+def _risks_by_theme(risks: list[AIMarketsRisk]) -> dict[str, list[AIMarketsRisk]]:
+    result: dict[str, list[AIMarketsRisk]] = {}
+    for risk in risks:
+        for theme in risk.related_themes:
+            result.setdefault(theme, []).append(risk)
+    return result
+
+
+def _questions_by_theme(questions: list[AIMarketsOpenQuestion]) -> dict[str, list[AIMarketsOpenQuestion]]:
+    result: dict[str, list[AIMarketsOpenQuestion]] = {}
+    for question in questions:
+        for theme in question.related_themes:
+            result.setdefault(theme, []).append(question)
+    return result
+
+
+def _portfolio_snapshot_id(mode, positions, watchlist, detected, exposures, risks, questions) -> str:
+    payload = "|".join(
+        [
+            mode,
+            ",".join(item.symbol + item.research_priority for item in positions + watchlist + detected),
+            ",".join(item.theme_id + item.research_priority for item in exposures),
+            ",".join(item.risk_id + item.priority for item in risks),
+            ",".join(item.question_id for item in questions),
+        ]
+    )
+    return f"ai_markets_portfolio_{_digest(payload)}"
+
+
+def _portfolio_delta(previous: JsonMap, snapshot_id: str, positions, watchlist, exposures, risks) -> AIMarketsPortfolioDelta:
+    previous_symbols = {str(item.get("symbol")) for item in _map_list(previous.get("positions", [])) + _map_list(previous.get("watchlist", [])) + _map_list(previous.get("detected_entities", []))}
+    current_symbols = {item.symbol for item in positions + watchlist}
+    return AIMarketsPortfolioDelta(
+        previous.get("snapshot_id") if previous else None,
+        snapshot_id,
+        len(positions) - _int(previous.get("position_count")),
+        len(watchlist) - _int(previous.get("watchlist_count")),
+        len(exposures) - _int(previous.get("theme_exposure_count")),
+        len(risks) - _int(previous.get("risk_count")),
+        _portfolio_high_priority_count(positions + watchlist, exposures, risks) - _int(previous.get("high_priority_review_count")),
+        sorted(current_symbols - previous_symbols),
+        sorted(previous_symbols - current_symbols),
+    )
+
+
+def _portfolio_high_priority_count(items, exposures, risks) -> int:
+    return sum(1 for item in items if item.research_priority == "high") + sum(1 for item in exposures if item.research_priority == "high") + sum(1 for item in risks if item.priority == "high")
+
+
+def _portfolio_delta_lines(delta: AIMarketsPortfolioDelta) -> list[str]:
+    return [
+        f"Prior snapshot: {delta.prior_snapshot_id or 'None'}",
+        f"Position count change: {delta.position_count_change}",
+        f"Watchlist count change: {delta.watchlist_count_change}",
+        f"Theme exposure count change: {delta.theme_exposure_count_change}",
+        f"Risk count change: {delta.risk_count_change}",
+        f"High-priority review count change: {delta.high_priority_review_count_change}",
+    ]
+
+
+def _portfolio_item_sort_key(item: AIMarketsPortfolioPosition):
+    return (_priority_rank(item.research_priority), -_confidence_rank(item.confidence), -item.evidence_count, item.symbol)
+
+
+def _portfolio_exposure_sort_key(item: AIMarketsPortfolioExposure):
+    return (LIFECYCLE_STATUS_PRIORITY.get(item.lifecycle_status, 99), _priority_rank(item.research_priority), -item.evidence_count, item.theme_name)
+
+
+def _portfolio_risk_sort_key(item: AIMarketsPortfolioRisk):
+    return (_priority_rank(item.priority), _severity_rank(item.severity), -len(item.related_symbols), item.risk_id)
+
+
+def _portfolio_question_sort_key(item: AIMarketsPortfolioQuestion):
+    return (_priority_rank(item.priority), item.question_id)
+
+
+def _priority_rank(priority: str) -> int:
+    return {"high": 0, "medium": 1, "low": 2}.get(priority, 3)
+
+
+def _severity_rank(severity: str) -> int:
+    return {"high": 0, "medium": 1, "low": 2}.get(severity, 3)
 
 
 def _short(text: str) -> str:

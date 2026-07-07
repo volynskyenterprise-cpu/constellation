@@ -11,6 +11,9 @@ __pycache__/
 # Constellation runtime artifacts
 config/secrets/*
 !config/secrets/README.md
+config/portfolio.yaml
+config/portfolio.local.yaml
+outputs/ai-markets/portfolio/local-exports/
 
 logs/runs/*
 !logs/runs/README.md

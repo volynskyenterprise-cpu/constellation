@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from .artifacts import ArtifactError
-from .ai_markets import AIMarketsError, AIMarketsStore, AIMarketsThemeLifecycleStore
+from .ai_markets import AIMarketsError, AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .daily import DailyPipelineError, DailyPipelineStore
 from .dashboard import ExecutiveDashboardError, ExecutiveDashboardStore
@@ -282,6 +282,14 @@ def main(argv: list[str] | None = None) -> int:
     ai_markets_lifecycle_parser.add_argument("--export", action="store_true", help="Export lifecycle Markdown.")
     ai_markets_lifecycle_parser.add_argument("--history", action="store_true", help="Show lifecycle history.")
     ai_markets_lifecycle_parser.add_argument("--transitions", action="store_true", help="Show lifecycle transitions.")
+    ai_markets_portfolio_parser = ai_markets_subparsers.add_parser("portfolio", help="Show AI & Markets portfolio intelligence.")
+    ai_markets_portfolio_parser.add_argument("--export", action="store_true", help="Export portfolio Markdown.")
+    ai_markets_portfolio_parser.add_argument("--exposures", action="store_true", help="List portfolio theme exposures.")
+    ai_markets_portfolio_parser.add_argument("--risks", action="store_true", help="List portfolio-linked risks.")
+    ai_markets_portfolio_parser.add_argument("--watchlist", action="store_true", help="List portfolio/watchlist items.")
+    ai_markets_portfolio_parser.add_argument("--questions", action="store_true", help="List portfolio-linked questions.")
+    ai_markets_portfolio_parser.add_argument("--history", action="store_true", help="List portfolio history.")
+    ai_markets_portfolio_parser.add_argument("--delta", action="store_true", help="Show latest portfolio delta.")
     ai_markets_subparsers.add_parser("report", help="Print AI & Markets report path.")
     ai_markets_subparsers.add_parser("export", help="Export AI & Markets Markdown outputs.")
 
@@ -1110,6 +1118,37 @@ def main(argv: list[str] | None = None) -> int:
                 snapshot = lifecycle_store.build(store.load()) if args.export or not lifecycle_store.lifecycle_path.exists() else lifecycle_store.load()
                 _print_ai_markets_lifecycle_status(lifecycle_store.status())
                 return 0
+            if args.ai_markets_command == "portfolio":
+                portfolio_store = AIMarketsPortfolioStore(args.root.resolve())
+                if args.history:
+                    for snapshot in portfolio_store.history():
+                        print(f"{snapshot.get('snapshot_id')} mode={snapshot.get('mode')} exposures={snapshot.get('theme_exposure_count', 0)} created_at={snapshot.get('created_at', '')}")
+                    return 0
+                if args.delta:
+                    data = portfolio_store.load()
+                    print(json.dumps(_map(data.get("delta")), indent=2, sort_keys=True))
+                    return 0
+                if args.exposures:
+                    for item in _map_list(portfolio_store.load().get("exposures", [])):
+                        print(f"{item.get('theme_id')} theme={item.get('theme_name')} lifecycle={item.get('lifecycle_status')} priority={item.get('research_priority')} symbols={','.join(_string_list(item.get('related_symbols', [])))}")
+                    return 0
+                if args.risks:
+                    for item in _map_list(portfolio_store.load().get("risks", [])):
+                        print(f"{item.get('risk_id')} priority={item.get('priority')} severity={item.get('severity')} symbols={','.join(_string_list(item.get('related_symbols', [])))} description={item.get('description')}")
+                    return 0
+                if args.watchlist:
+                    data = portfolio_store.load()
+                    for item in _map_list(data.get("positions", [])) + _map_list(data.get("watchlist", [])) + _map_list(data.get("detected_entities", [])):
+                        print(f"{item.get('symbol')} name={item.get('name')} source={item.get('source')} priority={item.get('research_priority')}")
+                    return 0
+                if args.questions:
+                    for item in _map_list(portfolio_store.load().get("questions", [])):
+                        print(f"{item.get('question_id')} priority={item.get('priority')} symbols={','.join(_string_list(item.get('related_symbols', [])))} question={item.get('question')}")
+                    return 0
+                if args.export or not portfolio_store.json_path.exists():
+                    portfolio_store.build(store.load())
+                _print_ai_markets_portfolio_status(portfolio_store.status())
+                return 0
             if args.ai_markets_command == "report":
                 report = store.load()
                 print(f"ai_markets_report_id: {report.report_id}")
@@ -1349,6 +1388,14 @@ def _print_ai_markets_status(status) -> None:
     print(f"report_path: {status.get('report_path')}")
     print(f"executive_questions_path: {status.get('executive_questions_path')}")
     print(f"theme_lifecycle_report_path: {status.get('theme_lifecycle_report_path')}")
+    print(f"portfolio_intelligence_available: {status.get('portfolio_intelligence_available', False)}")
+    print(f"portfolio_mode: {status.get('portfolio_mode') or ''}")
+    print(f"position_count: {status.get('position_count', 0)}")
+    print(f"watchlist_count: {status.get('watchlist_count', 0)}")
+    print(f"portfolio_theme_exposure_count: {status.get('portfolio_theme_exposure_count', 0)}")
+    print(f"portfolio_risk_count: {status.get('portfolio_risk_count', 0)}")
+    print(f"high_priority_review_count: {status.get('high_priority_review_count', 0)}")
+    print(f"portfolio_report_path: {status.get('portfolio_report_path')}")
 
 
 def _print_ai_markets_lifecycle_status(status) -> None:
@@ -1364,6 +1411,20 @@ def _print_ai_markets_lifecycle_status(status) -> None:
     print(f"archived_count: {status.get('archived_theme_count', 0)}")
     print(f"recent_transitions: {status.get('recent_transition_count', 0)}")
     print(f"theme_lifecycle_report_path: {status.get('report_path')}")
+
+
+def _print_ai_markets_portfolio_status(status) -> None:
+    print(f"available: {status.get('available')}")
+    print(f"snapshot_id: {status.get('snapshot_id') or ''}")
+    print(f"mode: {status.get('mode') or ''}")
+    print(f"config_available: {status.get('config_available')}")
+    print(f"position_count: {status.get('position_count', 0)}")
+    print(f"watchlist_count: {status.get('watchlist_count', 0)}")
+    print(f"detected_entity_count: {status.get('detected_entity_count', 0)}")
+    print(f"theme_exposure_count: {status.get('theme_exposure_count', 0)}")
+    print(f"risk_count: {status.get('risk_count', 0)}")
+    print(f"high_priority_review_count: {status.get('high_priority_review_count', 0)}")
+    print(f"report_path: {status.get('report_path')}")
 
 
 def _map(value):

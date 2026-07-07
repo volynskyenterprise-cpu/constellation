@@ -2,7 +2,6 @@
 
 ## Next Engineering Milestones
 
-- Add portfolio intelligence views over lifecycle themes.
 - Add deterministic catalyst monitoring for lifecycle themes.
 - Add AI & Markets decision journal entries tied to lifecycle transitions.
 - Add executive morning brief callouts for high-conviction and weakening themes.

@@ -7,7 +7,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from constellation.ai_markets import AIMarketsStore, AIMarketsThemeLifecycleStore, _normalize_question
+from constellation.ai_markets import AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore, _normalize_question
 from constellation.cli import main
 from constellation.dashboard import ExecutiveDashboardStore
 from constellation.io import write_json
@@ -387,6 +387,118 @@ class AIMarketsTests(unittest.TestCase):
 
             self.assertEqual(sort_keys, sorted(sort_keys, key=lambda item: ({"high_conviction": 0, "strengthening": 1, "active": 2, "emerging": 3, "weakening": 4, "contradicted": 5, "archived": 6}[item[0]], item[1], item[2])))
 
+    def test_portfolio_config_missing_detected_entities_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_artifacts(root)
+
+            AIMarketsStore(root).build()
+            portfolio = AIMarketsPortfolioStore(root).load()
+
+            self.assertFalse(portfolio["config_available"])
+            self.assertEqual(portfolio["mode"], "detected_entities_only")
+            self.assertGreater(portfolio["detected_entity_count"], 0)
+
+    def test_portfolio_config_parsing_and_watchlist_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_artifacts(root)
+            _write_portfolio_config(root, positions=False)
+
+            AIMarketsStore(root).build()
+            portfolio = AIMarketsPortfolioStore(root).load()
+
+            self.assertTrue(portfolio["config_available"])
+            self.assertEqual(portfolio["mode"], "watchlist")
+            self.assertEqual(portfolio["watchlist_count"], 2)
+
+    def test_portfolio_theme_exposure_risk_question_mapping(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_question_artifacts(root)
+            _write_portfolio_config(root)
+
+            AIMarketsStore(root).build()
+            portfolio = AIMarketsPortfolioStore(root).load()
+
+            self.assertTrue(portfolio["exposures"])
+            self.assertTrue(portfolio["risks"])
+            self.assertTrue(portfolio["questions"])
+
+    def test_portfolio_priority_and_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_contradiction_artifacts(root)
+            _write_portfolio_config(root)
+
+            AIMarketsStore(root).build()
+            portfolio = AIMarketsPortfolioStore(root).load()
+
+            self.assertGreaterEqual(portfolio["high_priority_review_count"], 1)
+            self.assertTrue((root / "outputs" / "ai-markets" / "portfolio" / "portfolio-intelligence.md").exists())
+            self.assertTrue((root / "outputs" / "ai-markets" / "portfolio" / "portfolio-exposures.json").exists())
+
+    def test_portfolio_cli_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_artifacts(root)
+            AIMarketsStore(root).build()
+
+            for option in [[], ["--exposures"], ["--risks"], ["--watchlist"], ["--questions"]]:
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    exit_code = main(["ai-markets", "--root", str(root), "portfolio", *option])
+                self.assertEqual(exit_code, 0)
+
+    def test_portfolio_dashboard_and_workflow_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_artifacts(root)
+            AIMarketsStore(root).build()
+
+            dashboard = ExecutiveDashboardStore(root).generate(overwrite=True)
+            self.assertIn("portfolio_intelligence_available", dashboard.ai_markets_summary)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            run = WorkflowStore(root).run("Morning")
+            self.assertIn("ai-markets portfolio", [step["command"] for step in run.executed_steps])
+
+    def test_portfolio_history_delta_and_determinism(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_artifacts(root)
+            store = AIMarketsStore(root)
+
+            store.build()
+            first = AIMarketsPortfolioStore(root).load()
+            store.build()
+            second = AIMarketsPortfolioStore(root).load()
+
+            self.assertEqual(first["snapshot_id"], second["snapshot_id"])
+            self.assertEqual(len(AIMarketsPortfolioStore(root).history()), 1)
+            self.assertIn("delta", second)
+
+    def test_portfolio_report_has_no_engine_generated_trading_advice(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_artifacts(root)
+
+            AIMarketsStore(root).build()
+            text = (root / "outputs" / "ai-markets" / "portfolio" / "portfolio-intelligence.md").read_text(encoding="utf-8").lower()
+
+            self.assertNotIn("buy ", text)
+            self.assertNotIn("sell ", text)
+            self.assertNotIn("financial advice", text.replace("not financial advice", ""))
+
     def test_no_provider_calls(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -500,6 +612,35 @@ def _write_contradiction_artifacts(root: Path) -> None:
         {"evidence_id": "ev_c2", "source_id": "source-b", "summary": "AI infrastructure conflict risk."},
     ]
     write_json(root / "outputs" / "reports" / "latest-report.json", {"report_id": "report_c", "evidence_references": refs, "sections": []})
+
+
+def _write_portfolio_config(root: Path, *, positions: bool = True) -> None:
+    text = (
+        "portfolio:\n"
+        "  name: test_portfolio\n"
+        "  description: Test only.\n"
+        "  base_currency: USD\n"
+        "  positions:\n"
+    )
+    if positions:
+        text += (
+            "    - symbol: NVDA\n"
+            "      name: Nvidia\n"
+            "      asset_type: equity\n"
+            "      category: AI Infrastructure\n"
+            "      conviction: watchlist\n"
+            "      notes: Test only.\n"
+        )
+    text += (
+        "  watchlist:\n"
+        "    - symbol: BTC\n"
+        "      name: Bitcoin\n"
+        "      asset_type: crypto\n"
+        "    - symbol: GLD\n"
+        "      name: Gold ETF\n"
+        "      asset_type: etf\n"
+    )
+    (root / "config" / "portfolio.yaml").write_text(text, encoding="utf-8")
 
 
 if __name__ == "__main__":
