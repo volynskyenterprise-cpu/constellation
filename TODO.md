@@ -2,7 +2,6 @@
 
 ## Next Engineering Milestones
 
-- Add AI & Markets decision journal entries tied to lifecycle transitions.
 - Add executive morning brief callouts for high-conviction and weakening themes.
 - Add human-reviewed AI & Markets theme acceptance and suppression notes.
 - Add configurable AI & Markets taxonomy files after MVP validation.

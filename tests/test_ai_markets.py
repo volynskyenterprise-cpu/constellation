@@ -7,7 +7,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from constellation.ai_markets import AIMarketsCatalystStore, AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore, _normalize_question
+from constellation.ai_markets import AIMarketsCatalystStore, AIMarketsDecisionJournalStore, AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore, _normalize_question
 from constellation.cli import main
 from constellation.dashboard import ExecutiveDashboardStore
 from constellation.io import write_json
@@ -589,6 +589,90 @@ class AIMarketsTests(unittest.TestCase):
             self.assertNotIn("sell ", text)
             self.assertNotIn("price target", text)
 
+    def test_decision_journal_empty_and_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_artifacts(root)
+
+            AIMarketsStore(root).build()
+            data = AIMarketsDecisionJournalStore(root).load()
+
+            self.assertFalse(data["config_available"])
+            self.assertEqual(data["entry_count"], 0)
+            self.assertTrue((root / "outputs" / "ai-markets" / "decisions" / "decision-journal.md").exists())
+
+    def test_decision_entry_parsing_linking_review_and_outcome(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_catalyst_artifacts(root)
+            _write_decision_entry(root, review_at="2020-01-01", status="confirmed", outcome=True)
+
+            AIMarketsStore(root).build()
+            entry = AIMarketsDecisionJournalStore(root).load()["entries"][0]
+
+            self.assertEqual(entry["review"]["review_status"], "reviewed")
+            self.assertEqual(entry["outcome"]["status"], "user_confirmed")
+            self.assertIn("AI Infrastructure", entry["related_themes"])
+            self.assertIn("NVDA", entry["related_entities"])
+            self.assertTrue(entry["related_catalysts"])
+
+    def test_decision_due_overdue_and_no_review_date(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_artifacts(root)
+            _write_decision_entry(root, review_at="2020-01-01")
+            _write_decision_entry(root, filename="no-review.md", title="No Review", review_at="")
+
+            AIMarketsStore(root).build()
+            statuses = {entry["review"]["review_status"] for entry in AIMarketsDecisionJournalStore(root).load()["entries"]}
+
+            self.assertIn("overdue", statuses)
+            self.assertIn("no_review_date", statuses)
+
+    def test_decision_cli_dashboard_workflow_and_template(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_artifacts(root)
+            AIMarketsStore(root).build()
+
+            for option in [[], ["--entries"], ["--queue"], ["--timeline"], ["--outcomes"], ["--history"], ["--delta"], ["--create-template"]]:
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    exit_code = main(["ai-markets", "--root", str(root), "decisions", *option])
+                self.assertEqual(exit_code, 0)
+            dashboard = ExecutiveDashboardStore(root).generate(overwrite=True)
+            self.assertIn("decision_journal_available", dashboard.ai_markets_summary)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            run = WorkflowStore(root).run("Morning")
+            self.assertIn("ai-markets decisions", [step["command"] for step in run.executed_steps])
+
+    def test_decision_history_delta_determinism_and_safety(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_artifacts(root)
+            _write_decision_entry(root)
+            store = AIMarketsStore(root)
+
+            store.build()
+            first = AIMarketsDecisionJournalStore(root).load()
+            store.build()
+            second = AIMarketsDecisionJournalStore(root).load()
+            text = (root / "outputs" / "ai-markets" / "decisions" / "decision-journal.md").read_text(encoding="utf-8").lower()
+
+            self.assertEqual(first["snapshot_id"], second["snapshot_id"])
+            self.assertEqual(len(AIMarketsDecisionJournalStore(root).history()), 1)
+            self.assertIn("delta", second)
+            self.assertNotIn("buy ", text)
+            self.assertNotIn("sell ", text)
+            self.assertNotIn("price target", text)
+
     def test_no_provider_calls(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -740,6 +824,39 @@ def _write_catalyst_artifacts(root: Path) -> None:
         {"evidence_id": "ev_cat3", "source_id": "source-c", "summary": "Power bottleneck risk for data center energy demand."},
     ]
     write_json(root / "outputs" / "reports" / "latest-report.json", {"report_id": "report_cat", "evidence_references": refs, "sections": []})
+
+
+def _write_decision_entry(root: Path, *, filename: str = "entry.md", title: str = "Review AI Infrastructure", review_at: str = "2099-01-01", status: str = "open", outcome: bool = False) -> None:
+    directory = root / "journal" / "ai-markets"
+    directory.mkdir(parents=True, exist_ok=True)
+    outcome_text = "Confirmed by user note." if outcome else ""
+    (directory / filename).write_text(
+        "---\n"
+        "domain: ai_markets\n"
+        "entry_type: thesis_review\n"
+        f"title: {title}\n"
+        f"status: {status}\n"
+        "created_at: 2026-07-07\n"
+        f"review_at: {review_at}\n"
+        "related_themes:\n"
+        "  - AI Infrastructure\n"
+        "related_entities:\n"
+        "  - NVDA\n"
+        "related_catalysts:\n"
+        "  - earnings\n"
+        "related_risks:\n"
+        "  - risk\n"
+        "decision_type: research_review\n"
+        "confidence: medium\n"
+        "---\n\n"
+        "## Decision / Review\n\nReview AI Infrastructure.\n\n"
+        "## Rationale\n\nEvidence increased.\n\n"
+        "## Uncertainties\n\nPower remains a risk.\n\n"
+        "## Follow-Up\n\nReview later.\n\n"
+        f"## Outcome\n\n{outcome_text}\n\n"
+        "## Lessons\n\n",
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":

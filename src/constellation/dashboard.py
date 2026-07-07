@@ -473,6 +473,7 @@ def _ai_markets_summary(report: JsonMap) -> JsonMap:
     portfolio_items = _map_list(portfolio.get("positions", [])) + _map_list(portfolio.get("watchlist", [])) + _map_list(portfolio.get("detected_entities", []))
     catalyst_monitor = _map(report.get("catalyst_monitor"))
     catalysts = _map_list(catalyst_monitor.get("catalysts", []))
+    decisions = _map(report.get("decision_journal"))
     return {
         "available": bool(report),
         "report_id": report.get("report_id"),
@@ -524,6 +525,20 @@ def _ai_markets_summary(report: JsonMap) -> JsonMap:
         "top_catalysts": [str(item.get("title", "")) for item in catalysts[:5]],
         "catalyst_monitor_report_path": "outputs/ai-markets/catalysts/catalyst-monitor.md" if catalyst_monitor else None,
         "catalyst_calendar_path": "outputs/ai-markets/catalysts/catalyst-calendar.md" if catalyst_monitor else None,
+        "decision_journal_available": bool(decisions),
+        "decision_entry_count": decisions.get("entry_count", 0),
+        "open_decision_count": decisions.get("open_decision_count", 0),
+        "monitoring_decision_count": decisions.get("monitoring_decision_count", 0),
+        "reviewed_decision_count": decisions.get("reviewed_decision_count", 0),
+        "due_review_count": decisions.get("due_review_count", 0),
+        "overdue_review_count": decisions.get("overdue_review_count", 0),
+        "linked_theme_decision_count": decisions.get("linked_theme_decision_count", 0),
+        "linked_entity_decision_count": decisions.get("linked_entity_decision_count", 0),
+        "linked_catalyst_decision_count": decisions.get("linked_catalyst_decision_count", 0),
+        "linked_risk_decision_count": decisions.get("linked_risk_decision_count", 0),
+        "outcome_count": decisions.get("outcome_count", 0),
+        "decision_journal_report_path": "outputs/ai-markets/decisions/decision-journal.md" if decisions else None,
+        "decision_review_queue_path": "outputs/ai-markets/decisions/decision-review-queue.md" if decisions else None,
     }
 
 

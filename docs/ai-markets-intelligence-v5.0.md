@@ -176,6 +176,48 @@ Outputs:
 
 Priority is deterministic and based on explicit links to themes, risks, lifecycle status, portfolio/watchlist exposure, evidence counts, source counts, and high-impact catalyst terms such as FOMC, CPI, PCE, earnings, guidance, capex, liquidity, credit, breakout, breakdown, regulation, power bottleneck, and export controls.
 
+## v5.4.0 Decision Journal
+
+v5.4.0 adds a deterministic Decision Journal for AI & Markets research memory.
+
+This layer parses optional private Markdown entries from gitignored local folders, links them to existing AI & Markets artifacts by exact matches, and produces review queues, timelines, outcomes, links, history, and deltas.
+
+Private local entries:
+
+- `journal/ai-markets/*.md`
+- `journal/ai-markets/*.yaml`
+- `journal/ai-markets/*.json`
+
+These paths are gitignored. Use `journal/examples/ai-markets-decision.example.md` as a non-private example.
+
+Commands:
+
+```bash
+python -m constellation ai-markets decisions
+python -m constellation ai-markets decisions --entries
+python -m constellation ai-markets decisions --queue
+python -m constellation ai-markets decisions --timeline
+python -m constellation ai-markets decisions --outcomes
+python -m constellation ai-markets decisions --history
+python -m constellation ai-markets decisions --delta
+python -m constellation ai-markets decisions --create-template
+```
+
+Outputs:
+
+- `outputs/ai-markets/decisions/decision-journal.json`
+- `outputs/ai-markets/decisions/decision-journal.md`
+- `outputs/ai-markets/decisions/decision-entries.json`
+- `outputs/ai-markets/decisions/decision-timeline.md`
+- `outputs/ai-markets/decisions/decision-review-queue.json`
+- `outputs/ai-markets/decisions/decision-review-queue.md`
+- `outputs/ai-markets/decisions/decision-links.json`
+- `outputs/ai-markets/decisions/decision-outcomes.json`
+- `outputs/ai-markets/decisions/decision-history.json`
+- `outputs/ai-markets/decisions/decision-delta.json`
+
+Decision Journal is research memory only. It is not financial advice, trading software, or an autonomous decision maker.
+
 The goal is to create a durable research operating system that helps the user understand:
 
 - What changed

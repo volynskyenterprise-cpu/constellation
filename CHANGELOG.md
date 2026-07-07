@@ -2,6 +2,16 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 5.4.0 - AI & Markets Decision Journal
+
+- Added deterministic AI & Markets Decision Journal.
+- Added private local journal conventions under gitignored `journal/ai-markets/`.
+- Added example decision journal config and example Markdown entry.
+- Added decision entry parsing, exact artifact linking, review queue, outcome tracking, history, and delta outputs.
+- Added `python -m constellation ai-markets decisions` with entries, queue, timeline, outcomes, history, delta, export, and template creation flags.
+- Integrated Decision Journal into AI & Markets reports, Executive Dashboard, and Morning workflow.
+- Preserved research-memory-only behavior with no trading recommendations, financial advice, providers, OpenAI, LLM inference, embeddings, semantic search, web retrieval, Gmail, calendar integration, or autonomous decisions.
+
 ## 5.3.0 - AI & Markets Catalyst Monitoring
 
 - Added deterministic AI & Markets Catalyst Monitoring.

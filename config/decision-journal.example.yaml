@@ -1,0 +1,11 @@
+decision_journal:
+  name: example_ai_markets_decision_journal
+  description: Example configuration only. Do not store private decisions in the repository.
+  entry_paths:
+    - journal/ai-markets
+  default_domain: ai_markets
+  default_status: open
+  review_windows:
+    short_term_days: 7
+    medium_term_days: 30
+    long_term_days: 90

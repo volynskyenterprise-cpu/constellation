@@ -13,7 +13,14 @@ config/secrets/*
 !config/secrets/README.md
 config/portfolio.yaml
 config/portfolio.local.yaml
+config/decision-journal.yaml
+config/decision-journal.local.yaml
 outputs/ai-markets/portfolio/local-exports/
+
+journal/ai-markets/*.md
+journal/ai-markets/*.yaml
+journal/ai-markets/*.json
+journal/private/**
 
 logs/runs/*
 !logs/runs/README.md

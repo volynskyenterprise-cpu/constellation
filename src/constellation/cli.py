@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from .artifacts import ArtifactError
-from .ai_markets import AIMarketsCatalystStore, AIMarketsError, AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore
+from .ai_markets import AIMarketsCatalystStore, AIMarketsDecisionJournalStore, AIMarketsError, AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .daily import DailyPipelineError, DailyPipelineStore
 from .dashboard import ExecutiveDashboardError, ExecutiveDashboardStore
@@ -283,6 +283,15 @@ def main(argv: list[str] | None = None) -> int:
     ai_markets_catalysts_parser.add_argument("--delta", action="store_true", help="Show catalyst delta JSON.")
     ai_markets_catalysts_parser.add_argument("--transitions", action="store_true", help="List catalyst transitions.")
     ai_markets_catalysts_parser.add_argument("--export", action="store_true", help="Export catalyst monitor Markdown.")
+    ai_markets_decisions_parser = ai_markets_subparsers.add_parser("decisions", help="Show AI & Markets decision journal.")
+    ai_markets_decisions_parser.add_argument("--entries", action="store_true", help="List decision entries.")
+    ai_markets_decisions_parser.add_argument("--queue", action="store_true", help="Show decision review queue.")
+    ai_markets_decisions_parser.add_argument("--timeline", action="store_true", help="Show decision timeline.")
+    ai_markets_decisions_parser.add_argument("--outcomes", action="store_true", help="List decision outcomes.")
+    ai_markets_decisions_parser.add_argument("--history", action="store_true", help="List decision journal history.")
+    ai_markets_decisions_parser.add_argument("--delta", action="store_true", help="Show decision delta JSON.")
+    ai_markets_decisions_parser.add_argument("--export", action="store_true", help="Export decision journal Markdown.")
+    ai_markets_decisions_parser.add_argument("--create-template", action="store_true", help="Create a private local decision entry template.")
     ai_markets_subparsers.add_parser("risks", help="List AI & Markets risks.")
     ai_markets_questions_parser = ai_markets_subparsers.add_parser("questions", help="List AI & Markets open questions.")
     ai_markets_questions_parser.add_argument("--executive", action="store_true", help="Show only prioritized executive questions.")
@@ -1124,6 +1133,38 @@ def main(argv: list[str] | None = None) -> int:
                     catalyst_store.build(store.load())
                 _print_ai_markets_catalyst_status(catalyst_store.status())
                 return 0
+            if args.ai_markets_command == "decisions":
+                decision_store = AIMarketsDecisionJournalStore(args.root.resolve())
+                if args.create_template:
+                    print(f"decision_template: {decision_store.create_template()}")
+                    return 0
+                if args.history:
+                    for snapshot in decision_store.history():
+                        print(f"{snapshot.get('snapshot_id')} entries={snapshot.get('entry_count', 0)} created_at={snapshot.get('created_at', '')}")
+                    return 0
+                if args.delta:
+                    print(json.dumps(_map(decision_store.load().get("delta")), indent=2, sort_keys=True))
+                    return 0
+                if args.entries:
+                    for item in _map_list(decision_store.load().get("entries", [])):
+                        print(f"{item.get('entry_id')} status={item.get('status')} review={_map(item.get('review')).get('review_status')} title={item.get('title')}")
+                    return 0
+                if args.queue:
+                    for item in _map_list(decision_store.load().get("entries", [])):
+                        print(f"{_map(item.get('review')).get('review_status')}: {item.get('entry_id')} title={item.get('title')} review_at={item.get('review_at')}")
+                    return 0
+                if args.timeline:
+                    for item in _map_list(decision_store.load().get("entries", [])):
+                        print(f"{item.get('created_at')} {item.get('entry_id')} status={item.get('status')} title={item.get('title')}")
+                    return 0
+                if args.outcomes:
+                    for item in _map_list(decision_store.load().get("entries", [])):
+                        print(f"{item.get('entry_id')} outcome={_map(item.get('outcome')).get('status')} title={item.get('title')}")
+                    return 0
+                if args.export or not decision_store.json_path.exists():
+                    decision_store.build()
+                _print_ai_markets_decision_status(decision_store.status())
+                return 0
             if args.ai_markets_command == "risks":
                 for risk in store.load().risks:
                     print(f"{risk.risk_id} severity={risk.severity} description={risk.description}")
@@ -1444,6 +1485,14 @@ def _print_ai_markets_status(status) -> None:
     print(f"stale_catalyst_count: {status.get('stale_catalyst_count', 0)}")
     print(f"catalyst_monitor_report_path: {status.get('catalyst_monitor_report_path')}")
     print(f"catalyst_calendar_path: {status.get('catalyst_calendar_path')}")
+    print(f"decision_journal_available: {status.get('decision_journal_available', False)}")
+    print(f"decision_entry_count: {status.get('decision_entry_count', 0)}")
+    print(f"open_decision_count: {status.get('open_decision_count', 0)}")
+    print(f"due_review_count: {status.get('due_review_count', 0)}")
+    print(f"overdue_review_count: {status.get('overdue_review_count', 0)}")
+    print(f"outcome_count: {status.get('outcome_count', 0)}")
+    print(f"decision_journal_report_path: {status.get('decision_journal_report_path')}")
+    print(f"decision_review_queue_path: {status.get('decision_review_queue_path')}")
 
 
 def _print_ai_markets_lifecycle_status(status) -> None:
@@ -1487,6 +1536,25 @@ def _print_ai_markets_catalyst_status(status) -> None:
     print(f"stale_catalyst_count: {status.get('stale_catalyst_count', 0)}")
     print(f"report_path: {status.get('report_path')}")
     print(f"calendar_path: {status.get('calendar_path')}")
+
+
+def _print_ai_markets_decision_status(status) -> None:
+    print(f"available: {status.get('available')}")
+    print(f"snapshot_id: {status.get('snapshot_id') or ''}")
+    print(f"config_available: {status.get('config_available')}")
+    print(f"entry_count: {status.get('entry_count', 0)}")
+    print(f"open_decision_count: {status.get('open_decision_count', 0)}")
+    print(f"monitoring_decision_count: {status.get('monitoring_decision_count', 0)}")
+    print(f"reviewed_decision_count: {status.get('reviewed_decision_count', 0)}")
+    print(f"due_review_count: {status.get('due_review_count', 0)}")
+    print(f"overdue_review_count: {status.get('overdue_review_count', 0)}")
+    print(f"linked_theme_decision_count: {status.get('linked_theme_decision_count', 0)}")
+    print(f"linked_entity_decision_count: {status.get('linked_entity_decision_count', 0)}")
+    print(f"linked_catalyst_decision_count: {status.get('linked_catalyst_decision_count', 0)}")
+    print(f"linked_risk_decision_count: {status.get('linked_risk_decision_count', 0)}")
+    print(f"outcome_count: {status.get('outcome_count', 0)}")
+    print(f"report_path: {status.get('report_path')}")
+    print(f"review_queue_path: {status.get('review_queue_path')}")
 
 
 def _map(value):

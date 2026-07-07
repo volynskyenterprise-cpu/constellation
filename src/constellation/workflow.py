@@ -8,7 +8,7 @@ from time import perf_counter
 from typing import Any, Callable
 
 from . import __version__
-from .ai_markets import AIMarketsCatalystStore, AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore
+from .ai_markets import AIMarketsCatalystStore, AIMarketsDecisionJournalStore, AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .daily import DailyPipelineStore
 from .dashboard import ExecutiveDashboardStore
@@ -158,6 +158,7 @@ class WorkflowEngine:
             "ai-markets lifecycle": self._ai_markets_lifecycle,
             "ai-markets portfolio": self._ai_markets_portfolio,
             "ai-markets catalysts": self._ai_markets_catalysts,
+            "ai-markets decisions": self._ai_markets_decisions,
         }
 
     def run(self, definition: WorkflowDefinition) -> WorkflowRun:
@@ -320,6 +321,7 @@ class WorkflowEngine:
         lifecycle_status = AIMarketsThemeLifecycleStore(self.root).status()
         portfolio_status = AIMarketsPortfolioStore(self.root).status()
         catalyst_status = AIMarketsCatalystStore(self.root).status()
+        decision_status = AIMarketsDecisionJournalStore(self.root).status()
         total_questions = sum(_int(_map(question.provenance).get("variant_count")) or 1 for question in report.open_questions)
         return {
             "status": "completed",
@@ -354,6 +356,14 @@ class WorkflowEngine:
             "new_catalyst_count": catalyst_status.get("new_catalyst_count", 0),
             "catalyst_monitor_report_path": catalyst_status.get("report_path"),
             "catalyst_calendar_path": catalyst_status.get("calendar_path"),
+            "decision_journal_available": decision_status.get("available", False),
+            "decision_entry_count": decision_status.get("entry_count", 0),
+            "open_decision_count": decision_status.get("open_decision_count", 0),
+            "due_review_count": decision_status.get("due_review_count", 0),
+            "overdue_review_count": decision_status.get("overdue_review_count", 0),
+            "outcome_count": decision_status.get("outcome_count", 0),
+            "decision_journal_report_path": decision_status.get("report_path"),
+            "decision_review_queue_path": decision_status.get("review_queue_path"),
         }
 
     def _ai_markets_lifecycle(self, arguments: JsonMap) -> JsonMap:
@@ -398,6 +408,22 @@ class WorkflowEngine:
             "new_catalyst_count": data.get("new_catalyst_count", 0),
             "catalyst_monitor_report_path": str(AIMarketsCatalystStore(self.root).report_path),
             "catalyst_calendar_path": str(AIMarketsCatalystStore(self.root).calendar_path),
+        }
+
+    def _ai_markets_decisions(self, arguments: JsonMap) -> JsonMap:
+        snapshot = AIMarketsDecisionJournalStore(self.root).build()
+        data = snapshot.to_dict()
+        return {
+            "status": "completed",
+            "snapshot_id": snapshot.snapshot_id,
+            "decision_journal_available": True,
+            "decision_entry_count": data.get("entry_count", 0),
+            "open_decision_count": data.get("open_decision_count", 0),
+            "due_review_count": data.get("due_review_count", 0),
+            "overdue_review_count": data.get("overdue_review_count", 0),
+            "outcome_count": data.get("outcome_count", 0),
+            "decision_journal_report_path": str(AIMarketsDecisionJournalStore(self.root).report_path),
+            "decision_review_queue_path": str(AIMarketsDecisionJournalStore(self.root).queue_path),
         }
 
 
@@ -545,6 +571,14 @@ def render_workflow_report(run: WorkflowRun) -> str:
                 f"- New catalysts: {details.get('new_catalyst_count', 0)}",
                 f"- Catalyst monitor report: `{details.get('catalyst_monitor_report_path', '')}`",
                 f"- Catalyst calendar: `{details.get('catalyst_calendar_path', '')}`",
+                f"- Decision journal available: {details.get('decision_journal_available', False)}",
+                f"- Decision entries: {details.get('decision_entry_count', 0)}",
+                f"- Open decisions: {details.get('open_decision_count', 0)}",
+                f"- Due reviews: {details.get('due_review_count', 0)}",
+                f"- Overdue reviews: {details.get('overdue_review_count', 0)}",
+                f"- Outcomes: {details.get('outcome_count', 0)}",
+                f"- Decision journal report: `{details.get('decision_journal_report_path', '')}`",
+                f"- Decision review queue: `{details.get('decision_review_queue_path', '')}`",
                 "",
             ]
         )
@@ -593,6 +627,7 @@ def _built_in_workflows() -> list[WorkflowDefinition]:
                 _step("AI & Markets Theme Lifecycle", "ai-markets lifecycle"),
                 _step("AI & Markets Portfolio Intelligence", "ai-markets portfolio"),
                 _step("AI & Markets Catalyst Monitoring", "ai-markets catalysts"),
+                _step("AI & Markets Decision Journal", "ai-markets decisions"),
             ],
         ),
         WorkflowDefinition(

@@ -1033,6 +1033,240 @@ class AIMarketsCatalystStore:
         }
 
 
+@dataclass(frozen=True)
+class AIMarketsDecisionEvidenceLink:
+    link_type: str
+    source_id: str
+    source_path: str
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class AIMarketsDecisionOutcome:
+    status: str
+    text: str
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class AIMarketsDecisionReview:
+    review_status: str
+    review_at: str | None
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class AIMarketsDecisionEntry:
+    entry_id: str
+    title: str
+    domain: str
+    entry_type: str
+    decision_type: str
+    status: str
+    created_at: str
+    updated_at: str
+    review_at: str | None
+    confidence: str
+    related_themes: list[str]
+    related_entities: list[str]
+    related_catalysts: list[str]
+    related_risks: list[str]
+    related_questions: list[str]
+    related_evidence_ids: list[str]
+    linked_theme_lifecycle_statuses: list[str]
+    linked_portfolio_exposures: list[str]
+    linked_catalyst_priorities: list[str]
+    rationale: str
+    uncertainties: str
+    follow_up: str
+    lessons: str
+    outcome: AIMarketsDecisionOutcome
+    review: AIMarketsDecisionReview
+    source_path: str
+    user_provided: bool
+    provenance: JsonMap
+
+    def to_dict(self) -> JsonMap:
+        data = self.__dict__.copy()
+        data["outcome"] = self.outcome.to_dict()
+        data["review"] = self.review.to_dict()
+        return data
+
+
+@dataclass(frozen=True)
+class AIMarketsDecisionDelta:
+    new_entries: list[str]
+    removed_entries: list[str]
+    status_changes: list[JsonMap]
+    review_status_changes: list[JsonMap]
+    outcome_changes: list[JsonMap]
+    link_changes: list[JsonMap]
+    newly_due_reviews: list[str]
+    newly_overdue_reviews: list[str]
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class AIMarketsDecisionTimeline:
+    entries: list[AIMarketsDecisionEntry]
+
+    def to_dict(self) -> JsonMap:
+        return {"entries": [item.to_dict() for item in self.entries]}
+
+
+@dataclass(frozen=True)
+class AIMarketsDecisionSnapshot:
+    snapshot_id: str
+    created_at: str
+    config_available: bool
+    config_path: str | None
+    entries: list[AIMarketsDecisionEntry]
+    delta: AIMarketsDecisionDelta
+    provenance: JsonMap
+    limitations: list[str]
+
+    def to_dict(self) -> JsonMap:
+        entries = [item.to_dict() for item in self.entries]
+        return {
+            "snapshot_id": self.snapshot_id,
+            "created_at": self.created_at,
+            "config_available": self.config_available,
+            "config_path": self.config_path,
+            "entry_count": len(entries),
+            "open_decision_count": sum(1 for item in entries if item.get("status") == "open"),
+            "monitoring_decision_count": sum(1 for item in entries if item.get("status") == "monitoring"),
+            "reviewed_decision_count": sum(1 for item in entries if _map(item.get("review")).get("review_status") == "reviewed"),
+            "due_review_count": sum(1 for item in entries if _map(item.get("review")).get("review_status") == "due"),
+            "overdue_review_count": sum(1 for item in entries if _map(item.get("review")).get("review_status") == "overdue"),
+            "linked_theme_decision_count": sum(1 for item in entries if item.get("related_themes")),
+            "linked_entity_decision_count": sum(1 for item in entries if item.get("related_entities")),
+            "linked_catalyst_decision_count": sum(1 for item in entries if item.get("related_catalysts")),
+            "linked_risk_decision_count": sum(1 for item in entries if item.get("related_risks")),
+            "outcome_count": sum(1 for item in entries if _map(item.get("outcome")).get("status") not in {"pending", "no_outcome_recorded"}),
+            "entries": entries,
+            "delta": self.delta.to_dict(),
+            "provenance": self.provenance,
+            "limitations": self.limitations,
+        }
+
+
+class AIMarketsDecisionJournalEngine:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+
+    def build(self, history: list[JsonMap]) -> AIMarketsDecisionSnapshot:
+        config, config_path = _decision_config(self.root)
+        paths = _decision_entry_paths(self.root, config)
+        artifacts = _decision_artifacts(self.root)
+        entries = []
+        for directory in paths:
+            if directory.exists():
+                for path in sorted(directory.glob("*.md")):
+                    entries.append(_parse_decision_entry(path, artifacts))
+        entries = sorted(entries, key=_decision_entry_sort_key)
+        previous = history[-1] if history else {}
+        delta = _decision_delta(previous, entries)
+        return AIMarketsDecisionSnapshot(
+            _decision_snapshot_id(entries),
+            _now_iso(),
+            config_path is not None,
+            str(config_path) if config_path else None,
+            entries,
+            delta,
+            {"entry_paths": [str(path) for path in paths]},
+            [
+                "Decision Journal is deterministic research memory only.",
+                "No financial advice, trading recommendation, provider calls, LLM inference, embeddings, semantic similarity, web retrieval, calendar integration, or autonomous decisions are used.",
+            ],
+        )
+
+
+class AIMarketsDecisionJournalStore:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.directory = root / "outputs" / "ai-markets" / "decisions"
+        self.json_path = self.directory / "decision-journal.json"
+        self.report_path = self.directory / "decision-journal.md"
+        self.entries_path = self.directory / "decision-entries.json"
+        self.timeline_path = self.directory / "decision-timeline.md"
+        self.queue_json_path = self.directory / "decision-review-queue.json"
+        self.queue_path = self.directory / "decision-review-queue.md"
+        self.links_path = self.directory / "decision-links.json"
+        self.outcomes_path = self.directory / "decision-outcomes.json"
+        self.history_path = self.directory / "decision-history.json"
+        self.delta_path = self.directory / "decision-delta.json"
+
+    def build(self) -> AIMarketsDecisionSnapshot:
+        snapshot = AIMarketsDecisionJournalEngine(self.root).build(self.history())
+        self.save(snapshot)
+        return snapshot
+
+    def load(self) -> JsonMap:
+        if not self.json_path.exists():
+            raise AIMarketsError("No AI & Markets decision journal found. Run `python -m constellation ai-markets decisions` first.")
+        return read_json(self.json_path)
+
+    def history(self) -> list[JsonMap]:
+        if not self.history_path.exists():
+            return []
+        return _map_list(read_json(self.history_path).get("snapshots", []))
+
+    def save(self, snapshot: AIMarketsDecisionSnapshot) -> None:
+        data = snapshot.to_dict()
+        write_json(self.json_path, data)
+        write_json(self.entries_path, {"entries": data["entries"]})
+        write_json(self.queue_json_path, {"entries": [item for item in data["entries"] if _map(item.get("review")).get("review_status") in {"overdue", "due", "not_due", "no_review_date"}]})
+        write_json(self.links_path, {"entries": [{"entry_id": item["entry_id"], "themes": item["related_themes"], "entities": item["related_entities"], "catalysts": item["related_catalysts"], "risks": item["related_risks"], "evidence": item["related_evidence_ids"]} for item in data["entries"]]})
+        write_json(self.outcomes_path, {"outcomes": [{"entry_id": item["entry_id"], "outcome": item["outcome"]} for item in data["entries"]]})
+        write_json(self.delta_path, data["delta"])
+        history = self.history()
+        if not history or history[-1].get("snapshot_id") != snapshot.snapshot_id:
+            history.append(data)
+        write_json(self.history_path, {"snapshots": history})
+        self.report_path.write_text(render_decision_journal(snapshot), encoding="utf-8")
+        self.queue_path.write_text(render_decision_queue(snapshot), encoding="utf-8")
+        self.timeline_path.write_text(render_decision_timeline(snapshot), encoding="utf-8")
+
+    def status(self) -> JsonMap:
+        if not self.json_path.exists():
+            return {"available": False, "report_path": str(self.report_path), "review_queue_path": str(self.queue_path)}
+        data = self.load()
+        return {
+            "available": True,
+            "snapshot_id": data.get("snapshot_id"),
+            "config_available": data.get("config_available"),
+            "entry_count": data.get("entry_count", 0),
+            "open_decision_count": data.get("open_decision_count", 0),
+            "monitoring_decision_count": data.get("monitoring_decision_count", 0),
+            "reviewed_decision_count": data.get("reviewed_decision_count", 0),
+            "due_review_count": data.get("due_review_count", 0),
+            "overdue_review_count": data.get("overdue_review_count", 0),
+            "linked_theme_decision_count": data.get("linked_theme_decision_count", 0),
+            "linked_entity_decision_count": data.get("linked_entity_decision_count", 0),
+            "linked_catalyst_decision_count": data.get("linked_catalyst_decision_count", 0),
+            "linked_risk_decision_count": data.get("linked_risk_decision_count", 0),
+            "outcome_count": data.get("outcome_count", 0),
+            "report_path": str(self.report_path),
+            "review_queue_path": str(self.queue_path),
+        }
+
+    def create_template(self) -> Path:
+        directory = self.root / "journal" / "ai-markets"
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / "decision-template.md"
+        if not path.exists():
+            path.write_text(_decision_template_text(), encoding="utf-8")
+        return path
+
+
 class AIMarketsEngine:
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -1098,13 +1332,15 @@ class AIMarketsStore:
         lifecycle = AIMarketsThemeLifecycleStore(self.root).build(report)
         portfolio = AIMarketsPortfolioStore(self.root).build(report, lifecycle)
         catalyst_monitor = AIMarketsCatalystStore(self.root).build(report, lifecycle, portfolio)
+        decision_journal = AIMarketsDecisionJournalStore(self.root).build()
         report_data = report.to_dict()
         report_data["theme_lifecycle"] = lifecycle.to_dict()
         report_data["portfolio_intelligence"] = portfolio.to_dict()
         report_data["catalyst_monitor"] = catalyst_monitor.to_dict()
+        report_data["decision_journal"] = decision_journal.to_dict()
         write_json(self.json_path, report_data)
         self.report_path.parent.mkdir(parents=True, exist_ok=True)
-        self.report_path.write_text(render_report(report, lifecycle, portfolio, catalyst_monitor), encoding="utf-8")
+        self.report_path.write_text(render_report(report, lifecycle, portfolio, catalyst_monitor, decision_journal), encoding="utf-8")
         self.watchlist_path.write_text(render_watchlist(report, portfolio, catalyst_monitor), encoding="utf-8")
         self.content_ideas_path.write_text(render_content_ideas(report), encoding="utf-8")
         self.executive_questions_path.write_text(render_executive_questions(report), encoding="utf-8")
@@ -1120,6 +1356,7 @@ class AIMarketsStore:
         lifecycle_status = AIMarketsThemeLifecycleStore(self.root).status()
         portfolio_status = AIMarketsPortfolioStore(self.root).status()
         catalyst_status = AIMarketsCatalystStore(self.root).status()
+        decision_status = AIMarketsDecisionJournalStore(self.root).status()
         return {
             "available": exists,
             "report_id": report.report_id if report else None,
@@ -1152,6 +1389,14 @@ class AIMarketsStore:
             "stale_catalyst_count": catalyst_status.get("stale_catalyst_count", 0),
             "catalyst_monitor_report_path": catalyst_status.get("report_path"),
             "catalyst_calendar_path": catalyst_status.get("calendar_path"),
+            "decision_journal_available": decision_status.get("available", False),
+            "decision_entry_count": decision_status.get("entry_count", 0),
+            "open_decision_count": decision_status.get("open_decision_count", 0),
+            "due_review_count": decision_status.get("due_review_count", 0),
+            "overdue_review_count": decision_status.get("overdue_review_count", 0),
+            "outcome_count": decision_status.get("outcome_count", 0),
+            "decision_journal_report_path": decision_status.get("report_path"),
+            "decision_review_queue_path": decision_status.get("review_queue_path"),
         }
 
     def export(self) -> Path:
@@ -1159,14 +1404,15 @@ class AIMarketsStore:
         lifecycle = AIMarketsThemeLifecycleStore(self.root).build(report)
         portfolio = AIMarketsPortfolioStore(self.root).build(report, lifecycle)
         catalyst_monitor = AIMarketsCatalystStore(self.root).build(report, lifecycle, portfolio)
-        self.report_path.write_text(render_report(report, lifecycle, portfolio, catalyst_monitor), encoding="utf-8")
+        decision_journal = AIMarketsDecisionJournalStore(self.root).build()
+        self.report_path.write_text(render_report(report, lifecycle, portfolio, catalyst_monitor, decision_journal), encoding="utf-8")
         self.watchlist_path.write_text(render_watchlist(report, portfolio, catalyst_monitor), encoding="utf-8")
         self.content_ideas_path.write_text(render_content_ideas(report), encoding="utf-8")
         self.executive_questions_path.write_text(render_executive_questions(report), encoding="utf-8")
         return self.report_path
 
 
-def render_report(report: AIMarketsReport, lifecycle: AIMarketsThemeLifecycleSnapshot | None = None, portfolio: AIMarketsPortfolioSnapshot | None = None, catalyst_monitor: AIMarketsCatalystSnapshot | None = None) -> str:
+def render_report(report: AIMarketsReport, lifecycle: AIMarketsThemeLifecycleSnapshot | None = None, portfolio: AIMarketsPortfolioSnapshot | None = None, catalyst_monitor: AIMarketsCatalystSnapshot | None = None, decision_journal: AIMarketsDecisionSnapshot | None = None) -> str:
     lines = [
         "# AI & Markets Intelligence",
         "",
@@ -1216,6 +1462,9 @@ def render_report(report: AIMarketsReport, lifecycle: AIMarketsThemeLifecycleSna
         "## Catalyst Monitoring",
         "",
         *_catalyst_monitor_report_lines(catalyst_monitor),
+        "## Decision Journal",
+        "",
+        *_decision_journal_report_lines(decision_journal),
         "## Watchlist",
         "",
         *_bullet([entity.symbol for entity in report.entities]),
@@ -1460,6 +1709,89 @@ def render_catalyst_calendar(snapshot: AIMarketsCatalystSnapshot) -> str:
     return "\n".join(["# AI & Markets Catalyst Calendar", "", *_catalyst_calendar_lines(snapshot)])
 
 
+def render_decision_journal(snapshot: AIMarketsDecisionSnapshot) -> str:
+    data = snapshot.to_dict()
+    lines = [
+        "# AI & Markets Decision Journal",
+        "",
+        "This is deterministic research memory only. This is not financial advice, trading software, or an autonomous decision maker.",
+        "",
+        "## Executive Summary",
+        "",
+        f"- Snapshot ID: `{snapshot.snapshot_id}`",
+        f"- Entries: {len(snapshot.entries)}",
+        f"- Open decisions: {data.get('open_decision_count', 0)}",
+        f"- Due reviews: {data.get('due_review_count', 0)}",
+        f"- Overdue reviews: {data.get('overdue_review_count', 0)}",
+        f"- Outcomes recorded: {data.get('outcome_count', 0)}",
+        "",
+        "## Journal Mode / Config Status",
+        "",
+        f"- Config available: {snapshot.config_available}",
+        f"- Config path: {snapshot.config_path or 'Unavailable'}",
+        "",
+        "## Open Decisions",
+        "",
+        *_bullet([f"{item.title} ({item.review.review_status})" for item in snapshot.entries if item.status == "open"] or ["No open decisions."]),
+        "## Review Queue",
+        "",
+        *_decision_queue_lines(snapshot),
+        "## Overdue Reviews",
+        "",
+        *_bullet([item.title for item in snapshot.entries if item.review.review_status == "overdue"] or ["No overdue reviews."]),
+        "## Theme-Linked Decisions",
+        "",
+        *_bullet([f"{item.title}: {', '.join(item.related_themes)}" for item in snapshot.entries if item.related_themes] or ["No theme-linked decisions."]),
+        "## Entity / Watchlist-Linked Decisions",
+        "",
+        *_bullet([f"{item.title}: {', '.join(item.related_entities)}" for item in snapshot.entries if item.related_entities] or ["No entity-linked decisions."]),
+        "## Catalyst-Linked Decisions",
+        "",
+        *_bullet([f"{item.title}: {', '.join(item.related_catalysts)}" for item in snapshot.entries if item.related_catalysts] or ["No catalyst-linked decisions."]),
+        "## Risk-Linked Decisions",
+        "",
+        *_bullet([f"{item.title}: {', '.join(item.related_risks)}" for item in snapshot.entries if item.related_risks] or ["No risk-linked decisions."]),
+        "## Outcomes / Lessons",
+        "",
+        *_bullet([f"{item.title}: {item.outcome.status}" for item in snapshot.entries if item.outcome.status != "no_outcome_recorded"] or ["No outcomes recorded."]),
+        "## Recent Changes",
+        "",
+        *_bullet(_decision_delta_lines(snapshot.delta)),
+        "## Evidence / Provenance Links",
+        "",
+        *_bullet(sorted({evidence for item in snapshot.entries for evidence in item.related_evidence_ids}) or ["No evidence links."]),
+        "## Limitations",
+        "",
+        *_bullet(snapshot.limitations),
+        "## Safety Statement",
+        "",
+        "- Decision Journal preserves user-provided research memory and does not generate financial advice or trading recommendations.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def render_decision_queue(snapshot: AIMarketsDecisionSnapshot) -> str:
+    return "\n".join(["# AI & Markets Decision Review Queue", "", *_decision_queue_lines(snapshot)])
+
+
+def render_decision_timeline(snapshot: AIMarketsDecisionSnapshot) -> str:
+    lines = ["# AI & Markets Decision Timeline", ""]
+    timeline = sorted(snapshot.entries, key=lambda item: (_date_sort_key(item.created_at, descending=True), item.title, item.entry_id))
+    lines.extend(_bullet([f"{item.created_at}: {item.title} ({item.status})" for item in timeline] or ["No decision entries."]))
+    return "\n".join(lines)
+
+
+def _decision_queue_lines(snapshot: AIMarketsDecisionSnapshot) -> list[str]:
+    lines: list[str] = []
+    groups = [("overdue", "Overdue"), ("due", "Due"), ("not_due", "Upcoming"), ("no_review_date", "No Review Date"), ("reviewed", "Reviewed")]
+    for status, title in groups:
+        lines.extend([f"### {title}", ""])
+        items = [item for item in snapshot.entries if item.review.review_status == status]
+        lines.extend(_bullet([f"{item.title} review_at={item.review_at or 'None'}" for item in items] or [f"No {title.lower()} entries."]))
+    return lines
+
+
 def _catalyst_calendar_lines(snapshot: AIMarketsCatalystSnapshot) -> list[str]:
     lines: list[str] = []
     for horizon in ["immediate", "near_term", "medium_term", "long_term", "unknown"]:
@@ -1524,6 +1856,22 @@ def _catalyst_monitor_report_lines(snapshot: AIMarketsCatalystSnapshot | None) -
         f"- Stale catalysts: {data.get('stale_catalyst_count', 0)}",
         "- Catalyst monitor: `outputs/ai-markets/catalysts/catalyst-monitor.md`",
         "- Catalyst calendar: `outputs/ai-markets/catalysts/catalyst-calendar.md`",
+        "",
+    ]
+
+
+def _decision_journal_report_lines(snapshot: AIMarketsDecisionSnapshot | None) -> list[str]:
+    if snapshot is None:
+        return ["- Decision Journal has not been generated.", ""]
+    data = snapshot.to_dict()
+    return [
+        f"- Entries: {data.get('entry_count', 0)}",
+        f"- Open decisions: {data.get('open_decision_count', 0)}",
+        f"- Due reviews: {data.get('due_review_count', 0)}",
+        f"- Overdue reviews: {data.get('overdue_review_count', 0)}",
+        f"- Outcomes recorded: {data.get('outcome_count', 0)}",
+        "- Decision journal: `outputs/ai-markets/decisions/decision-journal.md`",
+        "- Review queue: `outputs/ai-markets/decisions/decision-review-queue.md`",
         "",
     ]
 
@@ -2382,6 +2730,281 @@ def _catalyst_sort_key(item: AIMarketsCatalystRecord):
 
 def _time_horizon_rank(value: str) -> int:
     return {"immediate": 0, "near_term": 1, "medium_term": 2, "long_term": 3, "unknown": 4}.get(value, 5)
+
+
+def _decision_config(root: Path) -> tuple[JsonMap, Path | None]:
+    for relative in ["config/decision-journal.local.yaml", "config/decision-journal.yaml"]:
+        path = root / relative
+        if path.exists():
+            return load_yaml(path), path
+    return {}, None
+
+
+def _decision_entry_paths(root: Path, config: JsonMap) -> list[Path]:
+    paths = _string_list(_map(config.get("decision_journal")).get("entry_paths", []))
+    if not paths:
+        paths = ["journal/ai-markets"]
+    return [root / path for path in paths]
+
+
+def _decision_artifacts(root: Path) -> JsonMap:
+    return {
+        "ai_markets": _read_optional_json(root / "outputs" / "ai-markets" / "ai-markets.json"),
+        "lifecycle": _read_optional_json(root / "outputs" / "ai-markets" / "theme-lifecycle.json"),
+        "portfolio": _read_optional_json(root / "outputs" / "ai-markets" / "portfolio" / "portfolio-intelligence.json"),
+        "catalysts": _read_optional_json(root / "outputs" / "ai-markets" / "catalysts" / "catalyst-monitor.json"),
+    }
+
+
+def _parse_decision_entry(path: Path, artifacts: JsonMap) -> AIMarketsDecisionEntry:
+    text = path.read_text(encoding="utf-8")
+    front, body = _front_matter(text)
+    sections = _markdown_sections(body)
+    title = str(front.get("title") or path.stem)
+    created_at = str(front.get("created_at") or "")
+    entry_id = str(front.get("entry_id") or f"decision_{_digest(str(path) + title + created_at)}")
+    status = str(front.get("status") or "open")
+    review_at = front.get("review_at") if isinstance(front.get("review_at"), str) else None
+    review = AIMarketsDecisionReview(_decision_review_status(status, review_at), review_at)
+    outcome = _decision_outcome(status, sections)
+    related_themes = _decision_exact_matches(_string_list(front.get("related_themes", [])), [str(item.get("name")) for item in _map_list(_map(artifacts.get("ai_markets")).get("themes", []))])
+    related_entities = _decision_exact_matches(_string_list(front.get("related_entities", [])), [str(item.get("symbol")) for item in _map_list(_map(artifacts.get("ai_markets")).get("entities", []))])
+    catalyst_records = _map_list(_map(artifacts.get("catalysts")).get("catalysts", []))
+    related_catalysts = _decision_catalyst_matches(_string_list(front.get("related_catalysts", [])), catalyst_records)
+    risk_records = _map_list(_map(artifacts.get("ai_markets")).get("risks", []))
+    related_risks = _decision_risk_matches(_string_list(front.get("related_risks", [])), risk_records)
+    related_questions = _decision_exact_matches(_string_list(front.get("related_questions", [])), [str(item.get("question_id")) for item in _map_list(_map(artifacts.get("ai_markets")).get("open_questions", []))])
+    related_evidence = _string_list(front.get("related_evidence_ids", []))
+    lifecycle_statuses = sorted({str(item.get("current_status")) for item in _map_list(_map(artifacts.get("lifecycle")).get("themes", [])) if item.get("theme_name") in related_themes})
+    portfolio_exposures = sorted({str(item.get("theme_name")) for item in _map_list(_map(artifacts.get("portfolio")).get("exposures", [])) if item.get("theme_name") in related_themes})
+    catalyst_priorities = sorted({str(item.get("priority")) for item in catalyst_records if item.get("catalyst_id") in related_catalysts or item.get("category") in related_catalysts})
+    return AIMarketsDecisionEntry(
+        entry_id,
+        title,
+        str(front.get("domain") or "ai_markets"),
+        str(front.get("entry_type") or "research_note"),
+        str(front.get("decision_type") or "other"),
+        status,
+        created_at,
+        str(front.get("updated_at") or created_at),
+        review_at,
+        str(front.get("confidence") or "unknown"),
+        related_themes,
+        related_entities,
+        related_catalysts,
+        related_risks,
+        related_questions,
+        related_evidence,
+        lifecycle_statuses,
+        portfolio_exposures,
+        catalyst_priorities,
+        sections.get("rationale", ""),
+        sections.get("uncertainties", ""),
+        sections.get("follow-up", sections.get("follow up", "")),
+        sections.get("lessons", sections.get("lesson", "")),
+        outcome,
+        review,
+        str(path),
+        True,
+        {"source_path": str(path), "front_matter_keys": sorted(front.keys())},
+    )
+
+
+def _front_matter(text: str) -> tuple[JsonMap, str]:
+    if not text.startswith("---"):
+        return {}, text
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return {}, text
+    front_text = parts[1]
+    data: JsonMap = {}
+    current_key: str | None = None
+    for raw in front_text.splitlines():
+        line = raw.rstrip()
+        if not line.strip():
+            continue
+        if line.lstrip().startswith("- ") and current_key:
+            data.setdefault(current_key, []).append(line.strip()[2:].strip())
+            continue
+        if ":" in line:
+            key, value = line.split(":", 1)
+            current_key = key.strip()
+            value = value.strip()
+            data[current_key] = [] if value == "" else value
+    return data, parts[2]
+
+
+def _markdown_sections(body: str) -> dict[str, str]:
+    sections: dict[str, list[str]] = {}
+    current = "body"
+    sections[current] = []
+    for line in body.splitlines():
+        if line.startswith("## "):
+            current = line[3:].strip().lower()
+            sections[current] = []
+        else:
+            sections.setdefault(current, []).append(line)
+    return {key: "\n".join(value).strip() for key, value in sections.items()}
+
+
+def _decision_review_status(status: str, review_at: str | None) -> str:
+    if status in {"reviewed", "confirmed", "challenged", "contradicted", "archived"}:
+        return "reviewed"
+    if not review_at:
+        return "no_review_date"
+    today = datetime.now().astimezone().date()
+    try:
+        review_date = datetime.fromisoformat(review_at).date()
+    except ValueError:
+        return "no_review_date"
+    if review_date == today:
+        return "due"
+    if review_date < today:
+        return "overdue"
+    return "not_due"
+
+
+def _decision_outcome(status: str, sections: dict[str, str]) -> AIMarketsDecisionOutcome:
+    text = sections.get("outcome") or sections.get("result") or sections.get("lesson") or sections.get("lessons") or sections.get("postmortem") or ""
+    if not text:
+        return AIMarketsDecisionOutcome("no_outcome_recorded", "")
+    if status == "confirmed":
+        outcome = "user_confirmed"
+    elif status == "challenged":
+        outcome = "user_challenged"
+    elif status == "contradicted":
+        outcome = "user_contradicted"
+    elif sections.get("lesson") or sections.get("lessons"):
+        outcome = "lesson_recorded"
+    else:
+        outcome = "pending"
+    return AIMarketsDecisionOutcome(outcome, text)
+
+
+def _decision_exact_matches(values: list[str], candidates: list[str]) -> list[str]:
+    candidate_set = {item for item in candidates if item}
+    return sorted({value for value in values if value in candidate_set})
+
+
+def _decision_catalyst_matches(values: list[str], catalysts: list[JsonMap]) -> list[str]:
+    result = set()
+    for value in values:
+        for catalyst in catalysts:
+            if value == catalyst.get("catalyst_id") or value == catalyst.get("category"):
+                result.add(str(catalyst.get("catalyst_id") or value))
+    return sorted(result)
+
+
+def _decision_risk_matches(values: list[str], risks: list[JsonMap]) -> list[str]:
+    result = set()
+    for value in values:
+        for risk in risks:
+            if value == risk.get("risk_id") or value in str(risk.get("description", "")):
+                result.add(str(risk.get("risk_id") or value))
+    return sorted(result)
+
+
+def _decision_delta(previous: JsonMap, entries: list[AIMarketsDecisionEntry]) -> AIMarketsDecisionDelta:
+    previous_by_id = {str(item.get("entry_id")): item for item in _map_list(previous.get("entries", []))}
+    current_by_id = {item.entry_id: item for item in entries}
+    return AIMarketsDecisionDelta(
+        sorted(set(current_by_id) - set(previous_by_id)),
+        sorted(set(previous_by_id) - set(current_by_id)),
+        _decision_field_changes(previous_by_id, current_by_id, "status"),
+        _decision_review_changes(previous_by_id, current_by_id),
+        _decision_outcome_changes(previous_by_id, current_by_id),
+        _decision_link_changes(previous_by_id, current_by_id),
+        sorted(item.entry_id for item in entries if item.review.review_status == "due" and _map(previous_by_id.get(item.entry_id)).get("review", {}).get("review_status") != "due"),
+        sorted(item.entry_id for item in entries if item.review.review_status == "overdue" and _map(previous_by_id.get(item.entry_id)).get("review", {}).get("review_status") != "overdue"),
+    )
+
+
+def _decision_field_changes(previous_by_id, current_by_id, field: str) -> list[JsonMap]:
+    return sorted([{"entry_id": key, "previous_value": previous_by_id[key].get(field), "current_value": value.to_dict().get(field)} for key, value in current_by_id.items() if key in previous_by_id and previous_by_id[key].get(field) != value.to_dict().get(field)], key=lambda item: item["entry_id"])
+
+
+def _decision_review_changes(previous_by_id, current_by_id) -> list[JsonMap]:
+    return sorted([{"entry_id": key, "previous_value": _map(previous_by_id[key].get("review")).get("review_status"), "current_value": value.review.review_status} for key, value in current_by_id.items() if key in previous_by_id and _map(previous_by_id[key].get("review")).get("review_status") != value.review.review_status], key=lambda item: item["entry_id"])
+
+
+def _decision_outcome_changes(previous_by_id, current_by_id) -> list[JsonMap]:
+    return sorted([{"entry_id": key, "previous_value": _map(previous_by_id[key].get("outcome")).get("status"), "current_value": value.outcome.status} for key, value in current_by_id.items() if key in previous_by_id and _map(previous_by_id[key].get("outcome")).get("status") != value.outcome.status], key=lambda item: item["entry_id"])
+
+
+def _decision_link_changes(previous_by_id, current_by_id) -> list[JsonMap]:
+    fields = ["related_themes", "related_entities", "related_catalysts", "related_risks"]
+    changes = []
+    for key, value in current_by_id.items():
+        if key not in previous_by_id:
+            continue
+        current = value.to_dict()
+        if any(previous_by_id[key].get(field) != current.get(field) for field in fields):
+            changes.append({"entry_id": key})
+    return sorted(changes, key=lambda item: item["entry_id"])
+
+
+def _decision_snapshot_id(entries: list[AIMarketsDecisionEntry]) -> str:
+    payload = "|".join(f"{item.entry_id}:{item.status}:{item.review.review_status}:{item.outcome.status}:{','.join(item.related_themes)}:{','.join(item.related_entities)}" for item in entries)
+    return f"ai_markets_decisions_{_digest(payload)}"
+
+
+def _decision_entry_sort_key(item: AIMarketsDecisionEntry):
+    return (_review_rank(item.review.review_status), _decision_status_rank(item.status), item.review_at or "9999-99-99", _date_sort_key(item.created_at, descending=True), item.title, item.entry_id)
+
+
+def _review_rank(value: str) -> int:
+    return {"overdue": 0, "due": 1, "not_due": 2, "no_review_date": 3, "reviewed": 4}.get(value, 5)
+
+
+def _decision_status_rank(value: str) -> int:
+    return {"open": 0, "monitoring": 1, "challenged": 2, "contradicted": 3, "confirmed": 4, "reviewed": 5, "archived": 6}.get(value, 7)
+
+
+def _date_sort_key(value: str, *, descending: bool = False) -> int:
+    try:
+        ordinal = datetime.fromisoformat(value).date().toordinal()
+    except ValueError:
+        ordinal = 0
+    return -ordinal if descending else ordinal
+
+
+def _decision_delta_lines(delta: AIMarketsDecisionDelta) -> list[str]:
+    return [
+        f"New entries: {len(delta.new_entries)}",
+        f"Removed entries: {len(delta.removed_entries)}",
+        f"Status changes: {len(delta.status_changes)}",
+        f"Review status changes: {len(delta.review_status_changes)}",
+        f"Outcome changes: {len(delta.outcome_changes)}",
+        f"Newly due reviews: {len(delta.newly_due_reviews)}",
+        f"Newly overdue reviews: {len(delta.newly_overdue_reviews)}",
+    ]
+
+
+def _decision_template_text() -> str:
+    today = datetime.now().astimezone().date().isoformat()
+    return (
+        "---\n"
+        "domain: ai_markets\n"
+        "entry_type: research_note\n"
+        "title: Private local journal entry\n"
+        "status: open\n"
+        f"created_at: {today}\n"
+        "review_at: \n"
+        "related_themes:\n"
+        "related_entities:\n"
+        "related_catalysts:\n"
+        "related_risks:\n"
+        "decision_type: research_review\n"
+        "confidence: medium\n"
+        "---\n\n"
+        "Private local journal entry. Do not commit.\n\n"
+        "## Decision / Review\n\n\n"
+        "## Rationale\n\n\n"
+        "## Uncertainties\n\n\n"
+        "## Follow-Up\n\n\n"
+        "## Outcome\n\n\n"
+        "## Lessons\n\n"
+    )
 
 
 def _priority_rank(priority: str) -> int:
