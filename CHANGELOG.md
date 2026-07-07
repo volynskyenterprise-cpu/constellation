@@ -2,6 +2,15 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 5.3.0 - AI & Markets Catalyst Monitoring
+
+- Added deterministic AI & Markets Catalyst Monitoring.
+- Added catalyst category, time horizon, priority, status, history, delta, and transition tracking.
+- Added catalyst monitor, priorities, history, delta, transitions, and calendar outputs under `outputs/ai-markets/catalysts/`.
+- Added `python -m constellation ai-markets catalysts` with monitor, priorities, calendar, history, delta, transitions, and export flags.
+- Integrated Catalyst Monitoring into AI & Markets reports, watchlists, Executive Dashboard, and Morning workflow.
+- Preserved research-only behavior with no trading recommendations, financial advice, providers, OpenAI, LLM inference, embeddings, semantic search, web retrieval, Gmail, calendar integration, or autonomous decisions.
+
 ## 5.2.0 - AI & Markets Portfolio Intelligence
 
 - Added deterministic AI & Markets Portfolio Intelligence.

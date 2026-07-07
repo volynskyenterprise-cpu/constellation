@@ -7,7 +7,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from constellation.ai_markets import AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore, _normalize_question
+from constellation.ai_markets import AIMarketsCatalystStore, AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore, _normalize_question
 from constellation.cli import main
 from constellation.dashboard import ExecutiveDashboardStore
 from constellation.io import write_json
@@ -499,6 +499,96 @@ class AIMarketsTests(unittest.TestCase):
             self.assertNotIn("sell ", text)
             self.assertNotIn("financial advice", text.replace("not financial advice", ""))
 
+    def test_catalyst_monitor_build_and_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_catalyst_artifacts(root)
+
+            AIMarketsStore(root).build()
+            data = AIMarketsCatalystStore(root).load()
+
+            self.assertTrue(data["snapshot_id"])
+            self.assertGreater(data["total_catalyst_count"], 0)
+            self.assertTrue((root / "outputs" / "ai-markets" / "catalysts" / "catalyst-monitor.md").exists())
+            self.assertTrue((root / "outputs" / "ai-markets" / "catalysts" / "catalyst-calendar.md").exists())
+
+    def test_catalyst_category_time_horizon_and_priority(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_catalyst_artifacts(root)
+            _write_portfolio_config(root)
+
+            AIMarketsStore(root).build()
+            catalysts = AIMarketsCatalystStore(root).load()["catalysts"]
+
+            self.assertTrue(any(item["category"] == "earnings" for item in catalysts))
+            self.assertTrue(any(item["time_horizon"] == "near_term" for item in catalysts))
+            self.assertTrue(any(item["priority"] == "high" for item in catalysts))
+
+    def test_catalyst_linking_and_delta_transitions(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_catalyst_artifacts(root)
+
+            AIMarketsStore(root).build()
+            first = AIMarketsCatalystStore(root).load()
+            write_json(root / "outputs" / "reports" / "latest-report.json", {"report_id": "empty", "evidence_references": [], "sections": []})
+            AIMarketsStore(root).build()
+            second = AIMarketsCatalystStore(root).load()
+
+            self.assertTrue(first["delta"]["new_catalysts"])
+            self.assertTrue(second["delta"]["status_changes"] or second["delta"]["removed_catalysts"])
+            self.assertTrue(second["transitions"])
+
+    def test_catalyst_cli_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_catalyst_artifacts(root)
+            AIMarketsStore(root).build()
+
+            for option in [[], ["--priorities"], ["--calendar"], ["--history"], ["--delta"], ["--transitions"]]:
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    exit_code = main(["ai-markets", "--root", str(root), "catalysts", *option])
+                self.assertEqual(exit_code, 0)
+
+    def test_catalyst_dashboard_and_workflow_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_catalyst_artifacts(root)
+            AIMarketsStore(root).build()
+
+            dashboard = ExecutiveDashboardStore(root).generate(overwrite=True)
+            self.assertIn("catalyst_monitor_available", dashboard.ai_markets_summary)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            run = WorkflowStore(root).run("Morning")
+            self.assertIn("ai-markets catalysts", [step["command"] for step in run.executed_steps])
+
+    def test_catalyst_determinism_sorting_and_safety_language(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_catalyst_artifacts(root)
+            store = AIMarketsStore(root)
+
+            store.build()
+            first = AIMarketsCatalystStore(root).load()
+            store.build()
+            second = AIMarketsCatalystStore(root).load()
+            text = (root / "outputs" / "ai-markets" / "catalysts" / "catalyst-monitor.md").read_text(encoding="utf-8").lower()
+
+            self.assertEqual(first["snapshot_id"], second["snapshot_id"])
+            self.assertNotIn("buy ", text)
+            self.assertNotIn("sell ", text)
+            self.assertNotIn("price target", text)
+
     def test_no_provider_calls(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -641,6 +731,15 @@ def _write_portfolio_config(root: Path, *, positions: bool = True) -> None:
         "      asset_type: etf\n"
     )
     (root / "config" / "portfolio.yaml").write_text(text, encoding="utf-8")
+
+
+def _write_catalyst_artifacts(root: Path) -> None:
+    refs = [
+        {"evidence_id": "ev_cat1", "source_id": "source-a", "summary": "NVDA earnings and guidance next week may affect AI infrastructure capex."},
+        {"evidence_id": "ev_cat2", "source_id": "source-b", "summary": "FOMC liquidity catalyst this week creates macro liquidity risk."},
+        {"evidence_id": "ev_cat3", "source_id": "source-c", "summary": "Power bottleneck risk for data center energy demand."},
+    ]
+    write_json(root / "outputs" / "reports" / "latest-report.json", {"report_id": "report_cat", "evidence_references": refs, "sections": []})
 
 
 if __name__ == "__main__":

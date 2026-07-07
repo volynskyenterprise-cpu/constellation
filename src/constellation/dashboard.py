@@ -471,6 +471,8 @@ def _ai_markets_summary(report: JsonMap) -> JsonMap:
     portfolio = _map(report.get("portfolio_intelligence"))
     portfolio_exposures = _map_list(portfolio.get("exposures", []))
     portfolio_items = _map_list(portfolio.get("positions", [])) + _map_list(portfolio.get("watchlist", [])) + _map_list(portfolio.get("detected_entities", []))
+    catalyst_monitor = _map(report.get("catalyst_monitor"))
+    catalysts = _map_list(catalyst_monitor.get("catalysts", []))
     return {
         "available": bool(report),
         "report_id": report.get("report_id"),
@@ -511,6 +513,17 @@ def _ai_markets_summary(report: JsonMap) -> JsonMap:
         "top_priority_themes": [str(item.get("theme_name", "")) for item in portfolio_exposures if item.get("research_priority") == "high"][:5],
         "portfolio_report_path": "outputs/ai-markets/portfolio/portfolio-intelligence.md" if portfolio else None,
         "portfolio_exposures_path": "outputs/ai-markets/portfolio/portfolio-exposures.md" if portfolio else None,
+        "catalyst_monitor_available": bool(catalyst_monitor),
+        "total_catalyst_count": catalyst_monitor.get("total_catalyst_count", 0),
+        "high_priority_catalyst_count": catalyst_monitor.get("high_priority_catalyst_count", 0),
+        "near_term_catalyst_count": catalyst_monitor.get("near_term_catalyst_count", 0),
+        "portfolio_linked_catalyst_count": catalyst_monitor.get("portfolio_linked_catalyst_count", 0),
+        "risk_linked_catalyst_count": catalyst_monitor.get("risk_linked_catalyst_count", 0),
+        "new_catalyst_count": catalyst_monitor.get("new_catalyst_count", 0),
+        "stale_catalyst_count": catalyst_monitor.get("stale_catalyst_count", 0),
+        "top_catalysts": [str(item.get("title", "")) for item in catalysts[:5]],
+        "catalyst_monitor_report_path": "outputs/ai-markets/catalysts/catalyst-monitor.md" if catalyst_monitor else None,
+        "catalyst_calendar_path": "outputs/ai-markets/catalysts/catalyst-calendar.md" if catalyst_monitor else None,
     }
 
 

@@ -402,11 +402,14 @@ python -m constellation ai-markets portfolio --exposures
 python -m constellation ai-markets portfolio --risks
 python -m constellation ai-markets portfolio --watchlist
 python -m constellation ai-markets portfolio --questions
+python -m constellation ai-markets catalysts
+python -m constellation ai-markets catalysts --priorities
+python -m constellation ai-markets catalysts --calendar
 python -m constellation ai-markets report
 python -m constellation ai-markets export
 ```
 
-AI & Markets Intelligence classifies existing local Constellation artifacts into deterministic themes, entities, catalysts, risks, prioritized executive questions, watchlists, and content ideas. Theme Lifecycle tracks whether each theme is emerging, active, strengthening, high conviction, weakening, contradicted, or archived. v5.2.0 adds Portfolio Intelligence, a research-only layer that maps optional local portfolio/watchlist config and detected entities to themes, lifecycle statuses, risks, and review priorities. It uses fixed keyword and ticker/company matching only, deduplicates open questions without semantic inference, and does not provide financial advice or trading recommendations.
+AI & Markets Intelligence classifies existing local Constellation artifacts into deterministic themes, entities, catalysts, risks, prioritized executive questions, watchlists, and content ideas. Theme Lifecycle tracks whether each theme is emerging, active, strengthening, high conviction, weakening, contradicted, or archived. Portfolio Intelligence maps optional local portfolio/watchlist config and detected entities to themes, lifecycle statuses, risks, and review priorities. v5.3.0 adds Catalyst Monitoring, a deterministic research organization layer for catalyst categories, time horizons, priorities, risks, and changes. It uses fixed keyword and ticker/company matching only, deduplicates open questions without semantic inference, and does not provide financial advice or trading recommendations.
 
 Local portfolio config is optional. Use `config/portfolio.example.yaml` as a template, and keep real local configs in `config/portfolio.yaml` or `config/portfolio.local.yaml`, which are gitignored.
 
@@ -425,6 +428,9 @@ Key outputs:
 - `outputs/ai-markets/portfolio/portfolio-exposures.json`
 - `outputs/ai-markets/portfolio/portfolio-risks.json`
 - `outputs/ai-markets/portfolio/portfolio-watchlist.json`
+- `outputs/ai-markets/catalysts/catalyst-monitor.md`
+- `outputs/ai-markets/catalysts/catalyst-priorities.json`
+- `outputs/ai-markets/catalysts/catalyst-calendar.md`
 - `outputs/ai-markets/watchlist.md`
 
 ### Research

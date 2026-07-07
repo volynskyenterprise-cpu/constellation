@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from .artifacts import ArtifactError
-from .ai_markets import AIMarketsError, AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore
+from .ai_markets import AIMarketsCatalystStore, AIMarketsError, AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .daily import DailyPipelineError, DailyPipelineStore
 from .dashboard import ExecutiveDashboardError, ExecutiveDashboardStore
@@ -275,6 +275,14 @@ def main(argv: list[str] | None = None) -> int:
     ai_markets_theme_parser = ai_markets_subparsers.add_parser("theme", help="Show one AI & Markets theme.")
     ai_markets_theme_parser.add_argument("theme_id", help="AI & Markets theme ID.")
     ai_markets_subparsers.add_parser("entities", help="List AI & Markets entities.")
+    ai_markets_catalysts_parser = ai_markets_subparsers.add_parser("catalysts", help="Show AI & Markets catalyst monitoring.")
+    ai_markets_catalysts_parser.add_argument("--monitor", action="store_true", help="Show catalyst monitor status.")
+    ai_markets_catalysts_parser.add_argument("--priorities", action="store_true", help="List high and medium priority catalysts.")
+    ai_markets_catalysts_parser.add_argument("--calendar", action="store_true", help="Show catalyst calendar groups.")
+    ai_markets_catalysts_parser.add_argument("--history", action="store_true", help="List catalyst monitor history.")
+    ai_markets_catalysts_parser.add_argument("--delta", action="store_true", help="Show catalyst delta JSON.")
+    ai_markets_catalysts_parser.add_argument("--transitions", action="store_true", help="List catalyst transitions.")
+    ai_markets_catalysts_parser.add_argument("--export", action="store_true", help="Export catalyst monitor Markdown.")
     ai_markets_subparsers.add_parser("risks", help="List AI & Markets risks.")
     ai_markets_questions_parser = ai_markets_subparsers.add_parser("questions", help="List AI & Markets open questions.")
     ai_markets_questions_parser.add_argument("--executive", action="store_true", help="Show only prioritized executive questions.")
@@ -1086,6 +1094,36 @@ def main(argv: list[str] | None = None) -> int:
                 for entity in store.load().entities:
                     print(f"{entity.entity_id} symbol={entity.symbol} name={entity.name} evidence={entity.evidence_count}")
                 return 0
+            if args.ai_markets_command == "catalysts":
+                catalyst_store = AIMarketsCatalystStore(args.root.resolve())
+                if args.history:
+                    for snapshot in catalyst_store.history():
+                        print(f"{snapshot.get('snapshot_id')} catalysts={snapshot.get('total_catalyst_count', 0)} created_at={snapshot.get('created_at', '')}")
+                    return 0
+                if args.delta:
+                    print(json.dumps(_map(catalyst_store.load().get("delta")), indent=2, sort_keys=True))
+                    return 0
+                if args.transitions:
+                    for item in _map_list(catalyst_store.load().get("transitions", [])):
+                        print(f"{item.get('transition_id')} catalyst={item.get('catalyst_id')} type={item.get('transition_type')} previous={item.get('previous_value')} current={item.get('current_value')}")
+                    return 0
+                if args.priorities:
+                    for item in _map_list(catalyst_store.load().get("catalysts", [])):
+                        if item.get("priority") in {"high", "medium"}:
+                            print(f"{item.get('catalyst_id')} priority={item.get('priority')} horizon={item.get('time_horizon')} category={item.get('category')} title={item.get('title')}")
+                    return 0
+                if args.calendar:
+                    data = catalyst_store.load()
+                    for horizon in ["immediate", "near_term", "medium_term", "long_term", "unknown"]:
+                        print(f"{horizon}:")
+                        for item in _map_list(data.get("catalysts", [])):
+                            if item.get("time_horizon") == horizon:
+                                print(f"  {item.get('catalyst_id')} priority={item.get('priority')} title={item.get('title')}")
+                    return 0
+                if args.export or args.monitor or not catalyst_store.json_path.exists():
+                    catalyst_store.build(store.load())
+                _print_ai_markets_catalyst_status(catalyst_store.status())
+                return 0
             if args.ai_markets_command == "risks":
                 for risk in store.load().risks:
                     print(f"{risk.risk_id} severity={risk.severity} description={risk.description}")
@@ -1396,6 +1434,16 @@ def _print_ai_markets_status(status) -> None:
     print(f"portfolio_risk_count: {status.get('portfolio_risk_count', 0)}")
     print(f"high_priority_review_count: {status.get('high_priority_review_count', 0)}")
     print(f"portfolio_report_path: {status.get('portfolio_report_path')}")
+    print(f"catalyst_monitor_available: {status.get('catalyst_monitor_available', False)}")
+    print(f"total_catalyst_count: {status.get('total_catalyst_count', 0)}")
+    print(f"high_priority_catalyst_count: {status.get('high_priority_catalyst_count', 0)}")
+    print(f"near_term_catalyst_count: {status.get('near_term_catalyst_count', 0)}")
+    print(f"portfolio_linked_catalyst_count: {status.get('portfolio_linked_catalyst_count', 0)}")
+    print(f"risk_linked_catalyst_count: {status.get('risk_linked_catalyst_count', 0)}")
+    print(f"new_catalyst_count: {status.get('new_catalyst_count', 0)}")
+    print(f"stale_catalyst_count: {status.get('stale_catalyst_count', 0)}")
+    print(f"catalyst_monitor_report_path: {status.get('catalyst_monitor_report_path')}")
+    print(f"catalyst_calendar_path: {status.get('catalyst_calendar_path')}")
 
 
 def _print_ai_markets_lifecycle_status(status) -> None:
@@ -1425,6 +1473,20 @@ def _print_ai_markets_portfolio_status(status) -> None:
     print(f"risk_count: {status.get('risk_count', 0)}")
     print(f"high_priority_review_count: {status.get('high_priority_review_count', 0)}")
     print(f"report_path: {status.get('report_path')}")
+
+
+def _print_ai_markets_catalyst_status(status) -> None:
+    print(f"available: {status.get('available')}")
+    print(f"snapshot_id: {status.get('snapshot_id') or ''}")
+    print(f"total_catalyst_count: {status.get('total_catalyst_count', 0)}")
+    print(f"high_priority_catalyst_count: {status.get('high_priority_catalyst_count', 0)}")
+    print(f"near_term_catalyst_count: {status.get('near_term_catalyst_count', 0)}")
+    print(f"portfolio_linked_catalyst_count: {status.get('portfolio_linked_catalyst_count', 0)}")
+    print(f"risk_linked_catalyst_count: {status.get('risk_linked_catalyst_count', 0)}")
+    print(f"new_catalyst_count: {status.get('new_catalyst_count', 0)}")
+    print(f"stale_catalyst_count: {status.get('stale_catalyst_count', 0)}")
+    print(f"report_path: {status.get('report_path')}")
+    print(f"calendar_path: {status.get('calendar_path')}")
 
 
 def _map(value):

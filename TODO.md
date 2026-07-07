@@ -2,7 +2,6 @@
 
 ## Next Engineering Milestones
 
-- Add deterministic catalyst monitoring for lifecycle themes.
 - Add AI & Markets decision journal entries tied to lifecycle transitions.
 - Add executive morning brief callouts for high-conviction and weakening themes.
 - Add human-reviewed AI & Markets theme acceptance and suppression notes.

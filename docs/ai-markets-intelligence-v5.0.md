@@ -116,6 +116,66 @@ Outputs:
 
 If no local config exists, Portfolio Intelligence runs in `detected_entities_only` mode using the entities already detected by AI & Markets Intelligence.
 
+## v5.3.0 Catalyst Monitoring
+
+v5.3.0 adds deterministic Catalyst Monitoring for AI & Markets research organization.
+
+Catalyst Monitoring identifies explicit catalyst language already present in local Constellation artifacts. It does not retrieve new market data, monitor markets autonomously, predict outcomes, or provide financial advice.
+
+Initial catalyst categories include:
+
+- `earnings`
+- `fed_policy`
+- `inflation`
+- `employment`
+- `liquidity`
+- `credit`
+- `capex`
+- `product_launch`
+- `regulation`
+- `energy_power`
+- `supply_chain`
+- `geopolitical`
+- `crypto_etf_flows`
+- `bitcoin_halving_cycle`
+- `commodity_supply`
+- `ai_infrastructure`
+- `semiconductor_cycle`
+- `enterprise_ai_adoption`
+- `defense_policy`
+- `nuclear_policy`
+- `robotics_adoption`
+- `technical_breakout`
+- `technical_breakdown`
+- `risk_event`
+- `unknown`
+
+Commands:
+
+```bash
+python -m constellation ai-markets catalysts
+python -m constellation ai-markets catalysts --monitor
+python -m constellation ai-markets catalysts --priorities
+python -m constellation ai-markets catalysts --calendar
+python -m constellation ai-markets catalysts --history
+python -m constellation ai-markets catalysts --delta
+python -m constellation ai-markets catalysts --transitions
+python -m constellation ai-markets catalysts --export
+```
+
+Outputs:
+
+- `outputs/ai-markets/catalysts/catalyst-monitor.json`
+- `outputs/ai-markets/catalysts/catalyst-monitor.md`
+- `outputs/ai-markets/catalysts/catalyst-priorities.json`
+- `outputs/ai-markets/catalysts/catalyst-priorities.md`
+- `outputs/ai-markets/catalysts/catalyst-history.json`
+- `outputs/ai-markets/catalysts/catalyst-delta.json`
+- `outputs/ai-markets/catalysts/catalyst-transitions.json`
+- `outputs/ai-markets/catalysts/catalyst-calendar.md`
+
+Priority is deterministic and based on explicit links to themes, risks, lifecycle status, portfolio/watchlist exposure, evidence counts, source counts, and high-impact catalyst terms such as FOMC, CPI, PCE, earnings, guidance, capex, liquidity, credit, breakout, breakdown, regulation, power bottleneck, and export controls.
+
 The goal is to create a durable research operating system that helps the user understand:
 
 - What changed

@@ -118,6 +118,35 @@ CATALYST_WORDS = ["catalyst", "launch", "approval", "earnings", "deadline", "bui
 RISK_WORDS = ["risk", "gap", "constraint", "shortage", "concern", "weakening", "contradiction", "delay"]
 QUESTION_WORDS = ["?", "open question", "needs review", "what evidence", "unclear"]
 
+CATALYST_CATEGORY_KEYWORDS = {
+    "earnings": ["earnings", "quarterly results", "revenue", "margins", "guidance", "outlook"],
+    "fed_policy": ["fed", "fomc", "rate cut", "rate hike", "policy", "powell", "minutes", "sep"],
+    "inflation": ["cpi", "pce", "inflation", "disinflation", "price pressure"],
+    "employment": ["jobs", "payrolls", "unemployment", "labor market", "wages"],
+    "liquidity": ["liquidity", "dollar", "dxy", "yields", "treasury", "qt", "qe", "reserves"],
+    "credit": ["spreads", "credit", "default", "refinancing", "debt", "high yield"],
+    "capex": ["capex", "capital expenditure", "hyperscaler spend", "data center spend", "ai spend"],
+    "product_launch": ["launch", "product release", "model release", "chip launch", "platform release"],
+    "regulation": ["regulation", "regulatory", "sec", "doj", "antitrust", "policy risk"],
+    "energy_power": ["power", "grid", "energy", "electricity", "data center power", "transformer", "nuclear", "utility"],
+    "supply_chain": ["supply chain", "shortage", "bottleneck", "capacity", "foundry", "packaging"],
+    "geopolitical": ["tariffs", "export controls", "china", "taiwan", "sanctions", "war", "conflict"],
+    "crypto_etf_flows": ["etf flows", "ibit", "spot etf", "inflows", "outflows"],
+    "bitcoin_halving_cycle": ["halving", "bitcoin cycle", "four-year cycle"],
+    "commodity_supply": ["copper", "uranium", "gold", "silver", "supply deficit", "inventories"],
+    "ai_infrastructure": ["ai infrastructure", "data center", "gpu", "compute"],
+    "semiconductor_cycle": ["semiconductor", "chip", "foundry", "wafer"],
+    "enterprise_ai_adoption": ["enterprise ai", "copilot", "ai adoption"],
+    "defense_policy": ["defense", "drone", "missile", "autonomy"],
+    "nuclear_policy": ["nuclear", "reactor", "smr", "fusion"],
+    "robotics_adoption": ["robotics", "robot", "humanoid", "automation"],
+    "technical_breakout": ["breakout", "new high", "resistance", "triangle breakout", "bullish reversal"],
+    "technical_breakdown": ["breakdown", "support break", "lower low", "bearish reversal"],
+    "risk_event": ["risk", "contradiction", "slowdown", "deterioration", "compression", "overhang", "stress"],
+}
+
+HIGH_IMPACT_CATALYST_TERMS = ["fomc", "cpi", "pce", "earnings", "guidance", "capex", "liquidity", "credit", "breakdown", "breakout", "regulation", "power bottleneck", "export controls"]
+
 INPUTS = {
     "institutional_report": Path("outputs/reports/latest-report.json"),
     "institutional_report_markdown": Path("outputs/reports/latest-report.md"),
@@ -794,6 +823,216 @@ class AIMarketsPortfolioStore:
         }
 
 
+@dataclass(frozen=True)
+class AIMarketsCatalystPriority:
+    priority: str
+    reason: str
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class AIMarketsCatalystRecord:
+    catalyst_id: str
+    title: str
+    category: str
+    description: str
+    time_horizon: str
+    priority: str
+    status: str
+    related_themes: list[str]
+    related_entities: list[str]
+    related_watchlist_symbols: list[str]
+    related_portfolio_symbols: list[str]
+    related_lifecycle_statuses: list[str]
+    related_risks: list[str]
+    related_questions: list[str]
+    evidence_ids: list[str]
+    source_paths: list[str]
+    source_count: int
+    evidence_count: int
+    first_seen_at: str
+    latest_seen_at: str
+    priority_reason: str
+    provenance: JsonMap
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class AIMarketsCatalystDelta:
+    new_catalysts: list[str]
+    removed_catalysts: list[str]
+    priority_changes: list[JsonMap]
+    status_changes: list[JsonMap]
+    time_horizon_changes: list[JsonMap]
+    related_entity_changes: list[JsonMap]
+    related_theme_changes: list[JsonMap]
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class AIMarketsCatalystTransition:
+    transition_id: str
+    catalyst_id: str
+    transition_type: str
+    previous_value: Any
+    current_value: Any
+    reason: str
+    created_at: str
+    provenance: JsonMap
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class AIMarketsCatalystSnapshot:
+    snapshot_id: str
+    created_at: str
+    catalysts: list[AIMarketsCatalystRecord]
+    delta: AIMarketsCatalystDelta
+    transitions: list[AIMarketsCatalystTransition]
+    provenance: JsonMap
+    limitations: list[str]
+
+    def to_dict(self) -> JsonMap:
+        return {
+            "snapshot_id": self.snapshot_id,
+            "created_at": self.created_at,
+            "total_catalyst_count": len(self.catalysts),
+            "high_priority_catalyst_count": sum(1 for item in self.catalysts if item.priority == "high"),
+            "near_term_catalyst_count": sum(1 for item in self.catalysts if item.time_horizon == "near_term"),
+            "portfolio_linked_catalyst_count": sum(1 for item in self.catalysts if item.related_portfolio_symbols or item.related_watchlist_symbols),
+            "risk_linked_catalyst_count": sum(1 for item in self.catalysts if item.related_risks),
+            "new_catalyst_count": len(self.delta.new_catalysts),
+            "stale_catalyst_count": sum(1 for item in self.catalysts if item.status == "stale"),
+            "catalysts": [item.to_dict() for item in self.catalysts],
+            "delta": self.delta.to_dict(),
+            "transitions": [item.to_dict() for item in self.transitions],
+            "provenance": self.provenance,
+            "limitations": self.limitations,
+        }
+
+
+class AIMarketsCatalystMonitor:
+    def __init__(self, snapshot: AIMarketsCatalystSnapshot) -> None:
+        self.snapshot = snapshot
+
+
+class AIMarketsCatalystEngine:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+
+    def build(
+        self,
+        report: AIMarketsReport,
+        lifecycle: AIMarketsThemeLifecycleSnapshot | None,
+        portfolio: AIMarketsPortfolioSnapshot | None,
+        history: list[JsonMap],
+    ) -> AIMarketsCatalystSnapshot:
+        now = _now_iso()
+        lifecycle_data = lifecycle.to_dict() if lifecycle else _read_optional_json(self.root / "outputs" / "ai-markets" / "theme-lifecycle.json")
+        lifecycle_by_theme = {str(item.get("theme_name")): item for item in _map_list(lifecycle_data.get("themes", []))}
+        portfolio_data = portfolio.to_dict() if portfolio else _read_optional_json(self.root / "outputs" / "ai-markets" / "portfolio" / "portfolio-intelligence.json")
+        portfolio_items = _map_list(portfolio_data.get("positions", [])) + _map_list(portfolio_data.get("watchlist", [])) + _map_list(portfolio_data.get("detected_entities", []))
+        previous = history[-1] if history else {}
+        previous_by_id = {str(item.get("catalyst_id")): item for item in _map_list(previous.get("catalysts", []))}
+        catalysts = _catalyst_records(report, lifecycle_by_theme, portfolio_items, now, previous_by_id)
+        current_ids = {item.catalyst_id for item in catalysts}
+        for prior in previous_by_id.values():
+            if str(prior.get("catalyst_id")) not in current_ids:
+                catalysts.append(_stale_catalyst(prior, now))
+        catalysts = sorted(catalysts, key=_catalyst_sort_key)
+        delta = _catalyst_delta(previous_by_id, catalysts)
+        transitions = _catalyst_transitions(delta, catalysts, previous_by_id, now)
+        return AIMarketsCatalystSnapshot(
+            snapshot_id=_catalyst_snapshot_id(catalysts),
+            created_at=now,
+            catalysts=catalysts,
+            delta=delta,
+            transitions=transitions,
+            provenance={"ai_markets_report_id": report.report_id, "portfolio_snapshot_id": portfolio_data.get("snapshot_id"), "theme_lifecycle_snapshot_id": lifecycle_data.get("snapshot_id")},
+            limitations=[
+                "Catalyst Monitoring uses deterministic keyword and structured record matching only.",
+                "This is research organization only and is not financial advice, market prediction, autonomous monitoring, or trading software.",
+            ],
+        )
+
+
+class AIMarketsCatalystStore:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.directory = root / "outputs" / "ai-markets" / "catalysts"
+        self.json_path = self.directory / "catalyst-monitor.json"
+        self.report_path = self.directory / "catalyst-monitor.md"
+        self.priorities_json_path = self.directory / "catalyst-priorities.json"
+        self.priorities_path = self.directory / "catalyst-priorities.md"
+        self.history_path = self.directory / "catalyst-history.json"
+        self.delta_path = self.directory / "catalyst-delta.json"
+        self.transitions_path = self.directory / "catalyst-transitions.json"
+        self.calendar_path = self.directory / "catalyst-calendar.md"
+
+    def build(
+        self,
+        report: AIMarketsReport | None = None,
+        lifecycle: AIMarketsThemeLifecycleSnapshot | None = None,
+        portfolio: AIMarketsPortfolioSnapshot | None = None,
+    ) -> AIMarketsCatalystSnapshot:
+        report = report or AIMarketsStore(self.root).load()
+        lifecycle = lifecycle or AIMarketsThemeLifecycleStore(self.root).build(report)
+        portfolio = portfolio or AIMarketsPortfolioStore(self.root).build(report, lifecycle)
+        snapshot = AIMarketsCatalystEngine(self.root).build(report, lifecycle, portfolio, self.history())
+        self.save(snapshot)
+        return snapshot
+
+    def load(self) -> JsonMap:
+        if not self.json_path.exists():
+            raise AIMarketsError("No AI & Markets catalyst monitor found. Run `python -m constellation ai-markets catalysts` first.")
+        return read_json(self.json_path)
+
+    def history(self) -> list[JsonMap]:
+        if not self.history_path.exists():
+            return []
+        return _map_list(read_json(self.history_path).get("snapshots", []))
+
+    def save(self, snapshot: AIMarketsCatalystSnapshot) -> None:
+        data = snapshot.to_dict()
+        write_json(self.json_path, data)
+        write_json(self.priorities_json_path, {"catalysts": [item.to_dict() for item in snapshot.catalysts if item.priority in {"high", "medium"}]})
+        write_json(self.delta_path, snapshot.delta.to_dict())
+        write_json(self.transitions_path, {"transitions": [item.to_dict() for item in snapshot.transitions]})
+        history = self.history()
+        if not history or history[-1].get("snapshot_id") != snapshot.snapshot_id:
+            history.append(data)
+        write_json(self.history_path, {"snapshots": history})
+        self.report_path.write_text(render_catalyst_monitor(snapshot), encoding="utf-8")
+        self.priorities_path.write_text(render_catalyst_priorities(snapshot), encoding="utf-8")
+        self.calendar_path.write_text(render_catalyst_calendar(snapshot), encoding="utf-8")
+
+    def status(self) -> JsonMap:
+        if not self.json_path.exists():
+            return {"available": False, "report_path": str(self.report_path), "calendar_path": str(self.calendar_path)}
+        data = self.load()
+        return {
+            "available": True,
+            "snapshot_id": data.get("snapshot_id"),
+            "total_catalyst_count": data.get("total_catalyst_count", 0),
+            "high_priority_catalyst_count": data.get("high_priority_catalyst_count", 0),
+            "near_term_catalyst_count": data.get("near_term_catalyst_count", 0),
+            "portfolio_linked_catalyst_count": data.get("portfolio_linked_catalyst_count", 0),
+            "risk_linked_catalyst_count": data.get("risk_linked_catalyst_count", 0),
+            "new_catalyst_count": data.get("new_catalyst_count", 0),
+            "stale_catalyst_count": data.get("stale_catalyst_count", 0),
+            "report_path": str(self.report_path),
+            "calendar_path": str(self.calendar_path),
+        }
+
+
 class AIMarketsEngine:
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -858,13 +1097,15 @@ class AIMarketsStore:
         write_json(self.directory / "executive-questions.json", {"executive_questions": [item.to_dict() for item in report.executive_questions]})
         lifecycle = AIMarketsThemeLifecycleStore(self.root).build(report)
         portfolio = AIMarketsPortfolioStore(self.root).build(report, lifecycle)
+        catalyst_monitor = AIMarketsCatalystStore(self.root).build(report, lifecycle, portfolio)
         report_data = report.to_dict()
         report_data["theme_lifecycle"] = lifecycle.to_dict()
         report_data["portfolio_intelligence"] = portfolio.to_dict()
+        report_data["catalyst_monitor"] = catalyst_monitor.to_dict()
         write_json(self.json_path, report_data)
         self.report_path.parent.mkdir(parents=True, exist_ok=True)
-        self.report_path.write_text(render_report(report, lifecycle, portfolio), encoding="utf-8")
-        self.watchlist_path.write_text(render_watchlist(report, portfolio), encoding="utf-8")
+        self.report_path.write_text(render_report(report, lifecycle, portfolio, catalyst_monitor), encoding="utf-8")
+        self.watchlist_path.write_text(render_watchlist(report, portfolio, catalyst_monitor), encoding="utf-8")
         self.content_ideas_path.write_text(render_content_ideas(report), encoding="utf-8")
         self.executive_questions_path.write_text(render_executive_questions(report), encoding="utf-8")
 
@@ -878,6 +1119,7 @@ class AIMarketsStore:
         report = self.load() if exists else None
         lifecycle_status = AIMarketsThemeLifecycleStore(self.root).status()
         portfolio_status = AIMarketsPortfolioStore(self.root).status()
+        catalyst_status = AIMarketsCatalystStore(self.root).status()
         return {
             "available": exists,
             "report_id": report.report_id if report else None,
@@ -900,20 +1142,31 @@ class AIMarketsStore:
             "portfolio_risk_count": portfolio_status.get("risk_count", 0),
             "high_priority_review_count": portfolio_status.get("high_priority_review_count", 0),
             "portfolio_report_path": portfolio_status.get("report_path"),
+            "catalyst_monitor_available": catalyst_status.get("available", False),
+            "total_catalyst_count": catalyst_status.get("total_catalyst_count", 0),
+            "high_priority_catalyst_count": catalyst_status.get("high_priority_catalyst_count", 0),
+            "near_term_catalyst_count": catalyst_status.get("near_term_catalyst_count", 0),
+            "portfolio_linked_catalyst_count": catalyst_status.get("portfolio_linked_catalyst_count", 0),
+            "risk_linked_catalyst_count": catalyst_status.get("risk_linked_catalyst_count", 0),
+            "new_catalyst_count": catalyst_status.get("new_catalyst_count", 0),
+            "stale_catalyst_count": catalyst_status.get("stale_catalyst_count", 0),
+            "catalyst_monitor_report_path": catalyst_status.get("report_path"),
+            "catalyst_calendar_path": catalyst_status.get("calendar_path"),
         }
 
     def export(self) -> Path:
         report = self.load()
         lifecycle = AIMarketsThemeLifecycleStore(self.root).build(report)
         portfolio = AIMarketsPortfolioStore(self.root).build(report, lifecycle)
-        self.report_path.write_text(render_report(report, lifecycle, portfolio), encoding="utf-8")
-        self.watchlist_path.write_text(render_watchlist(report, portfolio), encoding="utf-8")
+        catalyst_monitor = AIMarketsCatalystStore(self.root).build(report, lifecycle, portfolio)
+        self.report_path.write_text(render_report(report, lifecycle, portfolio, catalyst_monitor), encoding="utf-8")
+        self.watchlist_path.write_text(render_watchlist(report, portfolio, catalyst_monitor), encoding="utf-8")
         self.content_ideas_path.write_text(render_content_ideas(report), encoding="utf-8")
         self.executive_questions_path.write_text(render_executive_questions(report), encoding="utf-8")
         return self.report_path
 
 
-def render_report(report: AIMarketsReport, lifecycle: AIMarketsThemeLifecycleSnapshot | None = None, portfolio: AIMarketsPortfolioSnapshot | None = None) -> str:
+def render_report(report: AIMarketsReport, lifecycle: AIMarketsThemeLifecycleSnapshot | None = None, portfolio: AIMarketsPortfolioSnapshot | None = None, catalyst_monitor: AIMarketsCatalystSnapshot | None = None) -> str:
     lines = [
         "# AI & Markets Intelligence",
         "",
@@ -960,6 +1213,9 @@ def render_report(report: AIMarketsReport, lifecycle: AIMarketsThemeLifecycleSna
         "## Portfolio Intelligence",
         "",
         *_portfolio_report_lines(portfolio),
+        "## Catalyst Monitoring",
+        "",
+        *_catalyst_monitor_report_lines(catalyst_monitor),
         "## Watchlist",
         "",
         *_bullet([entity.symbol for entity in report.entities]),
@@ -979,12 +1235,15 @@ def render_report(report: AIMarketsReport, lifecycle: AIMarketsThemeLifecycleSna
     return "\n".join(lines)
 
 
-def render_watchlist(report: AIMarketsReport, portfolio: AIMarketsPortfolioSnapshot | None = None) -> str:
+def render_watchlist(report: AIMarketsReport, portfolio: AIMarketsPortfolioSnapshot | None = None, catalyst_monitor: AIMarketsCatalystSnapshot | None = None) -> str:
     lines = ["# AI & Markets Watchlist", ""]
     lines.extend(_bullet([f"{entity.symbol} - {entity.name}: {', '.join(entity.related_themes) or 'No related theme'}" for entity in report.entities]))
     if portfolio:
         lines.extend(["## Portfolio Intelligence Watchlist", ""])
         lines.extend(_bullet([f"{item.symbol} - {item.name} ({item.source}) priority={item.research_priority}" for item in portfolio.positions + portfolio.watchlist + portfolio.detected_entities]))
+    if catalyst_monitor:
+        lines.extend(["## Catalyst Watchlist", ""])
+        lines.extend(_bullet([f"{item.title} ({item.priority}, {item.time_horizon})" for item in catalyst_monitor.catalysts[:20]]))
     return "\n".join(lines)
 
 
@@ -1137,6 +1396,79 @@ def render_portfolio_questions(snapshot: AIMarketsPortfolioSnapshot) -> str:
     return "\n".join(lines)
 
 
+def render_catalyst_monitor(snapshot: AIMarketsCatalystSnapshot) -> str:
+    data = snapshot.to_dict()
+    lines = [
+        "# AI & Markets Catalyst Monitor",
+        "",
+        "This is deterministic research organization only. It is not financial advice, market prediction, autonomous monitoring, or trading software.",
+        "",
+        "## Executive Summary",
+        "",
+        f"- Snapshot ID: `{snapshot.snapshot_id}`",
+        f"- Total catalysts: {len(snapshot.catalysts)}",
+        f"- High-priority catalysts: {data.get('high_priority_catalyst_count', 0)}",
+        f"- Portfolio/watchlist-linked catalysts: {data.get('portfolio_linked_catalyst_count', 0)}",
+        f"- Risk-linked catalysts: {data.get('risk_linked_catalyst_count', 0)}",
+        f"- New catalysts: {data.get('new_catalyst_count', 0)}",
+        f"- Stale catalysts: {data.get('stale_catalyst_count', 0)}",
+        "",
+        "## High-Priority Catalysts",
+        "",
+        *_bullet([f"{item.title} ({item.category}, {item.time_horizon}) - {item.priority_reason}" for item in snapshot.catalysts if item.priority == "high"] or ["No high-priority catalysts found."]),
+        "## Catalyst Calendar / Time Horizon",
+        "",
+        *_catalyst_calendar_lines(snapshot),
+        "## Theme-Linked Catalysts",
+        "",
+        *_bullet([f"{item.title}: {', '.join(item.related_themes)}" for item in snapshot.catalysts if item.related_themes] or ["No theme-linked catalysts found."]),
+        "## Watchlist / Portfolio-Linked Catalysts",
+        "",
+        *_bullet([f"{item.title}: {', '.join(sorted(set(item.related_watchlist_symbols + item.related_portfolio_symbols)))}" for item in snapshot.catalysts if item.related_watchlist_symbols or item.related_portfolio_symbols] or ["No watchlist or portfolio-linked catalysts found."]),
+        "## Risk-Linked Catalysts",
+        "",
+        *_bullet([f"{item.title}: {', '.join(item.related_risks)}" for item in snapshot.catalysts if item.related_risks] or ["No risk-linked catalysts found."]),
+        "## New Catalysts",
+        "",
+        *_bullet(snapshot.delta.new_catalysts or ["No new catalysts."]),
+        "## Stale or Resolved Catalysts",
+        "",
+        *_bullet([item.title for item in snapshot.catalysts if item.status in {"stale", "resolved"}] or ["No stale or resolved catalysts."]),
+        "## Recent Catalyst Changes",
+        "",
+        *_bullet([f"{item.transition_type}: {item.catalyst_id}" for item in snapshot.transitions[:20]] or ["No recent catalyst changes."]),
+        "## Evidence References",
+        "",
+        *_bullet(sorted({evidence for item in snapshot.catalysts for evidence in item.evidence_ids})[:50] or ["No linked evidence IDs found."]),
+        "## Limitations",
+        "",
+        *_bullet(snapshot.limitations),
+        "## Provenance",
+        "",
+        *_bullet([f"{key}: {value}" for key, value in snapshot.provenance.items()]),
+    ]
+    return "\n".join(lines)
+
+
+def render_catalyst_priorities(snapshot: AIMarketsCatalystSnapshot) -> str:
+    lines = ["# AI & Markets Catalyst Priorities", ""]
+    lines.extend(_bullet([f"{item.priority}: {item.title} ({item.category}) - {item.priority_reason}" for item in snapshot.catalysts if item.priority in {"high", "medium"}] or ["No high or medium priority catalysts found."]))
+    return "\n".join(lines)
+
+
+def render_catalyst_calendar(snapshot: AIMarketsCatalystSnapshot) -> str:
+    return "\n".join(["# AI & Markets Catalyst Calendar", "", *_catalyst_calendar_lines(snapshot)])
+
+
+def _catalyst_calendar_lines(snapshot: AIMarketsCatalystSnapshot) -> list[str]:
+    lines: list[str] = []
+    for horizon in ["immediate", "near_term", "medium_term", "long_term", "unknown"]:
+        lines.extend([f"### {horizon}", ""])
+        items = [item for item in snapshot.catalysts if item.time_horizon == horizon]
+        lines.extend(_bullet([f"{item.title} ({item.priority})" for item in items] or [f"No {horizon} catalysts."]))
+    return lines
+
+
 def _theme_lifecycle_report_lines(lifecycle: AIMarketsThemeLifecycleSnapshot | None) -> list[str]:
     if lifecycle is None:
         return ["- Theme lifecycle has not been generated.", ""]
@@ -1174,6 +1506,24 @@ def _portfolio_report_lines(portfolio: AIMarketsPortfolioSnapshot | None) -> lis
         f"- Portfolio-linked risks: {len(portfolio.risks)}",
         f"- High-priority reviews: {portfolio.to_dict().get('high_priority_review_count', 0)}",
         "- Portfolio report: `outputs/ai-markets/portfolio/portfolio-intelligence.md`",
+        "",
+    ]
+
+
+def _catalyst_monitor_report_lines(snapshot: AIMarketsCatalystSnapshot | None) -> list[str]:
+    if snapshot is None:
+        return ["- Catalyst Monitoring has not been generated.", ""]
+    data = snapshot.to_dict()
+    return [
+        f"- Total catalysts: {len(snapshot.catalysts)}",
+        f"- High-priority catalysts: {data.get('high_priority_catalyst_count', 0)}",
+        f"- Near-term catalysts: {data.get('near_term_catalyst_count', 0)}",
+        f"- Portfolio/watchlist-linked catalysts: {data.get('portfolio_linked_catalyst_count', 0)}",
+        f"- Risk-linked catalysts: {data.get('risk_linked_catalyst_count', 0)}",
+        f"- New catalysts: {data.get('new_catalyst_count', 0)}",
+        f"- Stale catalysts: {data.get('stale_catalyst_count', 0)}",
+        "- Catalyst monitor: `outputs/ai-markets/catalysts/catalyst-monitor.md`",
+        "- Catalyst calendar: `outputs/ai-markets/catalysts/catalyst-calendar.md`",
         "",
     ]
 
@@ -1828,6 +2178,210 @@ def _portfolio_risk_sort_key(item: AIMarketsPortfolioRisk):
 
 def _portfolio_question_sort_key(item: AIMarketsPortfolioQuestion):
     return (_priority_rank(item.priority), item.question_id)
+
+
+def _catalyst_records(
+    report: AIMarketsReport,
+    lifecycle_by_theme: dict[str, JsonMap],
+    portfolio_items: list[JsonMap],
+    now: str,
+    previous_by_id: dict[str, JsonMap],
+) -> list[AIMarketsCatalystRecord]:
+    records: list[AIMarketsCatalystRecord] = []
+    for catalyst in report.catalysts:
+        text = catalyst.description
+        category = _catalyst_category(text)
+        themes = catalyst.related_themes
+        entities = catalyst.related_entities
+        lifecycle_statuses = sorted({str(_map(lifecycle_by_theme.get(theme)).get("current_status")) for theme in themes if lifecycle_by_theme.get(theme)})
+        watchlist_symbols, portfolio_symbols = _catalyst_portfolio_symbols(themes, entities, portfolio_items)
+        risks = sorted({risk.risk_id for risk in report.risks if set(risk.related_themes).intersection(themes) or set(risk.related_entities).intersection(entities)})
+        questions = sorted({question.question_id for question in report.open_questions if set(question.related_themes).intersection(themes)})
+        time_horizon = _catalyst_time_horizon(text)
+        priority, reason = _catalyst_priority(themes, risks, lifecycle_statuses, watchlist_symbols, portfolio_symbols, text, catalyst.evidence_ids, catalyst.provenance)
+        status = _catalyst_status(text, catalyst.catalyst_id in previous_by_id, bool(watchlist_symbols or portfolio_symbols), lifecycle_statuses)
+        previous = _map(previous_by_id.get(catalyst.catalyst_id))
+        records.append(
+            AIMarketsCatalystRecord(
+                catalyst.catalyst_id,
+                _short(text),
+                category,
+                text,
+                time_horizon,
+                priority,
+                status,
+                themes,
+                entities,
+                watchlist_symbols,
+                portfolio_symbols,
+                lifecycle_statuses,
+                risks,
+                questions,
+                catalyst.evidence_ids,
+                _string_list(_map(catalyst.provenance).get("provenance", [])) or [str(_map(catalyst.provenance).get("provenance", "outputs/ai-markets/catalysts.json"))],
+                len(set(_string_list(_map(catalyst.provenance).get("provenance", [])))) or 1,
+                len(catalyst.evidence_ids),
+                str(previous.get("first_seen_at") or now),
+                now,
+                reason,
+                catalyst.provenance,
+            )
+        )
+    return _unique(records, "catalyst_id")
+
+
+def _stale_catalyst(previous: JsonMap, now: str) -> AIMarketsCatalystRecord:
+    return AIMarketsCatalystRecord(
+        str(previous.get("catalyst_id")),
+        str(previous.get("title")),
+        str(previous.get("category", "unknown")),
+        str(previous.get("description", "")),
+        str(previous.get("time_horizon", "unknown")),
+        str(previous.get("priority", "low")),
+        "stale",
+        _string_list(previous.get("related_themes", [])),
+        _string_list(previous.get("related_entities", [])),
+        _string_list(previous.get("related_watchlist_symbols", [])),
+        _string_list(previous.get("related_portfolio_symbols", [])),
+        _string_list(previous.get("related_lifecycle_statuses", [])),
+        _string_list(previous.get("related_risks", [])),
+        _string_list(previous.get("related_questions", [])),
+        _string_list(previous.get("evidence_ids", [])),
+        _string_list(previous.get("source_paths", [])),
+        _int(previous.get("source_count")),
+        _int(previous.get("evidence_count")),
+        str(previous.get("first_seen_at", now)),
+        str(previous.get("latest_seen_at", now)),
+        "Monitor because this catalyst existed historically but is absent from the current snapshot.",
+        _map(previous.get("provenance")),
+    )
+
+
+def _catalyst_category(text: str) -> str:
+    for category, keywords in CATALYST_CATEGORY_KEYWORDS.items():
+        if _contains_any(text, keywords):
+            return category
+    return "unknown"
+
+
+def _catalyst_time_horizon(text: str) -> str:
+    lower = text.lower()
+    if _contains_any(lower, ["today", "tomorrow", "this morning", "this afternoon", "closing bell", "live", "now"]):
+        return "immediate"
+    if _contains_any(lower, ["this week", "next week", "upcoming", "ahead of", "this month"]):
+        return "near_term"
+    if _contains_any(lower, ["this quarter", "earnings season", "next quarter", "second half", "h2", "q1", "q2", "q3", "q4"]):
+        return "medium_term"
+    if _contains_any(lower, ["cycle", "multi-year", "secular", "structural", "long-term"]):
+        return "long_term"
+    return "unknown"
+
+
+def _catalyst_priority(themes, risks, statuses, watchlist_symbols, portfolio_symbols, text, evidence_ids, provenance) -> tuple[str, str]:
+    linked_config = bool(watchlist_symbols or portfolio_symbols)
+    elevated_status = any(status in {"active", "strengthening", "high_conviction", "weakening", "contradicted"} for status in statuses)
+    if (linked_config and elevated_status) or len(themes) >= 2 or len(risks) >= 2 or _contains_any(text, HIGH_IMPACT_CATALYST_TERMS):
+        return "high", "Monitor because catalyst is linked to configured/detected exposure, multiple themes/risks, or high-impact catalyst terms."
+    if len(themes) == 1 or len(evidence_ids) >= 2:
+        return "medium", "Monitor because catalyst is linked to one theme or repeated evidence."
+    return "low", "Monitor because catalyst is weakly supported or not linked to themes/entities/watchlist."
+
+
+def _catalyst_status(text: str, repeated: bool, linked: bool, statuses: list[str]) -> str:
+    lower = text.lower()
+    if _contains_any(lower, ["resolved", "passed", "completed"]):
+        return "resolved"
+    if linked or any(status == "active" for status in statuses):
+        return "monitoring"
+    return "active"
+
+
+def _catalyst_portfolio_symbols(themes: list[str], entities: list[str], portfolio_items: list[JsonMap]) -> tuple[list[str], list[str]]:
+    watchlist: set[str] = set()
+    positions: set[str] = set()
+    for item in portfolio_items:
+        symbol = str(item.get("symbol", ""))
+        related = set(_string_list(item.get("related_themes", []))).intersection(themes) or symbol in entities
+        if not related:
+            continue
+        if item.get("source") == "portfolio_config":
+            positions.add(symbol)
+        else:
+            watchlist.add(symbol)
+    return sorted(watchlist), sorted(positions)
+
+
+def _catalyst_delta(previous_by_id: dict[str, JsonMap], current: list[AIMarketsCatalystRecord]) -> AIMarketsCatalystDelta:
+    current_by_id = {item.catalyst_id: item for item in current}
+    new_ids = sorted(set(current_by_id) - set(previous_by_id))
+    removed_ids = sorted(set(previous_by_id) - {item.catalyst_id for item in current if item.status != "stale"})
+    return AIMarketsCatalystDelta(
+        new_ids,
+        removed_ids,
+        _field_changes(previous_by_id, current_by_id, "priority"),
+        _field_changes(previous_by_id, current_by_id, "status"),
+        _field_changes(previous_by_id, current_by_id, "time_horizon"),
+        _field_changes(previous_by_id, current_by_id, "related_entities"),
+        _field_changes(previous_by_id, current_by_id, "related_themes"),
+    )
+
+
+def _field_changes(previous_by_id: dict[str, JsonMap], current_by_id: dict[str, AIMarketsCatalystRecord], field: str) -> list[JsonMap]:
+    changes = []
+    for catalyst_id, current in current_by_id.items():
+        if catalyst_id not in previous_by_id:
+            continue
+        previous_value = previous_by_id[catalyst_id].get(field)
+        current_value = current.to_dict().get(field)
+        if previous_value != current_value:
+            changes.append({"catalyst_id": catalyst_id, "previous_value": previous_value, "current_value": current_value})
+    return sorted(changes, key=lambda item: str(item.get("catalyst_id")))
+
+
+def _catalyst_transitions(delta: AIMarketsCatalystDelta, catalysts: list[AIMarketsCatalystRecord], previous_by_id: dict[str, JsonMap], now: str) -> list[AIMarketsCatalystTransition]:
+    transitions: list[AIMarketsCatalystTransition] = []
+    by_id = {item.catalyst_id: item for item in catalysts}
+    for catalyst_id in delta.new_catalysts:
+        transitions.append(_catalyst_transition(catalyst_id, "new_catalyst", None, catalyst_id, now))
+    for catalyst_id in delta.removed_catalysts:
+        transitions.append(_catalyst_transition(catalyst_id, "removed_catalyst", catalyst_id, None, now))
+    mapping = [
+        ("priority_changed", delta.priority_changes),
+        ("status_changed", delta.status_changes),
+        ("time_horizon_changed", delta.time_horizon_changes),
+        ("entity_link_changed", delta.related_entity_changes),
+        ("theme_link_changed", delta.related_theme_changes),
+    ]
+    for transition_type, changes in mapping:
+        for change in changes:
+            transitions.append(_catalyst_transition(str(change.get("catalyst_id")), transition_type, change.get("previous_value"), change.get("current_value"), now))
+    return sorted(transitions, key=lambda item: (item.transition_type, item.catalyst_id, item.transition_id))
+
+
+def _catalyst_transition(catalyst_id: str, transition_type: str, previous_value: Any, current_value: Any, now: str) -> AIMarketsCatalystTransition:
+    return AIMarketsCatalystTransition(
+        f"catalyst_transition_{_digest(f'{catalyst_id}|{transition_type}|{previous_value}|{current_value}')}",
+        catalyst_id,
+        transition_type,
+        previous_value,
+        current_value,
+        f"{transition_type} for {catalyst_id}.",
+        now,
+        {"source": "outputs/ai-markets/catalysts/catalyst-monitor.json"},
+    )
+
+
+def _catalyst_snapshot_id(catalysts: list[AIMarketsCatalystRecord]) -> str:
+    payload = "|".join(f"{item.catalyst_id}:{item.priority}:{item.status}:{item.time_horizon}:{','.join(item.related_themes)}:{','.join(item.related_entities)}" for item in catalysts)
+    return f"ai_markets_catalysts_{_digest(payload)}"
+
+
+def _catalyst_sort_key(item: AIMarketsCatalystRecord):
+    return (_priority_rank(item.priority), _time_horizon_rank(item.time_horizon), 0 if item.related_watchlist_symbols or item.related_portfolio_symbols else 1, 0 if item.related_risks else 1, -item.evidence_count, -item.source_count, item.category, item.catalyst_id)
+
+
+def _time_horizon_rank(value: str) -> int:
+    return {"immediate": 0, "near_term": 1, "medium_term": 2, "long_term": 3, "unknown": 4}.get(value, 5)
 
 
 def _priority_rank(priority: str) -> int:

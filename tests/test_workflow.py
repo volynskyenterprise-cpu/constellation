@@ -293,6 +293,7 @@ _MORNING_COMMANDS = [
     "ai-markets build",
     "ai-markets lifecycle",
     "ai-markets portfolio",
+    "ai-markets catalysts",
 ]
 
 

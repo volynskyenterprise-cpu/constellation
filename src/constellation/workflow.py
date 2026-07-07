@@ -8,7 +8,7 @@ from time import perf_counter
 from typing import Any, Callable
 
 from . import __version__
-from .ai_markets import AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore
+from .ai_markets import AIMarketsCatalystStore, AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .daily import DailyPipelineStore
 from .dashboard import ExecutiveDashboardStore
@@ -157,6 +157,7 @@ class WorkflowEngine:
             "ai-markets build": self._ai_markets_build,
             "ai-markets lifecycle": self._ai_markets_lifecycle,
             "ai-markets portfolio": self._ai_markets_portfolio,
+            "ai-markets catalysts": self._ai_markets_catalysts,
         }
 
     def run(self, definition: WorkflowDefinition) -> WorkflowRun:
@@ -318,6 +319,7 @@ class WorkflowEngine:
         report = AIMarketsStore(self.root).build()
         lifecycle_status = AIMarketsThemeLifecycleStore(self.root).status()
         portfolio_status = AIMarketsPortfolioStore(self.root).status()
+        catalyst_status = AIMarketsCatalystStore(self.root).status()
         total_questions = sum(_int(_map(question.provenance).get("variant_count")) or 1 for question in report.open_questions)
         return {
             "status": "completed",
@@ -344,6 +346,14 @@ class WorkflowEngine:
             "portfolio_risk_count": portfolio_status.get("risk_count", 0),
             "high_priority_review_count": portfolio_status.get("high_priority_review_count", 0),
             "portfolio_report_path": portfolio_status.get("report_path"),
+            "catalyst_monitor_available": catalyst_status.get("available", False),
+            "total_catalyst_count": catalyst_status.get("total_catalyst_count", 0),
+            "high_priority_catalyst_count": catalyst_status.get("high_priority_catalyst_count", 0),
+            "portfolio_linked_catalyst_count": catalyst_status.get("portfolio_linked_catalyst_count", 0),
+            "risk_linked_catalyst_count": catalyst_status.get("risk_linked_catalyst_count", 0),
+            "new_catalyst_count": catalyst_status.get("new_catalyst_count", 0),
+            "catalyst_monitor_report_path": catalyst_status.get("report_path"),
+            "catalyst_calendar_path": catalyst_status.get("calendar_path"),
         }
 
     def _ai_markets_lifecycle(self, arguments: JsonMap) -> JsonMap:
@@ -372,6 +382,22 @@ class WorkflowEngine:
             "portfolio_risk_count": len(snapshot.risks),
             "high_priority_review_count": data.get("high_priority_review_count", 0),
             "portfolio_report_path": str(AIMarketsPortfolioStore(self.root).report_path),
+        }
+
+    def _ai_markets_catalysts(self, arguments: JsonMap) -> JsonMap:
+        snapshot = AIMarketsCatalystStore(self.root).build()
+        data = snapshot.to_dict()
+        return {
+            "status": "completed",
+            "snapshot_id": snapshot.snapshot_id,
+            "catalyst_monitor_available": True,
+            "total_catalyst_count": data.get("total_catalyst_count", 0),
+            "high_priority_catalyst_count": data.get("high_priority_catalyst_count", 0),
+            "portfolio_linked_catalyst_count": data.get("portfolio_linked_catalyst_count", 0),
+            "risk_linked_catalyst_count": data.get("risk_linked_catalyst_count", 0),
+            "new_catalyst_count": data.get("new_catalyst_count", 0),
+            "catalyst_monitor_report_path": str(AIMarketsCatalystStore(self.root).report_path),
+            "catalyst_calendar_path": str(AIMarketsCatalystStore(self.root).calendar_path),
         }
 
 
@@ -511,6 +537,14 @@ def render_workflow_report(run: WorkflowRun) -> str:
                 f"- Portfolio risks: {details.get('portfolio_risk_count', 0)}",
                 f"- High-priority reviews: {details.get('high_priority_review_count', 0)}",
                 f"- Portfolio report: `{details.get('portfolio_report_path', '')}`",
+                f"- Catalyst monitor available: {details.get('catalyst_monitor_available', False)}",
+                f"- Total catalysts: {details.get('total_catalyst_count', 0)}",
+                f"- High-priority catalysts: {details.get('high_priority_catalyst_count', 0)}",
+                f"- Portfolio-linked catalysts: {details.get('portfolio_linked_catalyst_count', 0)}",
+                f"- Risk-linked catalysts: {details.get('risk_linked_catalyst_count', 0)}",
+                f"- New catalysts: {details.get('new_catalyst_count', 0)}",
+                f"- Catalyst monitor report: `{details.get('catalyst_monitor_report_path', '')}`",
+                f"- Catalyst calendar: `{details.get('catalyst_calendar_path', '')}`",
                 "",
             ]
         )
@@ -558,6 +592,7 @@ def _built_in_workflows() -> list[WorkflowDefinition]:
                 _step("AI & Markets Intelligence", "ai-markets build"),
                 _step("AI & Markets Theme Lifecycle", "ai-markets lifecycle"),
                 _step("AI & Markets Portfolio Intelligence", "ai-markets portfolio"),
+                _step("AI & Markets Catalyst Monitoring", "ai-markets catalysts"),
             ],
         ),
         WorkflowDefinition(
