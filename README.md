@@ -2,9 +2,11 @@
 
 > **Current Status — Phase I Complete (v4.2)**
 >
-> Constellation is a deterministic institutional intelligence platform that transforms research into evidence, knowledge graphs, evolving theses, executive dashboards, and institutional research reports.
+> Constellation AI is an Institutional Investment Operating System.
 >
-> The core intelligence platform is complete. Future development is focused on domain-specific intelligence for AI & Markets, capital allocation, and real estate while preserving deterministic, evidence-first reasoning with complete provenance.
+> It improves investment judgment over time by converting research into intelligence, intelligence into understanding, understanding into decisions, and decisions into learning.
+>
+> The system is not an AI investing tool. It is a deterministic operating system for institutional research, signal processing, decision support, and learning.
 
 **No hallucinations.**
 
@@ -50,9 +52,9 @@ Constellation is built around six principles:
 
 ---
 
-# Features
+# Capabilities
 
-Current capabilities include:
+Current institutional capabilities include:
 
 - ✅ Research Organization
 - ✅ PKOS Knowledge Organization
@@ -544,78 +546,119 @@ Current guarantees include:
 
 ---
 
-# Roadmap
+# Constellation AI Capability Roadmap
 
-## Phase I — Core Intelligence Platform ✅ *(Completed)*
+Constellation AI is an Institutional Investment Operating System.
 
-The deterministic intelligence foundation is complete.
+It is designed to improve investment judgment over time by converting research into intelligence, intelligence into understanding, understanding into decisions, and decisions into learning.
 
-### Intelligence Core
+## Phase I - Observe
 
-- ✅ Research Intake Pipeline
-- ✅ Google Drive Connector
-- ✅ Research Organization
-- ✅ Evidence Engine
-- ✅ Institutional Memory
-- ✅ Knowledge Graph
-- ✅ Evidence Graph
+### v5.0.x - Intelligence
 
-### Intelligence Layer
+Build market awareness and signal structure.
 
-- ✅ Cross-Document Analysis
-- ✅ Thesis Engine
-- ✅ Thesis Intelligence
-- ✅ Knowledge Evolution
+- v5.0.0 - AI & Markets Intelligence
+- v5.0.1 - Signal Refinement
 
-### Executive Layer
+Primary question answered:
 
-- ✅ Daily Intelligence Pipeline
-- ✅ Morning Executive Intelligence
-- ✅ Executive Dashboard
-- ✅ Institutional Research Reports
+> What is happening?
 
-### Automation Layer
+## Phase II - Understand
 
-- ✅ Source Monitoring
-- Workflow Automation Engine
-- Knowledge Evolution Engine
-- Institutional Research Reports
-- ✅ Institutional Intelligence
-- ✅ Intake Pipeline
-- ✅ Google Drive Connector
-- ✅ Morning Executive Intelligence
-- ✅ Institutional Memory
+### v5.1.x - v5.3.x - Contextual Understanding
 
-## Coming Next
+Build context around themes, exposures, catalysts, and risks.
 
-- Gmail Connector
-- Calendar Connector
-- Folder Watchers
-- Human Approval Workflows
-- Optional AI-assisted reasoning layered on deterministic evidence
+- v5.1.0 - Theme Lifecycle
+- v5.2.0 - Portfolio Intelligence
+- v5.3.0 - Catalyst Monitoring
 
----
+Primary question answered:
 
-## Platform Principles
+> Why does it matter?
 
-Constellation remains intentionally deterministic.
+## Phase III - Decide
 
-Every capability is built upon:
+### v5.4.x - v5.5.x - Judgment Support
 
-- Complete provenance
-- Deterministic processing
-- Human oversight
-- Evidence-first reasoning
-- Local-first architecture
-- No hidden inference
-- Reproducible outputs
-  
-## Future Vision
+Improve research discipline, decision quality, and daily prioritization.
 
-- Multi-provider intelligence
-- Institutional knowledge evolution
-- Executive workbench
-- Constellation Operating System
+- v5.4.0 - Decision Journal
+- v5.5.0 - Executive Morning Brief
+
+Primary question answered:
+
+> What should I do today from a research and decision-support standpoint?
+
+## Phase IV - Improve
+
+### v6.0.x - Performance Intelligence
+
+Close the loop between decisions and outcomes.
+
+Planned capabilities:
+
+- Attribution analysis
+- Win/loss analysis
+- Thesis accuracy tracking
+- Signal quality scoring
+- Forecast calibration
+- Portfolio decision review
+- Process improvement recommendations
+
+Primary question answered:
+
+> How can I become a better investor?
+
+## Operating Philosophy
+
+Most investment platforms optimize for finding more signals.
+
+Constellation AI optimizes for making better decisions.
+
+The system is designed to progress through the institutional decision loop:
+
+```text
+Data
+↓
+Information
+↓
+Intelligence
+↓
+Understanding
+↓
+Judgment
+↓
+Decision
+↓
+Learning
+```
+
+Each release adds a durable institutional capability rather than a standalone feature.
+
+## Ecosystem Positioning
+
+Constellation AI is one operating system inside a broader ecosystem.
+
+- PKOS: Executive Operating System
+- Constellation AI: Investment Operating System
+- Lodestar OS: Business Operating System
+- AI & Markets: Public-facing communication and audience building
+- Lodestar AI Store: Commercialization and product distribution
+
+Responsibility boundaries:
+
+| Platform | Responsibility |
+| --- | --- |
+| PKOS | Executive execution and knowledge orchestration |
+| Constellation AI | Investment research, signal processing, and decision support |
+| Lodestar OS | Business operations and coordination across business engines |
+| AI & Markets | Public-facing communication and audience building |
+| Lodestar AI Store | Commercialization and product distribution |
+
+These systems should integrate at the ecosystem level while preserving distinct responsibilities. They should not be merged conceptually.
 
 ---
 

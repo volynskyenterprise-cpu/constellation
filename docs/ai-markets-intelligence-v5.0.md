@@ -2,7 +2,9 @@
 
 ## Product Vision
 
-Constellation v5.0 marks the transition from a deterministic intelligence platform into a domain-specific institutional research system.
+Constellation v5.0 marks the transition from a deterministic intelligence platform into an Institutional Investment Operating System.
+
+Constellation AI is not an AI investing tool. It is designed to improve investment judgment over time by converting research into intelligence, intelligence into understanding, understanding into decisions, and decisions into learning.
 
 Phase I built the core infrastructure:
 
@@ -22,7 +24,20 @@ The first domain is **AI & Markets**.
 
 AI & Markets Intelligence is designed to help track, organize, and evolve institutional-grade research across artificial intelligence, capital markets, infrastructure, commodities, digital assets, and macroeconomic regime change.
 
-The goal is not to predict markets automatically.
+The goal is not to predict markets automatically. The goal is to build durable institutional capability around market awareness, contextual understanding, decision support, and learning.
+
+## Capability Roadmap
+
+Constellation AI follows a capability-centric roadmap:
+
+| Phase | Versions | Capability | Primary Question |
+| --- | --- | --- | --- |
+| Observe | v5.0.x | Intelligence | What is happening? |
+| Understand | v5.1.x - v5.3.x | Contextual Understanding | Why does it matter? |
+| Decide | v5.4.x - v5.5.x | Judgment Support | What should I do today from a research and decision-support standpoint? |
+| Improve | v6.0.x | Performance Intelligence | How can I become a better investor? |
+
+Each release adds a durable institutional capability rather than a standalone feature.
 
 ## v5.0.1 Signal Refinement
 

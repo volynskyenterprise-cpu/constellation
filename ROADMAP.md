@@ -1,397 +1,125 @@
-# Roadmap
-
-Constellation should evolve in phases. The first objective is to prove the operating model before building heavy automation.
+# Constellation AI Capability Roadmap
 
-## MVP Scope
+Constellation AI is an Institutional Investment Operating System.
 
-The MVP should establish the smallest useful version of the system:
+It is designed to improve investment judgment over time by converting research into intelligence, intelligence into understanding, understanding into decisions, and decisions into learning.
 
-- Document-first project structure
-- V1 agent specifications
-- Standard agent input/output contract
-- Manual or semi-automated workflows
-- File-based memory
-- Explicit human approval gates
-- Structured markdown audit logs
-- Codex execution environment
-- Model-agnostic architecture assumptions
+---
 
-## MVP Goals
+## Phase I - Observe
 
-The MVP should prove that Constellation can:
+### v5.0.x - Intelligence
 
-- Coordinate multiple expert roles
-- Improve quality through critique and validation
-- Preserve decisions and lessons
-- Make human approvals explicit
-- Produce reusable professional artifacts
-- Support repeatable workflows
+Build market awareness and signal structure.
 
-## MVP Non-Goals
+- v5.0.0 - AI & Markets Intelligence
+- v5.0.1 - Signal Refinement
 
-The MVP should not attempt:
+Primary question answered:
 
-- Full autonomy
-- Complex service infrastructure
-- Multi-tenant governance
-- Provider marketplace
-- Real-time collaboration
-- Advanced vector search
-- Automated tool permission enforcement
-- Custom UI
+> What is happening?
 
-## Phase 0: Blueprint
+---
 
-Status: current phase.
+## Phase II - Understand
 
-Deliverables:
+### v5.1.x - v5.3.x - Contextual Understanding
 
-- Product definition
-- Core philosophy
-- System architecture
-- Repository structure
-- Agent lifecycle
-- Agent input/output contract
-- Workflow engine design
-- Memory architecture
-- Approval gate design
-- Audit trail design
-- Configuration strategy
-- Error handling principles
-- MVP scope
-- Future roadmap
+Build context around themes, exposures, catalysts, and risks.
 
-Exit criteria:
+- v5.1.0 - Theme Lifecycle
+- v5.2.0 - Portfolio Intelligence
+- v5.3.0 - Catalyst Monitoring
 
-- The founding documentation is coherent
-- The agent model is understandable
-- The first implementation path is clear
-- No implementation code has been introduced
+Primary question answered:
 
-## Phase 1: Document-First Operating System
+> Why does it matter?
 
-Goal:
+---
 
-Create the initial Constellation repository using markdown-based agents, workflows, memory, approvals, and logs.
+## Phase III - Decide
 
-Deliverables:
+### v5.4.x - v5.5.x - Judgment Support
 
-- `agents/` definitions for all V1 agents
-- `workflows/` definitions for core workflows
-- `memory/` templates
-- `approvals/` templates
-- `logs/` templates
-- `config/` markdown configuration files
-- Operating manual
+Improve research discipline, decision quality, and daily prioritization.
 
-Core workflows:
+- v5.4.0 - Decision Journal
+- v5.5.0 - Executive Morning Brief
 
-- Product definition
-- Architecture review
-- Implementation planning
-- Documentation review
-- QA review
-- Release readiness
+Primary question answered:
 
-Exit criteria:
+> What should I do today from a research and decision-support standpoint?
 
-- A human can run a Constellation workflow manually in Codex
-- Agent handoffs follow the standard contract
-- Approval gates are visible
-- Memory updates are proposed and curated
-- Logs can reconstruct what happened
+---
 
-## Phase 2: The Organization
+## Phase IV - Improve
 
-Goal:
+### v6.0.x - Performance Intelligence
 
-Define Constellation as a durable professional organization before adding more runtime automation.
+Close the loop between decisions and outcomes.
 
-Deliverables:
+Planned capabilities:
 
-- `crew/` organizational layer
-- Professional role profiles
-- Responsibility and authority definitions
-- Communication and challenge protocols
-- Role-specific methodologies
-- Role-specific memory policies
-- Prompt templates derived from professional doctrine
-- Organization-wide collaboration and escalation rules
+- Attribution analysis
+- Win/loss analysis
+- Thesis accuracy tracking
+- Signal quality scoring
+- Forecast calibration
+- Portfolio decision review
+- Process improvement recommendations
 
-Capabilities:
+Primary question answered:
 
-- Treat agents as professionals, not prompt wrappers
-- Add future domain experts through a hiring standard
-- Preserve human authority in organizational design
-- Make cross-role disagreement explicit and useful
-- Connect future runtime behavior to role doctrine
+> How can I become a better investor?
 
-Exit criteria:
+---
 
-- Every founding role has a complete crew folder
-- Collaboration and escalation rules are documented
-- Future domain experts can be added without changing core architecture
-- Runtime implementation can later consume crew doctrine intentionally
+## Operating Philosophy
 
-## Phase 2b: Guided Codex Runtime
+Most investment platforms optimize for finding more signals.
 
-Goal:
+Constellation AI optimizes for making better decisions.
 
-Make Codex execution more systematic while keeping the system inspectable.
+The system is designed to progress through the institutional decision loop:
 
-Deliverables:
+```text
+Data
+↓
+Information
+↓
+Intelligence
+↓
+Understanding
+↓
+Judgment
+↓
+Decision
+↓
+Learning
+```
 
-- Workflow run templates
-- Agent invocation templates
-- Structured output templates
-- Run log conventions
-- Context packet generation process
-- Memory curation process
-- Validation checklists
+Each release adds a durable institutional capability rather than a standalone feature.
 
-## Phase 3: Lightweight Orchestration
+---
 
-Goal:
+## Ecosystem Positioning
 
-Introduce a minimal runtime that can parse workflow and agent definitions, track state, and enforce simple gates.
+Constellation AI is one operating system inside a broader ecosystem.
 
-Deliverables:
+- PKOS: Executive Operating System
+- Constellation AI: Investment Operating System
+- Lodestar OS: Business Operating System
+- AI & Markets: Public-facing communication and audience building
+- Lodestar AI Store: Commercialization and product distribution
 
-- Workflow state model
-- Agent registry
-- Provider abstraction
-- File-based run store
-- Approval state tracking
-- JSONL event logs
-- Basic validation hooks
+Responsibility boundaries:
 
-Capabilities:
+| Platform | Responsibility |
+| --- | --- |
+| PKOS | Executive execution and knowledge orchestration |
+| Constellation AI | Investment research, signal processing, and decision support |
+| Lodestar OS | Business operations and coordination across business engines |
+| AI & Markets | Public-facing communication and audience building |
+| Lodestar AI Store | Commercialization and product distribution |
 
-- Create workflow runs
-- Track step status
-- Route tasks to selected providers
-- Enforce required approval gates
-- Persist structured logs
-- Generate run summaries
-
-Exit criteria:
-
-- The runtime reduces manual coordination work
-- The document-first model remains readable
-- No provider-specific assumptions leak into agent specs
-
-## Phase 4: Provider And Tool Abstraction
-
-Goal:
-
-Support multiple model providers and tool capability profiles.
-
-Deliverables:
-
-- Provider capability interface
-- Model routing configuration
-- Provider fallback policy
-- Tool permission declarations
-- Cost and usage tracking
-- Provider-specific adapters
-
-Target providers:
-
-- Codex
-- OpenAI GPT models
-- Claude
-- Gemini
-- Local models
-
-Exit criteria:
-
-- Agents can run on different providers without changing their role definitions
-- Workflows select capabilities rather than vendors
-- Provider failures degrade gracefully
-
-## Phase 5: Knowledge System Upgrade
-
-Goal:
-
-Move from file-based memory to queryable, provenance-aware knowledge.
-
-Deliverables:
-
-- Structured decision records
-- Source registry
-- Semantic retrieval
-- Contradiction detection
-- Memory freshness checks
-- Knowledge promotion workflow
-- Memory deprecation workflow
-
-Capabilities:
-
-- Retrieve context by objective
-- Trace conclusions to sources
-- Detect stale assumptions
-- Compare new outputs against prior decisions
-- Share knowledge across workflows
-
-Exit criteria:
-
-- Knowledge retrieval measurably improves output quality
-- Memory remains curated rather than noisy
-- Provenance is preserved
-
-## Phase 6: Professional Governance
-
-Goal:
-
-Add enterprise-grade control for sensitive and high-impact work.
-
-Deliverables:
-
-- Role-based permissions
-- Approval policy engine
-- Data classification
-- Compliance logs
-- Workspace-level configuration
-- Organization memory boundaries
-- Human sign-off reports
-
-Capabilities:
-
-- Enforce policy by workflow type
-- Prevent unauthorized tool use
-- Generate audit packages
-- Manage sensitive knowledge
-- Support multiple teams
-
-Exit criteria:
-
-- Constellation can support regulated or high-accountability professional environments
-
-## Phase 7: Product Interface
-
-Goal:
-
-Create a dedicated interface for running and inspecting Constellation.
-
-Deliverables:
-
-- Workflow dashboard
-- Agent activity view
-- Approval inbox
-- Memory browser
-- Audit trail viewer
-- Configuration editor
-- Run comparison view
-
-Capabilities:
-
-- Start workflows
-- Inspect agent reasoning and outputs
-- Approve or reject decisions
-- Review memory proposals
-- Search prior runs
-- Compare recommendations
-
-Exit criteria:
-
-- Non-technical operators can use Constellation without directly editing files
-- Technical users can still inspect and version the underlying artifacts
-
-## Future Agent Expansion
-
-Potential future agents:
-
-- Security Lead
-- Legal Reviewer
-- Product Manager
-- Data Analyst
-- Customer Research Lead
-- Operations Lead
-- Finance Analyst
-- Compliance Officer
-- DevOps Lead
-- Incident Commander
-
-New agents should be added only when they represent a durable professional responsibility, not merely a prompt style.
-
-## Future Workflow Expansion
-
-Potential future workflows:
-
-- Security review
-- Incident response
-- Competitive analysis
-- Customer research synthesis
-- Vendor evaluation
-- Compliance review
-- Technical design review
-- Postmortem
-- Quarterly planning
-- Hiring scorecard review
-
-## Strategic Risks
-
-### Over-Automation
-
-The system could become too autonomous before its judgment methods are mature.
-
-Mitigation:
-
-- Keep approval gates explicit
-- Preserve human authority
-- Add automation gradually
-
-### Memory Pollution
-
-The system could accumulate low-quality or contradictory knowledge.
-
-Mitigation:
-
-- Require Knowledge Engineer curation
-- Preserve provenance
-- Add deprecation rules
-
-### Agent Theater
-
-Agents could become named prompt variations rather than real professional roles.
-
-Mitigation:
-
-- Define methods, quality bars, and escalation rules
-- Validate agents by output usefulness
-- Retire agents that do not add judgment
-
-### Provider Lock-In
-
-The architecture could become dependent on one model or execution environment.
-
-Mitigation:
-
-- Use provider capability abstractions
-- Keep agent specs vendor-neutral
-- Test workflows across providers when possible
-
-### Audit Noise
-
-Logs could become too verbose to be useful.
-
-Mitigation:
-
-- Record structured summaries
-- Preserve final artifacts and decisions
-- Link to detailed transcripts only when needed
-
-## Long-Term Vision
-
-Constellation should become a professional judgment layer that can sit above many models, tools, repositories, and knowledge systems.
-
-Its enduring value should come from:
-
-- Role clarity
-- Process discipline
-- Knowledge accumulation
-- Human governance
-- Evidence-aware reasoning
-- Reliable delivery
-
-The destination is not an autonomous company in a box. It is a better operating system for professionals who want AI to make their work more thoughtful, not merely faster.
+These systems should integrate at the ecosystem level while preserving distinct responsibilities. They should not be merged conceptually.
