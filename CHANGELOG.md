@@ -2,6 +2,15 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 6.0.0 - Performance Intelligence MVP
+
+- Added deterministic Performance Intelligence as the first v6 feedback layer.
+- Added Decision Outcome Tracking, Performance Signals, Process Lessons, Learning Loop snapshots, history, and delta outputs under `outputs/performance/`.
+- Added `python -m constellation performance` with review, decisions, signals, lessons, export, history, and delta commands.
+- Integrated Performance Intelligence into the Executive Dashboard and Morning workflow.
+- Updated Morning workflow to include an explicit `Performance Intelligence` final step.
+- Preserved deterministic learning-only behavior with no financial advice, client performance reporting, trading system behavior, provider calls, OpenAI, LLM inference, embeddings, semantic search, web retrieval, Gmail, calendar integration, autonomous scheduling, or autonomous decisions.
+
 ## 5.5.0 - AI & Markets Executive Morning Brief
 
 - Added deterministic AI & Markets Executive Morning Brief.

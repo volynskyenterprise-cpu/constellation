@@ -445,6 +445,34 @@ Key outputs:
 - `outputs/ai-markets/briefings/research-agenda.md`
 - `outputs/ai-markets/watchlist.md`
 
+### Performance Intelligence
+
+```bash
+python -m constellation performance
+python -m constellation performance review
+python -m constellation performance decisions
+python -m constellation performance signals
+python -m constellation performance lessons
+python -m constellation performance export
+python -m constellation performance history
+python -m constellation performance delta
+```
+
+Performance Intelligence closes the loop between AI & Markets decisions, later evidence, theme lifecycle changes, catalyst follow-ups, portfolio/watchlist reviews, and process lessons. The v6.0.0 MVP focuses on deterministic Decision Outcome Tracking and Process Lessons from existing local artifacts.
+
+This is not financial advice, client performance reporting, a trading system, or an autonomous investment system. It does not produce investment instructions, expected return estimates, price targets, autonomous allocation changes, or trading actions.
+
+Key outputs:
+
+- `outputs/performance/performance-intelligence.md`
+- `outputs/performance/performance-intelligence.json`
+- `outputs/performance/decision-outcomes.md`
+- `outputs/performance/performance-signals.md`
+- `outputs/performance/process-lessons.md`
+- `outputs/performance/learning-loop.md`
+- `outputs/performance/performance-history.json`
+- `outputs/performance/performance-delta.json`
+
 ### Research
 
 ```bash
@@ -598,7 +626,11 @@ Primary question answered:
 
 Close the loop between decisions and outcomes.
 
-Planned capabilities:
+Current capability:
+
+- v6.0.0 - Performance Intelligence MVP
+
+Future capabilities:
 
 - Attribution analysis
 - Win/loss analysis

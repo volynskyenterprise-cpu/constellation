@@ -31,6 +31,7 @@ EXPECTED_ARTIFACTS = {
     "knowledge_evolution": Path("outputs/evolution/evolution.json"),
     "institutional_report": Path("outputs/reports/latest-report.json"),
     "ai_markets": Path("outputs/ai-markets/ai-markets.json"),
+    "performance": Path("outputs/performance/performance-intelligence.json"),
 }
 
 
@@ -52,6 +53,7 @@ class ExecutiveDashboard:
     knowledge_evolution_summary: JsonMap
     institutional_research_report_summary: JsonMap
     ai_markets_summary: JsonMap
+    performance_intelligence_summary: JsonMap
     current_risks_gaps: list[str]
     recommended_next_actions: list[str]
     key_output_files: list[JsonMap]
@@ -77,6 +79,7 @@ class ExecutiveDashboard:
             "knowledge_evolution_summary": self.knowledge_evolution_summary,
             "institutional_research_report_summary": self.institutional_research_report_summary,
             "ai_markets_summary": self.ai_markets_summary,
+            "performance_intelligence_summary": self.performance_intelligence_summary,
             "current_risks_gaps": self.current_risks_gaps,
             "recommended_next_actions": self.recommended_next_actions,
             "key_output_files": self.key_output_files,
@@ -104,6 +107,7 @@ class ExecutiveDashboard:
             knowledge_evolution_summary=_map(data.get("knowledge_evolution_summary")),
             institutional_research_report_summary=_map(data.get("institutional_research_report_summary")),
             ai_markets_summary=_map(data.get("ai_markets_summary")),
+            performance_intelligence_summary=_map(data.get("performance_intelligence_summary")),
             current_risks_gaps=_string_list(data.get("current_risks_gaps", [])),
             recommended_next_actions=_string_list(data.get("recommended_next_actions", [])),
             key_output_files=_map_list(data.get("key_output_files", [])),
@@ -133,6 +137,7 @@ class ExecutiveDashboardBuilder:
         evolution = _map(artifacts.get("knowledge_evolution"))
         report = _map(artifacts.get("institutional_report"))
         ai_markets = _map(artifacts.get("ai_markets"))
+        performance = _map(artifacts.get("performance"))
         theses = _map_list(thesis_store.get("theses", []))
         graph_nodes = _map_list(evidence_graph.get("nodes", []))
         graph_edges = _map_list(evidence_graph.get("edges", []))
@@ -149,6 +154,7 @@ class ExecutiveDashboardBuilder:
         evolution_summary = _evolution_summary(evolution)
         report_summary = _report_summary(report)
         ai_markets_summary = _ai_markets_summary(ai_markets)
+        performance_summary = _performance_summary(performance)
         risks_gaps = _risks_gaps(morning, theses)
         actions = _actions(morning, status, risks_gaps)
         key_files = _key_files(self.root, status)
@@ -164,10 +170,11 @@ class ExecutiveDashboardBuilder:
             "longitudinal_health_score": evolution_summary.get("longitudinal_health_score"),
             "latest_report_id": report_summary.get("latest_report_id"),
             "ai_markets_active_themes": ai_markets_summary.get("active_themes"),
+            "performance_pending_outcomes": performance_summary.get("pending_outcome_count"),
             "next_files_to_inspect": [item["path"] for item in key_files[:5]],
         }
         dashboard = ExecutiveDashboard(
-            dashboard_id=_dashboard_id(daily_run, morning, snapshot, evidence_graph, thesis_store, intake, drive, monitor, workflow, evolution, report, ai_markets),
+            dashboard_id=_dashboard_id(daily_run, morning, snapshot, evidence_graph, thesis_store, intake, drive, monitor, workflow, evolution, report, ai_markets, performance),
             created_at=created_at,
             version=__version__,
             executive_summary=executive_summary,
@@ -183,6 +190,7 @@ class ExecutiveDashboardBuilder:
             knowledge_evolution_summary=evolution_summary,
             institutional_research_report_summary=report_summary,
             ai_markets_summary=ai_markets_summary,
+            performance_intelligence_summary=performance_summary,
             current_risks_gaps=risks_gaps,
             recommended_next_actions=actions,
             key_output_files=key_files,
@@ -285,6 +293,9 @@ def render_dashboard_markdown(dashboard: ExecutiveDashboard) -> str:
         "## AI & Markets Summary",
         "",
         *_summary_lines(dashboard.ai_markets_summary),
+        "## Performance Intelligence Summary",
+        "",
+        *_summary_lines(dashboard.performance_intelligence_summary),
         "## Current Risks / Gaps",
         "",
         *_string_lines(dashboard.current_risks_gaps),
@@ -548,6 +559,24 @@ def _ai_markets_summary(report: JsonMap) -> JsonMap:
         "high_priority_agenda_count": brief.get("high_priority_agenda_count", 0),
         "top_agenda_items": _string_list(brief.get("top_agenda_items", [])),
         "what_matters_today_count": sum(1 for section in _map_list(brief.get("sections", [])) if section.get("title") == "What Matters Today" for _ in _string_list(section.get("items", []))),
+    }
+
+
+def _performance_summary(report: JsonMap) -> JsonMap:
+    loop = _map(report.get("learning_loop"))
+    return {
+        "performance_intelligence_available": bool(report),
+        "performance_snapshot_id": report.get("snapshot_id") or loop.get("snapshot_id"),
+        "decision_count": report.get("decision_count", 0) or loop.get("decision_count", 0),
+        "outcome_count": report.get("outcome_count", 0) or loop.get("outcome_count", 0),
+        "pending_outcome_count": report.get("pending_outcome_count", 0) or loop.get("pending_outcome_count", 0),
+        "lesson_count": report.get("lesson_count", 0) or loop.get("lesson_count", 0),
+        "performance_signal_count": report.get("performance_signal_count", 0) or loop.get("performance_signal_count", 0),
+        "high_severity_signal_count": report.get("high_severity_signal_count", 0) or loop.get("high_severity_signal_count", 0),
+        "due_review_count": report.get("due_review_count", 0) or loop.get("due_review_count", 0),
+        "overdue_review_count": report.get("overdue_review_count", 0) or loop.get("overdue_review_count", 0),
+        "performance_report_path": "outputs/performance/performance-intelligence.md" if report else None,
+        "learning_loop_path": "outputs/performance/learning-loop.md" if report else None,
     }
 
 

@@ -2,8 +2,16 @@
 
 ## Next Engineering Milestones
 
-- Define v6.0 Performance Intelligence acceptance criteria around attribution, win/loss analysis, thesis accuracy, signal quality, forecast calibration, portfolio decision review, and process improvement.
+- Performance Intelligence MVP complete; extend v6 with human-reviewed thesis accuracy, signal quality, catalyst accuracy, and learning-loop promotion workflows.
 - Add capability-level documentation that maps Observe, Understand, Decide, and Improve phases to operating workflows and outputs.
+- Add Performance Intelligence attribution analysis after explicit outcome data is supplied by the user.
+- Add Performance Intelligence win/loss analysis gated by explicit user-supplied review data.
+- Add Performance Intelligence thesis accuracy tracking across quarterly review periods.
+- Add Performance Intelligence signal quality scoring with human-reviewed weights.
+- Add Performance Intelligence forecast calibration for explicitly recorded forecasts.
+- Add Performance Intelligence portfolio decision review packages without allocation advice.
+- Add Real Estate Intelligence domain design.
+- Add Appraisal Intelligence domain design.
 - Add human-reviewed AI & Markets theme acceptance and suppression notes.
 - Add configurable AI & Markets taxonomy files after MVP validation.
 - Add human-reviewed suppression rules for low-value AI & Markets open questions.

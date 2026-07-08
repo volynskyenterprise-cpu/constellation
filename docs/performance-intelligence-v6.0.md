@@ -21,6 +21,31 @@ This is not financial advice. It is not performance reporting for clients. It is
 
 It is a deterministic learning and feedback layer.
 
+## v6.0.0 MVP Implementation
+
+The v6.0.0 MVP implements the first deterministic feedback loop with a narrow focus on Decision Outcome Tracking and Process Lessons.
+
+Implemented capabilities:
+
+- Parse generated AI & Markets Decision Journal outputs
+- Classify decision outcomes as pending, due, overdue, user-confirmed, user-challenged, user-contradicted, lesson-recorded, or reviewed without outcome
+- Link decisions to deterministic theme lifecycle, catalyst, portfolio/watchlist, and risk records when exact references exist
+- Generate Performance Signal records for review discipline, missing review inputs, catalyst follow-up, risk follow-up, and available lessons
+- Generate Process Lesson records only from explicit user-recorded lessons or repeated deterministic process gaps
+- Persist Learning Loop snapshots, history, and deltas
+- Integrate Performance Intelligence into the Executive Dashboard and Morning workflow
+
+Deferred capabilities:
+
+- Attribution analysis
+- Win/loss analysis
+- Full thesis accuracy scoring
+- Full signal quality scoring
+- Full catalyst accuracy scoring
+- Forecast calibration
+- Human-reviewed learning-loop promotion
+- Any user-supplied performance data ingestion
+
 ## 2. Why Performance Intelligence Matters
 
 Most investment systems emphasize discovery: more sources, more signals, more alerts, more charts.

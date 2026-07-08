@@ -20,6 +20,7 @@ from .knowledge_graph import KnowledgeGraphBuilder, KnowledgeGraphError
 from .memory import InstitutionalMemoryStore
 from .models import JsonMap
 from .morning import MorningExecutiveStore
+from .performance import PerformanceIntelligenceStore
 from .research import ResearchError, ResearchOrganization, SUPPORTED_RESEARCH_INPUTS
 from .reports import InstitutionalResearchReportStore
 from .source_monitor import SourceMonitorStore
@@ -160,6 +161,7 @@ class WorkflowEngine:
             "ai-markets catalysts": self._ai_markets_catalysts,
             "ai-markets decisions": self._ai_markets_decisions,
             "ai-markets brief": self._ai_markets_brief,
+            "performance": self._performance,
         }
 
     def run(self, definition: WorkflowDefinition) -> WorkflowRun:
@@ -449,6 +451,24 @@ class WorkflowEngine:
             "source_artifacts_missing_count": len(data.get("source_artifacts_missing", [])),
         }
 
+    def _performance(self, arguments: JsonMap) -> JsonMap:
+        store = PerformanceIntelligenceStore(self.root)
+        report = store.build()
+        status = store.status()
+        return {
+            "status": "completed",
+            "performance_intelligence_available": True,
+            "performance_snapshot_id": report.learning_loop.snapshot_id,
+            "decision_count": status.get("decision_count", 0),
+            "outcome_count": status.get("outcome_count", 0),
+            "pending_outcome_count": status.get("pending_outcome_count", 0),
+            "lesson_count": status.get("lesson_count", 0),
+            "performance_signal_count": status.get("performance_signal_count", 0),
+            "high_severity_signal_count": status.get("high_severity_signal_count", 0),
+            "performance_report_path": status.get("report_path"),
+            "learning_loop_path": status.get("learning_loop_path"),
+        }
+
 
 class WorkflowStore:
     def __init__(self, root: Path) -> None:
@@ -612,6 +632,27 @@ def render_workflow_report(run: WorkflowRun) -> str:
                 "",
             ]
         )
+    performance_steps = [step for step in run.executed_steps if step.get("command") == "performance"]
+    if performance_steps:
+        details = _map(performance_steps[-1].get("details"))
+        lines.extend(
+            [
+                "",
+                "## Performance Intelligence",
+                "",
+                f"- Performance intelligence available: {details.get('performance_intelligence_available', False)}",
+                f"- Performance snapshot ID: `{details.get('performance_snapshot_id', '')}`",
+                f"- Decisions: {details.get('decision_count', 0)}",
+                f"- Outcomes: {details.get('outcome_count', 0)}",
+                f"- Pending outcomes: {details.get('pending_outcome_count', 0)}",
+                f"- Process lessons: {details.get('lesson_count', 0)}",
+                f"- Performance signals: {details.get('performance_signal_count', 0)}",
+                f"- High-severity signals: {details.get('high_severity_signal_count', 0)}",
+                f"- Performance report: `{details.get('performance_report_path', '')}`",
+                f"- Learning loop: `{details.get('learning_loop_path', '')}`",
+                "",
+            ]
+        )
     lines.extend(["", "## Failed Steps", ""])
     if not run.failed_steps:
         lines.extend(["- None", ""])
@@ -659,6 +700,7 @@ def _built_in_workflows() -> list[WorkflowDefinition]:
                 _step("AI & Markets Catalyst Monitoring", "ai-markets catalysts"),
                 _step("AI & Markets Decision Journal", "ai-markets decisions"),
                 _step("AI & Markets Executive Morning Brief", "ai-markets brief"),
+                _step("Performance Intelligence", "performance"),
             ],
         ),
         WorkflowDefinition(

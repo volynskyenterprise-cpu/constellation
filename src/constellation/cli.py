@@ -15,11 +15,13 @@ from .evolution import KnowledgeEvolutionError, KnowledgeEvolutionStore
 from .google_drive import GoogleDriveConnector, GoogleDriveDependencyError, GoogleDriveError
 from .intake import IntakeEngine, IntakeError
 from .intelligence import IntelligenceError, IntelligenceStore
+from .io import read_json
 from .kernel import ConstellationKernel
 from .knowledge_graph import KnowledgeGraphBuilder, KnowledgeGraphError, KnowledgeGraphStore, show_graph_item
 from .memory import InstitutionalMemoryError, InstitutionalMemoryStore
 from .morning import MorningExecutiveError, MorningExecutiveStore
 from .pkos import PKOSError, PKOSKnowledgeOrganization
+from .performance import PerformanceIntelligenceError, PerformanceIntelligenceStore
 from .prompts import PromptUnavailable
 from .reports import InstitutionalResearchReportError, InstitutionalResearchReportStore, report_summary
 from .research import ResearchError, ResearchOrganization
@@ -265,6 +267,17 @@ def main(argv: list[str] | None = None) -> int:
     report_subparsers.add_parser("history", help="List report history.")
     report_show_parser = report_subparsers.add_parser("show", help="Show one report summary as JSON.")
     report_show_parser.add_argument("report_id", help="Report ID from report history.")
+
+    performance_parser = subparsers.add_parser("performance", help="Build and inspect deterministic Performance Intelligence.")
+    performance_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    performance_subparsers = performance_parser.add_subparsers(dest="performance_command")
+    performance_subparsers.add_parser("review", help="Show review queue and follow-up needs.")
+    performance_subparsers.add_parser("decisions", help="List decision outcomes.")
+    performance_subparsers.add_parser("signals", help="List performance signals.")
+    performance_subparsers.add_parser("lessons", help="List process lessons.")
+    performance_subparsers.add_parser("export", help="Export Performance Intelligence markdown.")
+    performance_subparsers.add_parser("history", help="List Performance Intelligence history.")
+    performance_subparsers.add_parser("delta", help="Show Performance Intelligence delta JSON.")
 
     ai_markets_parser = subparsers.add_parser("ai-markets", help="Build and inspect deterministic AI & Markets intelligence.")
     ai_markets_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
@@ -1070,6 +1083,55 @@ def main(argv: list[str] | None = None) -> int:
         except InstitutionalResearchReportError as exc:
             print(f"error: {exc}")
             return 1
+    if args.command == "performance":
+        store = PerformanceIntelligenceStore(args.root.resolve())
+        try:
+            if args.performance_command is None:
+                report = store.build()
+                _print_performance_status(store.status())
+                return 0
+            if args.performance_command == "review":
+                report = store.build()
+                for item in report.decision_outcomes:
+                    if item.follow_up_needed or item.review_status in {"due", "overdue"}:
+                        print(f"{item.outcome_status}: {item.entry_id} title={item.title} follow_up={item.follow_up_reason}")
+                return 0
+            if args.performance_command == "decisions":
+                report = store.build()
+                for item in report.decision_outcomes:
+                    print(f"{item.outcome_id} entry={item.entry_id} outcome={item.outcome_status} review={item.review_status} title={item.title}")
+                return 0
+            if args.performance_command == "signals":
+                report = store.build()
+                for item in report.performance_signals:
+                    print(f"{item.signal_id} severity={item.severity} type={item.signal_type} decisions={len(item.related_decision_ids)} title={item.title}")
+                return 0
+            if args.performance_command == "lessons":
+                report = store.build()
+                for item in report.process_lessons:
+                    print(f"{item.lesson_id} type={item.lesson_type} decisions={len(item.related_decision_ids)} title={item.title}")
+                return 0
+            if args.performance_command == "export":
+                if not store.report_json_path.exists():
+                    store.build()
+                print(f"performance_report: {store.export()}")
+                return 0
+            if args.performance_command == "history":
+                history = store.history()
+                if not history:
+                    print("No Performance Intelligence history found.")
+                    return 0
+                for item in history:
+                    print(f"{item.get('report_id')} snapshot={item.get('snapshot_id')} decisions={item.get('decision_count', 0)} signals={item.get('performance_signal_count', 0)}")
+                return 0
+            if args.performance_command == "delta":
+                if not store.delta_path.exists():
+                    store.build()
+                print(json.dumps(_map(read_json(store.delta_path)), indent=2, sort_keys=True))
+                return 0
+        except PerformanceIntelligenceError as exc:
+            print(f"error: {exc}")
+            return 1
     if args.command == "ai-markets":
         store = AIMarketsStore(args.root.resolve())
         try:
@@ -1461,6 +1523,23 @@ def _print_report_status(status) -> None:
     for name, item in status.get("inputs", {}).items():
         state = "available" if item.get("exists") else "unavailable"
         print(f"{state}: {name}: {item.get('path')}")
+
+
+def _print_performance_status(status) -> None:
+    print(f"available: {status.get('available')}")
+    print(f"snapshot_id: {status.get('snapshot_id') or ''}")
+    print(f"decision_count: {status.get('decision_count', 0)}")
+    print(f"reviewed_decision_count: {status.get('reviewed_decision_count', 0)}")
+    print(f"open_decision_count: {status.get('open_decision_count', 0)}")
+    print(f"due_review_count: {status.get('due_review_count', 0)}")
+    print(f"overdue_review_count: {status.get('overdue_review_count', 0)}")
+    print(f"outcome_count: {status.get('outcome_count', 0)}")
+    print(f"pending_outcome_count: {status.get('pending_outcome_count', 0)}")
+    print(f"lesson_count: {status.get('lesson_count', 0)}")
+    print(f"performance_signal_count: {status.get('performance_signal_count', 0)}")
+    print(f"high_severity_signal_count: {status.get('high_severity_signal_count', 0)}")
+    print(f"report_path: {status.get('report_path')}")
+    print(f"learning_loop_path: {status.get('learning_loop_path')}")
 
 
 def _print_ai_markets_summary(report, store) -> None:
