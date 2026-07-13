@@ -1,7 +1,8 @@
 @echo off
 setlocal
 
-set "REPO=C:\Users\stanv\Documents\Codex\2026-06-30\you-are-the-chief-software-architect\outputs\constellation"
+for %%I in ("%~dp0..") do set "REPO=%%~fI"
+
 set "LOGDIR=%REPO%\outputs\automation"
 set "LOGFILE=%LOGDIR%\morning-run.log"
 

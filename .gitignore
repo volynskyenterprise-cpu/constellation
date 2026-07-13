@@ -60,3 +60,6 @@ outputs/morning/
 outputs/memory/
 outputs/evidence-graph/
 outputs/performance/
+
+# Local automation logs
+outputs/automation/*.log
