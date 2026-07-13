@@ -4,11 +4,11 @@
 
 - Add connector warning history retention and comparison across Morning runs.
 - Add connector-specific recovery documentation for Google Drive token refresh.
-- Performance Intelligence MVP complete; extend v6 with human-reviewed thesis accuracy, signal quality, catalyst accuracy, and learning-loop promotion workflows.
+- Performance Intelligence MVP and deterministic Thesis Accuracy are complete; extend v6 with signal quality, catalyst accuracy, and learning-loop promotion workflows.
 - Add capability-level documentation that maps Observe, Understand, Decide, and Improve phases to operating workflows and outputs.
 - Add Performance Intelligence attribution analysis after explicit outcome data is supplied by the user.
 - Add Performance Intelligence win/loss analysis gated by explicit user-supplied review data.
-- Add Performance Intelligence thesis accuracy tracking across quarterly review periods.
+- Add human-reviewed Thesis Accuracy period labels for quarterly review cycles.
 - Add Performance Intelligence signal quality scoring with human-reviewed weights.
 - Add Performance Intelligence forecast calibration for explicitly recorded forecasts.
 - Add Performance Intelligence portfolio decision review packages without allocation advice.

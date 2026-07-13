@@ -632,6 +632,9 @@ Potential outputs:
 - `outputs/performance/decision-outcomes.json`
 - `outputs/performance/thesis-accuracy.md`
 - `outputs/performance/thesis-accuracy.json`
+- `outputs/performance/thesis-scoreboard.md`
+- `outputs/performance/thesis-history.json`
+- `outputs/performance/thesis-delta.json`
 - `outputs/performance/signal-quality.md`
 - `outputs/performance/signal-quality.json`
 - `outputs/performance/catalyst-accuracy.md`
@@ -667,7 +670,11 @@ Potential CLI:
 python -m constellation performance
 python -m constellation performance review
 python -m constellation performance decisions
-python -m constellation performance theses
+python -m constellation performance thesis
+python -m constellation performance thesis --history
+python -m constellation performance thesis --delta
+python -m constellation performance thesis --scoreboard
+python -m constellation performance thesis --export
 python -m constellation performance signals
 python -m constellation performance catalysts
 python -m constellation performance lessons
@@ -679,7 +686,11 @@ Command concepts:
 - `performance`: build the complete Performance Intelligence package
 - `performance review`: generate a review snapshot for the current period
 - `performance decisions`: show decision outcomes and review prompts
-- `performance theses`: show thesis accuracy and status changes
+- `performance thesis`: build deterministic thesis accuracy scores from existing local artifacts
+- `performance thesis --history`: list thesis accuracy snapshots
+- `performance thesis --delta`: show thesis accuracy changes from the prior snapshot
+- `performance thesis --scoreboard`: show thesis accuracy, quality, process, and review priority by thesis
+- `performance thesis --export`: write thesis accuracy Markdown outputs
 - `performance signals`: show signal quality observations
 - `performance catalysts`: show catalyst follow-up and unresolved catalysts
 - `performance lessons`: show process lessons and improvement opportunities
@@ -709,6 +720,16 @@ Dashboard fields may include:
 - Performance report path
 
 The dashboard should summarize the learning loop without making investment recommendations.
+
+v6.1.0 adds a Thesis Accuracy summary to the Executive Dashboard:
+
+- Thesis accuracy available
+- Average accuracy score
+- Average process score
+- Highest accuracy theses
+- Lowest accuracy theses
+- Needs review count
+- Thesis accuracy report path
 
 ## 17. Workflow Integration
 

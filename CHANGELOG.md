@@ -2,6 +2,15 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 6.1.0 - Thesis Accuracy
+
+- Added deterministic Thesis Accuracy as a Performance Intelligence layer.
+- Added `outputs/performance/thesis-accuracy.json`, `thesis-accuracy.md`, `thesis-scoreboard.md`, `thesis-history.json`, and `thesis-delta.json`.
+- Added `python -m constellation performance thesis` with history, delta, scoreboard, and export options.
+- Integrated Thesis Accuracy into the Executive Dashboard and the built-in Morning workflow.
+- Updated Morning workflow to complete 19 deterministic steps with Thesis Accuracy after Performance Intelligence.
+- Preserved no-provider, no-OpenAI, no-LLM, no-embedding, no-web, no-Gmail, no-calendar, no-trading, no-financial-advice behavior.
+
 ## 6.0.1 - Connector Failure Resilience
 
 - Added deterministic connector failure classification for Google Drive auth failures.

@@ -157,7 +157,7 @@ class PerformanceIntelligenceTests(unittest.TestCase):
             commands = [step["command"] for step in run.executed_steps]
             perf_step = next(step for step in run.executed_steps if step["command"] == "performance")
 
-            self.assertEqual(len(commands), 18)
+            self.assertEqual(len(commands), 19)
             self.assertIn("decision_count", perf_step["details"])
             self.assertIn("performance_snapshot_id", perf_step["details"])
             self.assertIn("Performance Intelligence", (root / "outputs" / "workflows" / "workflow-report.md").read_text(encoding="utf-8"))

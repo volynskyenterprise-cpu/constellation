@@ -21,6 +21,7 @@ from .memory import InstitutionalMemoryStore
 from .models import JsonMap
 from .morning import MorningExecutiveStore
 from .performance import PerformanceIntelligenceStore
+from .thesis_accuracy import ThesisAccuracyStore
 from .research import ResearchError, ResearchOrganization, SUPPORTED_RESEARCH_INPUTS
 from .reports import InstitutionalResearchReportStore
 from .source_monitor import SourceMonitorStore
@@ -162,6 +163,7 @@ class WorkflowEngine:
             "ai-markets decisions": self._ai_markets_decisions,
             "ai-markets brief": self._ai_markets_brief,
             "performance": self._performance,
+            "performance thesis": self._performance_thesis,
         }
 
     def run(self, definition: WorkflowDefinition) -> WorkflowRun:
@@ -476,6 +478,23 @@ class WorkflowEngine:
             "learning_loop_path": status.get("learning_loop_path"),
         }
 
+    def _performance_thesis(self, arguments: JsonMap) -> JsonMap:
+        store = ThesisAccuracyStore(self.root)
+        report = store.build()
+        status = store.status()
+        return {
+            "status": "completed",
+            "thesis_accuracy_available": True,
+            "thesis_accuracy_snapshot_id": report.snapshot.snapshot_id,
+            "thesis_count": status.get("thesis_count", 0),
+            "average_accuracy_score": status.get("average_accuracy_score", 0),
+            "average_quality_score": status.get("average_quality_score", 0),
+            "average_process_score": status.get("average_process_score", 0),
+            "needs_review_count": status.get("needs_review_count", 0),
+            "thesis_accuracy_report_path": status.get("thesis_accuracy_report_path"),
+            "thesis_scoreboard_path": status.get("thesis_scoreboard_path"),
+        }
+
 
 class WorkflowStore:
     def __init__(self, root: Path) -> None:
@@ -673,6 +692,26 @@ def render_workflow_report(run: WorkflowRun) -> str:
                 "",
             ]
         )
+    thesis_accuracy_steps = [step for step in run.executed_steps if step.get("command") == "performance thesis"]
+    if thesis_accuracy_steps:
+        details = _map(thesis_accuracy_steps[-1].get("details"))
+        lines.extend(
+            [
+                "",
+                "## Thesis Accuracy",
+                "",
+                f"- Thesis accuracy available: {details.get('thesis_accuracy_available', False)}",
+                f"- Thesis accuracy snapshot ID: `{details.get('thesis_accuracy_snapshot_id', '')}`",
+                f"- Theses scored: {details.get('thesis_count', 0)}",
+                f"- Average accuracy score: {details.get('average_accuracy_score', 0)}",
+                f"- Average quality score: {details.get('average_quality_score', 0)}",
+                f"- Average process score: {details.get('average_process_score', 0)}",
+                f"- Needs review count: {details.get('needs_review_count', 0)}",
+                f"- Thesis accuracy report: `{details.get('thesis_accuracy_report_path', '')}`",
+                f"- Thesis scoreboard: `{details.get('thesis_scoreboard_path', '')}`",
+                "",
+            ]
+        )
     lines.extend(["", "## Failed Steps", ""])
     if not run.failed_steps:
         lines.extend(["- None", ""])
@@ -721,6 +760,7 @@ def _built_in_workflows() -> list[WorkflowDefinition]:
                 _step("AI & Markets Decision Journal", "ai-markets decisions"),
                 _step("AI & Markets Executive Morning Brief", "ai-markets brief"),
                 _step("Performance Intelligence", "performance"),
+                _step("Thesis Accuracy", "performance thesis"),
             ],
         ),
         WorkflowDefinition(

@@ -22,6 +22,7 @@ from .memory import InstitutionalMemoryError, InstitutionalMemoryStore
 from .morning import MorningExecutiveError, MorningExecutiveStore
 from .pkos import PKOSError, PKOSKnowledgeOrganization
 from .performance import PerformanceIntelligenceError, PerformanceIntelligenceStore
+from .thesis_accuracy import ThesisAccuracyError, ThesisAccuracyStore
 from .prompts import PromptUnavailable
 from .reports import InstitutionalResearchReportError, InstitutionalResearchReportStore, report_summary
 from .research import ResearchError, ResearchOrganization
@@ -278,6 +279,11 @@ def main(argv: list[str] | None = None) -> int:
     performance_subparsers.add_parser("export", help="Export Performance Intelligence markdown.")
     performance_subparsers.add_parser("history", help="List Performance Intelligence history.")
     performance_subparsers.add_parser("delta", help="Show Performance Intelligence delta JSON.")
+    performance_thesis_parser = performance_subparsers.add_parser("thesis", help="Build and inspect deterministic thesis accuracy.")
+    performance_thesis_parser.add_argument("--history", action="store_true", help="List Thesis Accuracy history.")
+    performance_thesis_parser.add_argument("--delta", action="store_true", help="Show Thesis Accuracy delta JSON.")
+    performance_thesis_parser.add_argument("--scoreboard", action="store_true", help="Show Thesis Accuracy scoreboard.")
+    performance_thesis_parser.add_argument("--export", action="store_true", help="Export Thesis Accuracy markdown.")
 
     ai_markets_parser = subparsers.add_parser("ai-markets", help="Build and inspect deterministic AI & Markets intelligence.")
     ai_markets_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
@@ -1129,6 +1135,41 @@ def main(argv: list[str] | None = None) -> int:
                     store.build()
                 print(json.dumps(_map(read_json(store.delta_path)), indent=2, sort_keys=True))
                 return 0
+            if args.performance_command == "thesis":
+                thesis_store = ThesisAccuracyStore(args.root.resolve())
+                try:
+                    if args.history:
+                        history = thesis_store.history()
+                        if not history:
+                            print("No Thesis Accuracy history found.")
+                            return 0
+                        for item in history:
+                            summary = _map(item.get("summary"))
+                            print(f"{item.get('snapshot_id')} theses={summary.get('thesis_count', 0)} average_accuracy={summary.get('average_accuracy_score', 0)} created_at={item.get('created_at', '')}")
+                        return 0
+                    if args.delta:
+                        if not thesis_store.delta_path.exists():
+                            thesis_store.build()
+                        print(json.dumps(_map(read_json(thesis_store.delta_path)), indent=2, sort_keys=True))
+                        return 0
+                    if args.scoreboard:
+                        if not thesis_store.json_path.exists():
+                            thesis_store.build()
+                        data = thesis_store.load()
+                        for item in _map_list(data.get("scores", [])):
+                            print(f"{item.get('thesis_id')} accuracy={item.get('accuracy_score')} process={item.get('process_score')} quality={item.get('quality_score')} priority={item.get('review_priority')} title={item.get('title')}")
+                        return 0
+                    report = thesis_store.build()
+                    if args.export:
+                        print(f"thesis_accuracy_report: {thesis_store.export()}")
+                        print(f"thesis_scoreboard: {thesis_store.scoreboard_path}")
+                        return 0
+                    _print_thesis_accuracy_status(thesis_store.status())
+                    print(f"report_id: {report.report_id}")
+                    return 0
+                except ThesisAccuracyError as exc:
+                    print(f"error: {exc}")
+                    return 1
         except PerformanceIntelligenceError as exc:
             print(f"error: {exc}")
             return 1
@@ -1540,6 +1581,18 @@ def _print_performance_status(status) -> None:
     print(f"high_severity_signal_count: {status.get('high_severity_signal_count', 0)}")
     print(f"report_path: {status.get('report_path')}")
     print(f"learning_loop_path: {status.get('learning_loop_path')}")
+
+
+def _print_thesis_accuracy_status(status) -> None:
+    print(f"thesis_accuracy_available: {status.get('thesis_accuracy_available')}")
+    print(f"snapshot_id: {status.get('snapshot_id') or ''}")
+    print(f"thesis_count: {status.get('thesis_count', 0)}")
+    print(f"average_accuracy_score: {status.get('average_accuracy_score', 0)}")
+    print(f"average_quality_score: {status.get('average_quality_score', 0)}")
+    print(f"average_process_score: {status.get('average_process_score', 0)}")
+    print(f"needs_review_count: {status.get('needs_review_count', 0)}")
+    print(f"thesis_accuracy_report_path: {status.get('thesis_accuracy_report_path')}")
+    print(f"thesis_scoreboard_path: {status.get('thesis_scoreboard_path')}")
 
 
 def _print_ai_markets_summary(report, store) -> None:

@@ -346,6 +346,7 @@ _MORNING_COMMANDS = [
     "ai-markets decisions",
     "ai-markets brief",
     "performance",
+    "performance thesis",
 ]
 
 

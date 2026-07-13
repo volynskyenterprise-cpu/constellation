@@ -32,6 +32,7 @@ EXPECTED_ARTIFACTS = {
     "institutional_report": Path("outputs/reports/latest-report.json"),
     "ai_markets": Path("outputs/ai-markets/ai-markets.json"),
     "performance": Path("outputs/performance/performance-intelligence.json"),
+    "thesis_accuracy": Path("outputs/performance/thesis-accuracy.json"),
 }
 
 
@@ -54,6 +55,7 @@ class ExecutiveDashboard:
     institutional_research_report_summary: JsonMap
     ai_markets_summary: JsonMap
     performance_intelligence_summary: JsonMap
+    thesis_accuracy_summary: JsonMap
     connector_warning_summary: JsonMap
     current_risks_gaps: list[str]
     recommended_next_actions: list[str]
@@ -81,6 +83,7 @@ class ExecutiveDashboard:
             "institutional_research_report_summary": self.institutional_research_report_summary,
             "ai_markets_summary": self.ai_markets_summary,
             "performance_intelligence_summary": self.performance_intelligence_summary,
+            "thesis_accuracy_summary": self.thesis_accuracy_summary,
             "connector_warning_summary": self.connector_warning_summary,
             "current_risks_gaps": self.current_risks_gaps,
             "recommended_next_actions": self.recommended_next_actions,
@@ -110,6 +113,7 @@ class ExecutiveDashboard:
             institutional_research_report_summary=_map(data.get("institutional_research_report_summary")),
             ai_markets_summary=_map(data.get("ai_markets_summary")),
             performance_intelligence_summary=_map(data.get("performance_intelligence_summary")),
+            thesis_accuracy_summary=_map(data.get("thesis_accuracy_summary")),
             connector_warning_summary=_map(data.get("connector_warning_summary")),
             current_risks_gaps=_string_list(data.get("current_risks_gaps", [])),
             recommended_next_actions=_string_list(data.get("recommended_next_actions", [])),
@@ -141,6 +145,7 @@ class ExecutiveDashboardBuilder:
         report = _map(artifacts.get("institutional_report"))
         ai_markets = _map(artifacts.get("ai_markets"))
         performance = _map(artifacts.get("performance"))
+        thesis_accuracy = _map(artifacts.get("thesis_accuracy"))
         theses = _map_list(thesis_store.get("theses", []))
         graph_nodes = _map_list(evidence_graph.get("nodes", []))
         graph_edges = _map_list(evidence_graph.get("edges", []))
@@ -158,6 +163,7 @@ class ExecutiveDashboardBuilder:
         report_summary = _report_summary(report)
         ai_markets_summary = _ai_markets_summary(ai_markets)
         performance_summary = _performance_summary(performance)
+        thesis_accuracy_summary = _thesis_accuracy_summary(thesis_accuracy)
         connector_warning_summary = _connector_warning_summary(daily_run, workflow)
         risks_gaps = _risks_gaps(morning, theses)
         actions = _actions(morning, status, risks_gaps)
@@ -175,11 +181,13 @@ class ExecutiveDashboardBuilder:
             "latest_report_id": report_summary.get("latest_report_id"),
             "ai_markets_active_themes": ai_markets_summary.get("active_themes"),
             "performance_pending_outcomes": performance_summary.get("pending_outcome_count"),
+            "average_thesis_accuracy_score": thesis_accuracy_summary.get("average_accuracy_score"),
+            "theses_needing_review": thesis_accuracy_summary.get("needs_review_count"),
             "connector_warning_count": connector_warning_summary.get("connector_warning_count"),
             "next_files_to_inspect": [item["path"] for item in key_files[:5]],
         }
         dashboard = ExecutiveDashboard(
-            dashboard_id=_dashboard_id(daily_run, morning, snapshot, evidence_graph, thesis_store, intake, drive, monitor, workflow, evolution, report, ai_markets, performance),
+            dashboard_id=_dashboard_id(daily_run, morning, snapshot, evidence_graph, thesis_store, intake, drive, monitor, workflow, evolution, report, ai_markets, performance, thesis_accuracy),
             created_at=created_at,
             version=__version__,
             executive_summary=executive_summary,
@@ -196,6 +204,7 @@ class ExecutiveDashboardBuilder:
             institutional_research_report_summary=report_summary,
             ai_markets_summary=ai_markets_summary,
             performance_intelligence_summary=performance_summary,
+            thesis_accuracy_summary=thesis_accuracy_summary,
             connector_warning_summary=connector_warning_summary,
             current_risks_gaps=risks_gaps,
             recommended_next_actions=actions,
@@ -302,6 +311,9 @@ def render_dashboard_markdown(dashboard: ExecutiveDashboard) -> str:
         "## Performance Intelligence Summary",
         "",
         *_summary_lines(dashboard.performance_intelligence_summary),
+        "## Thesis Accuracy Summary",
+        "",
+        *_summary_lines(dashboard.thesis_accuracy_summary),
         "## Connector Warning Summary",
         "",
         *_summary_lines(dashboard.connector_warning_summary),
@@ -586,6 +598,19 @@ def _performance_summary(report: JsonMap) -> JsonMap:
         "overdue_review_count": report.get("overdue_review_count", 0) or loop.get("overdue_review_count", 0),
         "performance_report_path": "outputs/performance/performance-intelligence.md" if report else None,
         "learning_loop_path": "outputs/performance/learning-loop.md" if report else None,
+    }
+
+
+def _thesis_accuracy_summary(report: JsonMap) -> JsonMap:
+    summary = _map(report.get("summary"))
+    return {
+        "thesis_accuracy_available": bool(report),
+        "average_accuracy_score": summary.get("average_accuracy_score", 0),
+        "average_process_score": summary.get("average_process_score", 0),
+        "highest_accuracy_theses": summary.get("highest_accuracy_theses", []),
+        "lowest_accuracy_theses": summary.get("lowest_accuracy_theses", []),
+        "needs_review_count": summary.get("needs_review_count", 0),
+        "thesis_accuracy_report_path": "outputs/performance/thesis-accuracy.md" if report else None,
     }
 
 

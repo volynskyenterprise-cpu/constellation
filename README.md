@@ -459,6 +459,9 @@ Key outputs:
 python -m constellation performance
 python -m constellation performance review
 python -m constellation performance decisions
+python -m constellation performance thesis
+python -m constellation performance thesis --scoreboard
+python -m constellation performance thesis --delta
 python -m constellation performance signals
 python -m constellation performance lessons
 python -m constellation performance export
@@ -466,7 +469,7 @@ python -m constellation performance history
 python -m constellation performance delta
 ```
 
-Performance Intelligence closes the loop between AI & Markets decisions, later evidence, theme lifecycle changes, catalyst follow-ups, portfolio/watchlist reviews, and process lessons. The v6.0.0 MVP focuses on deterministic Decision Outcome Tracking and Process Lessons from existing local artifacts.
+Performance Intelligence closes the loop between AI & Markets decisions, later evidence, theme lifecycle changes, catalyst follow-ups, portfolio/watchlist reviews, thesis accuracy, and process lessons. The v6.1.0 layer adds deterministic Thesis Accuracy scoring from existing thesis, evidence, decision, catalyst, memory, evolution, and performance artifacts.
 
 This is not financial advice, client performance reporting, a trading system, or an autonomous investment system. It does not produce investment instructions, expected return estimates, price targets, autonomous allocation changes, or trading actions.
 
@@ -478,6 +481,11 @@ Key outputs:
 - `outputs/performance/performance-signals.md`
 - `outputs/performance/process-lessons.md`
 - `outputs/performance/learning-loop.md`
+- `outputs/performance/thesis-accuracy.md`
+- `outputs/performance/thesis-accuracy.json`
+- `outputs/performance/thesis-scoreboard.md`
+- `outputs/performance/thesis-history.json`
+- `outputs/performance/thesis-delta.json`
 - `outputs/performance/performance-history.json`
 - `outputs/performance/performance-delta.json`
 
@@ -637,12 +645,12 @@ Close the loop between decisions and outcomes.
 Current capability:
 
 - v6.0.0 - Performance Intelligence MVP
+- v6.1.0 - Thesis Accuracy
 
 Future capabilities:
 
 - Attribution analysis
 - Win/loss analysis
-- Thesis accuracy tracking
 - Signal quality scoring
 - Forecast calibration
 - Portfolio decision review
