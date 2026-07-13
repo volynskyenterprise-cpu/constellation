@@ -2,6 +2,17 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 6.0.1 - Connector Failure Resilience
+
+- Added deterministic connector failure classification for Google Drive auth failures.
+- Classified Google Drive OAuth expiration and revoked-token errors as `needs_reauth`.
+- Hardened Morning workflow so Google Drive re-authentication failures are recorded as degraded connector warnings while downstream deterministic local outputs continue where possible.
+- Hardened Daily Pipeline so Google Drive re-authentication failures produce connector warnings instead of failing the entire daily package when local artifacts can still be used.
+- Added Connector Warnings sections to workflow and daily reports.
+- Added connector warning summary fields to Executive Dashboard.
+- Added AI & Markets Executive Morning Brief limitation text when latest daily artifacts report Google Drive re-authentication needs.
+- Preserved no-provider, no-web, no-Gmail, no-calendar, no-trading, no-financial-advice behavior.
+
 ## 6.0.0 - Performance Intelligence MVP
 
 - Added deterministic Performance Intelligence as the first v6 feedback layer.

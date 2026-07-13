@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from constellation.cli import main
 from constellation.daily import DailyPipelineStore
+from constellation.google_drive import GoogleDriveError
 
 
 class DailyPipelineTests(unittest.TestCase):
@@ -145,6 +146,35 @@ class DailyPipelineTests(unittest.TestCase):
 
             generate.assert_not_called()
 
+    def test_daily_continues_when_drive_needs_reauth(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_minimal_tree(root, drive_enabled=True)
+
+            with patch("constellation.daily.GoogleDriveConnector.status", return_value=_ready_drive_status()):
+                with patch("constellation.daily.GoogleDriveConnector.sync", side_effect=GoogleDriveError("invalid_grant: Token has been expired or revoked")):
+                    run = DailyPipelineStore(root).run()
+
+            drive_stage = next(stage for stage in run.stages if stage["name"] == "google_drive_sync")
+            self.assertEqual(run.status, "completed_with_warnings")
+            self.assertEqual(drive_stage["status"], "degraded")
+            self.assertEqual(run.connector_warnings[0]["status"], "needs_reauth")
+            self.assertEqual(run.manifest["google_drive_sync"]["status"], "needs_reauth")
+            self.assertIn("Connector Warnings", (root / "outputs" / "daily" / "daily-report.md").read_text(encoding="utf-8"))
+
+    def test_daily_non_auth_drive_failure_remains_failed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_minimal_tree(root, drive_enabled=True)
+
+            with patch("constellation.daily.GoogleDriveConnector.status", return_value=_ready_drive_status()):
+                with patch("constellation.daily.GoogleDriveConnector.sync", side_effect=GoogleDriveError("quota exceeded")):
+                    run = DailyPipelineStore(root).run()
+
+            self.assertEqual(run.status, "failed")
+            drive_stage = next(stage for stage in run.stages if stage["name"] == "google_drive_sync")
+            self.assertEqual(drive_stage["status"], "failed")
+
 
 _STAGES = [
     "source_monitoring",
@@ -158,7 +188,7 @@ _STAGES = [
 ]
 
 
-def _create_minimal_tree(root: Path, *, include_google_config: bool = True) -> None:
+def _create_minimal_tree(root: Path, *, include_google_config: bool = True, drive_enabled: bool = False) -> None:
     for relative in [
         "inbox/google-drive/incoming",
         "inbox/gmail/incoming",
@@ -177,7 +207,27 @@ def _create_minimal_tree(root: Path, *, include_google_config: bool = True) -> N
             "  - drive.readonly\n",
             encoding="utf-8",
         )
-    (root / "config" / "sources.yaml").write_text("sources: []\n", encoding="utf-8")
+    if drive_enabled:
+        (root / "config" / "sources.yaml").write_text(
+            "sources:\n"
+            "  - id: drive_test\n"
+            "    source_type: google_drive\n"
+            "    folder_id: folder_test\n"
+            "    enabled: true\n",
+            encoding="utf-8",
+        )
+    else:
+        (root / "config" / "sources.yaml").write_text("sources: []\n", encoding="utf-8")
+
+
+def _ready_drive_status() -> dict:
+    return {
+        "config_present": True,
+        "dependencies_installed": True,
+        "credentials_path_configured": True,
+        "token_path_configured": True,
+        "enabled_sources": ["drive_test"],
+    }
 
 
 if __name__ == "__main__":

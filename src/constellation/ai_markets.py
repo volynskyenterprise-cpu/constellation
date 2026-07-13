@@ -1407,6 +1407,12 @@ class AIMarketsBriefEngine:
         metrics = _brief_metrics(artifacts, agenda)
         delta = _brief_delta(history[-1] if history else {}, agenda, metrics, available, missing)
         sections = _brief_sections(artifacts, agenda, metrics, missing)
+        limitations = [
+            "Executive Morning Brief is deterministic and uses local artifacts only.",
+            "No web retrieval, external market data, financial advice, trading recommendations, or autonomous decisions are produced.",
+        ]
+        if _brief_needs_reauth_warning(artifacts):
+            limitations.append("Google Drive requires re-authentication; this brief was generated from existing local artifacts.")
         return AIMarketsBriefSnapshot(
             _brief_id(agenda, metrics, available, missing),
             _now_iso(),
@@ -1421,10 +1427,7 @@ class AIMarketsBriefEngine:
             metrics,
             {"brief_path": "outputs/ai-markets/briefings/morning-brief.md", "agenda_path": "outputs/ai-markets/briefings/research-agenda.md"},
             {"consumed_artifacts": {key: str(value) for key, value in BRIEF_INPUTS.items()}},
-            [
-                "Executive Morning Brief is deterministic and uses local artifacts only.",
-                "No web retrieval, external market data, financial advice, trading recommendations, or autonomous decisions are produced.",
-            ],
+            limitations,
         )
 
 
@@ -3301,6 +3304,12 @@ def _decision_template_text() -> str:
 
 def _brief_artifacts(root: Path) -> dict[str, JsonMap]:
     return {name: _read_optional_json(root / path) for name, path in BRIEF_INPUTS.items()}
+
+
+def _brief_needs_reauth_warning(artifacts: dict[str, JsonMap]) -> bool:
+    daily = _map(artifacts.get("daily"))
+    warnings = _map_list(daily.get("connector_warnings", []))
+    return any(item.get("status") == "needs_reauth" for item in warnings)
 
 
 def _brief_metrics(artifacts: dict[str, JsonMap], agenda: list[AIMarketsResearchAgendaItem]) -> JsonMap:

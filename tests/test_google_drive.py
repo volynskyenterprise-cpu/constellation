@@ -16,6 +16,8 @@ from constellation.google_drive import (
     GoogleDriveDependencyError,
     GoogleDriveFile,
     GoogleDriveSyncManifest,
+    classify_connector_error,
+    connector_warning,
     normalize_scopes,
 )
 
@@ -59,6 +61,14 @@ class GoogleDriveConnectorTests(unittest.TestCase):
     def test_empty_scope_rejection(self) -> None:
         with self.assertRaisesRegex(Exception, "must include drive.readonly"):
             normalize_scopes([])
+
+    def test_invalid_grant_classified_as_needs_reauth(self) -> None:
+        error = "invalid_grant: Token has been expired or revoked"
+
+        self.assertEqual(classify_connector_error(error), "needs_reauth")
+        warning = connector_warning("Google Drive", "Google Drive Sync", error)
+        self.assertEqual(warning["status"], "needs_reauth")
+        self.assertIn("drive sync --dry-run", warning["recommended_user_action"])
 
     def test_oauth_flow_receives_normalized_scope_list(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

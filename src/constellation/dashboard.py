@@ -54,6 +54,7 @@ class ExecutiveDashboard:
     institutional_research_report_summary: JsonMap
     ai_markets_summary: JsonMap
     performance_intelligence_summary: JsonMap
+    connector_warning_summary: JsonMap
     current_risks_gaps: list[str]
     recommended_next_actions: list[str]
     key_output_files: list[JsonMap]
@@ -80,6 +81,7 @@ class ExecutiveDashboard:
             "institutional_research_report_summary": self.institutional_research_report_summary,
             "ai_markets_summary": self.ai_markets_summary,
             "performance_intelligence_summary": self.performance_intelligence_summary,
+            "connector_warning_summary": self.connector_warning_summary,
             "current_risks_gaps": self.current_risks_gaps,
             "recommended_next_actions": self.recommended_next_actions,
             "key_output_files": self.key_output_files,
@@ -108,6 +110,7 @@ class ExecutiveDashboard:
             institutional_research_report_summary=_map(data.get("institutional_research_report_summary")),
             ai_markets_summary=_map(data.get("ai_markets_summary")),
             performance_intelligence_summary=_map(data.get("performance_intelligence_summary")),
+            connector_warning_summary=_map(data.get("connector_warning_summary")),
             current_risks_gaps=_string_list(data.get("current_risks_gaps", [])),
             recommended_next_actions=_string_list(data.get("recommended_next_actions", [])),
             key_output_files=_map_list(data.get("key_output_files", [])),
@@ -155,6 +158,7 @@ class ExecutiveDashboardBuilder:
         report_summary = _report_summary(report)
         ai_markets_summary = _ai_markets_summary(ai_markets)
         performance_summary = _performance_summary(performance)
+        connector_warning_summary = _connector_warning_summary(daily_run, workflow)
         risks_gaps = _risks_gaps(morning, theses)
         actions = _actions(morning, status, risks_gaps)
         key_files = _key_files(self.root, status)
@@ -171,6 +175,7 @@ class ExecutiveDashboardBuilder:
             "latest_report_id": report_summary.get("latest_report_id"),
             "ai_markets_active_themes": ai_markets_summary.get("active_themes"),
             "performance_pending_outcomes": performance_summary.get("pending_outcome_count"),
+            "connector_warning_count": connector_warning_summary.get("connector_warning_count"),
             "next_files_to_inspect": [item["path"] for item in key_files[:5]],
         }
         dashboard = ExecutiveDashboard(
@@ -191,6 +196,7 @@ class ExecutiveDashboardBuilder:
             institutional_research_report_summary=report_summary,
             ai_markets_summary=ai_markets_summary,
             performance_intelligence_summary=performance_summary,
+            connector_warning_summary=connector_warning_summary,
             current_risks_gaps=risks_gaps,
             recommended_next_actions=actions,
             key_output_files=key_files,
@@ -296,6 +302,9 @@ def render_dashboard_markdown(dashboard: ExecutiveDashboard) -> str:
         "## Performance Intelligence Summary",
         "",
         *_summary_lines(dashboard.performance_intelligence_summary),
+        "## Connector Warning Summary",
+        "",
+        *_summary_lines(dashboard.connector_warning_summary),
         "## Current Risks / Gaps",
         "",
         *_string_lines(dashboard.current_risks_gaps),
@@ -577,6 +586,29 @@ def _performance_summary(report: JsonMap) -> JsonMap:
         "overdue_review_count": report.get("overdue_review_count", 0) or loop.get("overdue_review_count", 0),
         "performance_report_path": "outputs/performance/performance-intelligence.md" if report else None,
         "learning_loop_path": "outputs/performance/learning-loop.md" if report else None,
+    }
+
+
+def _connector_warning_summary(daily_run: JsonMap, workflow: JsonMap) -> JsonMap:
+    warnings: list[JsonMap] = []
+    warnings.extend(_map_list(daily_run.get("connector_warnings", [])))
+    for step in _map_list(workflow.get("executed_steps", [])):
+        details = _map(step.get("details"))
+        warning = _map(details.get("connector_warning"))
+        if warning:
+            warnings.append(warning)
+        warnings.extend(_map_list(details.get("connector_warnings", [])))
+    by_key = {}
+    for warning in warnings:
+        key = "|".join([str(warning.get("connector_name")), str(warning.get("status")), str(warning.get("step_name")), str(warning.get("error_summary"))])
+        by_key[key] = warning
+    deduped = [by_key[key] for key in sorted(by_key)]
+    return {
+        "connector_warnings_available": bool(deduped),
+        "connector_warning_count": len(deduped),
+        "connectors_needing_reauth": sorted({str(item.get("connector_name")) for item in deduped if item.get("status") == "needs_reauth"}),
+        "local_artifacts_used": any(bool(item.get("local_artifacts_used")) for item in deduped),
+        "connector_warning_report_path": "outputs/workflows/workflow-report.md" if deduped else None,
     }
 
 

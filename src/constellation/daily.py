@@ -10,7 +10,7 @@ from typing import Any
 from . import __version__
 from .evidence_graph import EvidenceGraphStore
 from .evolution import KnowledgeEvolutionStore
-from .google_drive import GoogleDriveConnector, GoogleDriveDependencyError, GoogleDriveError
+from .google_drive import GoogleDriveConnector, GoogleDriveDependencyError, GoogleDriveError, classify_connector_error, connector_warning
 from .intake import IntakeEngine, IntakeError
 from .io import read_json, write_json
 from .memory import InstitutionalMemoryStore
@@ -35,6 +35,7 @@ class DailyPipelineRun:
     stages: list[JsonMap]
     manifest: JsonMap
     limitations: list[str]
+    connector_warnings: list[JsonMap]
 
     def to_dict(self) -> JsonMap:
         return {
@@ -47,6 +48,7 @@ class DailyPipelineRun:
             "stages": self.stages,
             "manifest": self.manifest,
             "limitations": self.limitations,
+            "connector_warnings": self.connector_warnings,
         }
 
     @classmethod
@@ -61,6 +63,7 @@ class DailyPipelineRun:
             stages=_map_list(data.get("stages", [])),
             manifest=_map(data.get("manifest")),
             limitations=_string_list(data.get("limitations", [])),
+            connector_warnings=_map_list(data.get("connector_warnings", [])),
         )
 
 
@@ -76,9 +79,10 @@ class DailyPipeline:
             "Daily Pipeline orchestrates existing deterministic modules only.",
             "No providers, LLM inference, embeddings, semantic search, web retrieval, Gmail, or autonomous decisions are used.",
         ]
+        connector_warnings: list[JsonMap] = []
         source_monitor = self._source_monitor(stages)
         intake_items = self._intake_scan(stages)
-        drive_summary = self._google_drive_sync(stages, limitations)
+        drive_summary = self._google_drive_sync(stages, limitations, connector_warnings)
         morning = self._morning(stages, overwrite)
         snapshot = self._memory_snapshot(stages)
         evolution = self._knowledge_evolution(stages)
@@ -98,9 +102,15 @@ class DailyPipeline:
             runtime_seconds=runtime_seconds,
             created_at=created_at,
             completed_at=completed_at,
+            connector_warnings=connector_warnings,
         )
         run_id = _run_id(manifest)
-        status = "completed" if all(stage["status"] in {"completed", "skipped"} for stage in stages) else "failed"
+        if any(stage["status"] == "failed" for stage in stages):
+            status = "failed"
+        elif any(stage["status"] in {"degraded", "completed_with_warning", "completed_with_warnings"} for stage in stages):
+            status = "completed_with_warnings"
+        else:
+            status = "completed"
         return DailyPipelineRun(
             run_id=run_id,
             status=status,
@@ -111,6 +121,7 @@ class DailyPipeline:
             stages=stages,
             manifest=manifest,
             limitations=limitations,
+            connector_warnings=connector_warnings,
         )
 
     def _source_monitor(self, stages: list[JsonMap]) -> JsonMap:
@@ -127,7 +138,7 @@ class DailyPipeline:
         stages.append(_stage("intake_scan", "completed", {"available": len(items)}))
         return [item.to_dict() for item in items]
 
-    def _google_drive_sync(self, stages: list[JsonMap], limitations: list[str]) -> JsonMap:
+    def _google_drive_sync(self, stages: list[JsonMap], limitations: list[str], connector_warnings: list[JsonMap]) -> JsonMap:
         connector = GoogleDriveConnector(self.root)
         status = connector.status()
         if not _drive_ready(status):
@@ -138,6 +149,13 @@ class DailyPipeline:
         try:
             manifest = connector.sync()
         except (GoogleDriveDependencyError, GoogleDriveError) as exc:
+            connector_status = classify_connector_error(exc)
+            if connector_status == "needs_reauth":
+                warning = connector_warning("Google Drive", "Daily Google Drive Sync", exc, local_artifacts_used=True)
+                connector_warnings.append(warning)
+                stages.append(_stage("google_drive_sync", "degraded", {"error": str(exc), "connector_warning": warning}))
+                limitations.append("Google Drive requires re-authentication; existing local artifacts were used where available.")
+                return {"status": "needs_reauth", "error": str(exc), "downloaded": 0, "skipped": 0, "duplicates": 0, "errors": 1, "connector_warning": warning}
             stages.append(_stage("google_drive_sync", "failed", {"error": str(exc)}))
             return {"status": "failed", "error": str(exc), "downloaded": 0, "skipped": 0, "duplicates": 0, "errors": 1}
         summary = {
@@ -280,6 +298,15 @@ def render_daily_report(run: DailyPipelineRun) -> str:
     ]
     for stage in run.stages:
         lines.append(f"- `{stage.get('name')}`: `{stage.get('status')}`")
+    lines.extend(["", "## Connector Warnings", ""])
+    if not run.connector_warnings:
+        lines.append("- None")
+    else:
+        for warning in run.connector_warnings:
+            lines.append(f"- {warning.get('connector_name')}: `{warning.get('status')}` during `{warning.get('step_name')}`")
+            lines.append(f"  - Summary: {warning.get('error_summary')}")
+            lines.append(f"  - Recommended action: {warning.get('recommended_user_action')}")
+            lines.append(f"  - Local artifacts used: {warning.get('local_artifacts_used')}")
     lines.extend(["", "## Limitations", ""])
     lines.extend(f"- {item}" for item in run.limitations)
     lines.append("")
@@ -299,6 +326,7 @@ def _manifest(
     runtime_seconds: float,
     created_at: str,
     completed_at: str,
+    connector_warnings: list[JsonMap],
 ) -> JsonMap:
     evidence_count = _int(morning.get("evidence_count"))
     return {
@@ -310,6 +338,7 @@ def _manifest(
         "source_monitor_id": source_monitor.get("monitor_id"),
         "source_monitor_summary": source_monitor.get("summary", {}),
         "google_drive_sync": drive_summary,
+        "connector_warnings": connector_warnings,
         "morning_brief_id": morning.get("brief_id"),
         "memory_snapshot_id": snapshot.get("snapshot_id"),
         "knowledge_evolution_delta_id": evolution.get("delta_id"),

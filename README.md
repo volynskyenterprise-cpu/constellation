@@ -326,6 +326,8 @@ python -m constellation daily export
 
 Daily Pipeline orchestrates intake scan, optional Google Drive sync readiness, morning brief, memory snapshot, Evidence Graph, and Thesis Intelligence into `outputs/daily/`. It does not call providers, run LLM inference, or make autonomous decisions.
 
+If Google Drive requires re-authentication, Daily Pipeline records a connector warning and continues from existing local artifacts where possible.
+
 ### Executive Dashboard
 
 ```bash
@@ -335,7 +337,7 @@ python -m constellation dashboard --overwrite
 python -m constellation dashboard status
 ```
 
-Executive Dashboard presents current local Constellation state from existing outputs only. It reports missing artifacts as unavailable and writes `outputs/dashboard/dashboard.json` and `outputs/dashboard/dashboard.md`.
+Executive Dashboard presents current local Constellation state from existing outputs only. It reports missing artifacts as unavailable and writes `outputs/dashboard/dashboard.json` and `outputs/dashboard/dashboard.md`. It also summarizes connector warnings such as Google Drive `needs_reauth` events when available.
 
 ### Source Monitoring
 
@@ -360,6 +362,12 @@ python -m constellation workflow export
 ```
 
 Workflow Automation runs named deterministic recipes made from existing Constellation commands. Built-in workflows include `Morning`, `Research Refresh`, and `Executive Snapshot`. The `Morning` workflow imports intake files, processes newly imported markdown/text research inputs, builds graph records for the generated research runs, and refreshes downstream deterministic intelligence outputs. Workflow execution occurs only when explicitly invoked and does not add provider calls, LLM inference, Gmail, web retrieval, embeddings, semantic search, scheduling, or autonomous decisions.
+
+If Google Drive OAuth has expired or been revoked, the Google Drive step is marked degraded with a `needs_reauth` connector warning. Morning continues using existing local artifacts where possible. Refresh the local token with:
+
+```bash
+python -m constellation drive sync --dry-run
+```
 
 ### Knowledge Evolution
 

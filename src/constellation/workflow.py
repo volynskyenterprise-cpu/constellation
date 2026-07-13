@@ -13,7 +13,7 @@ from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .daily import DailyPipelineStore
 from .dashboard import ExecutiveDashboardStore
 from .evidence_graph import EvidenceGraphStore
-from .google_drive import GoogleDriveConnector, GoogleDriveDependencyError, GoogleDriveError
+from .google_drive import GoogleDriveConnector, GoogleDriveDependencyError, GoogleDriveError, classify_connector_error, connector_warning
 from .intake import IntakeEngine, IntakeManifest
 from .io import read_json, write_json
 from .knowledge_graph import KnowledgeGraphBuilder, KnowledgeGraphError
@@ -182,10 +182,13 @@ class WorkflowEngine:
                     break
         completed_at = _now_iso()
         duration = round(perf_counter() - start, 6)
+        warning_steps = [step for step in executed_steps if step.get("status") in {"degraded", "completed_with_warning", "completed_with_warnings"}]
         if blocked:
             status = "failed"
         elif failed_steps:
             status = "completed_with_failures"
+        elif warning_steps:
+            status = "completed_with_warnings"
         else:
             status = "completed"
         run_seed = "|".join([definition.id, started_at, completed_at, ",".join(str(step.get("status")) for step in executed_steps)])
@@ -250,6 +253,10 @@ class WorkflowEngine:
         try:
             manifest = connector.sync(source_id=_optional_str(arguments.get("source")), dry_run=bool(arguments.get("dry_run", False)))
         except (GoogleDriveDependencyError, GoogleDriveError) as exc:
+            connector_status = classify_connector_error(exc)
+            if connector_status == "needs_reauth":
+                warning = connector_warning("Google Drive", "Google Drive Sync", exc, local_artifacts_used=True)
+                return {"status": "degraded", "connector_warning": warning, "connector_status": connector_status, "error_summary": warning["error_summary"], "continued_using_local_artifacts": True}
             return {"status": "failed", "error": str(exc)}
         return {
             "status": "completed",
@@ -309,7 +316,7 @@ class WorkflowEngine:
 
     def _daily(self, arguments: JsonMap) -> JsonMap:
         run = DailyPipelineStore(self.root).run(overwrite=bool(arguments.get("overwrite", False)))
-        return {"status": run.status, "daily_run_id": run.run_id, "pipeline_status": run.status}
+        return {"status": run.status, "daily_run_id": run.run_id, "pipeline_status": run.status, "connector_warnings": run.connector_warnings}
 
     def _dashboard(self, arguments: JsonMap) -> JsonMap:
         dashboard = ExecutiveDashboardStore(self.root).generate(overwrite=bool(arguments.get("overwrite", False)))
@@ -544,6 +551,19 @@ def render_workflow_report(run: WorkflowRun) -> str:
         lines.append(f"- `{step.get('name')}` (`{step.get('command')}`): `{step.get('status')}`")
         if step.get("error"):
             lines.append(f"  Error: {step.get('error')}")
+    connector_warnings = _connector_warnings(run.executed_steps)
+    lines.extend(["", "## Connector Warnings", ""])
+    if not connector_warnings:
+        lines.extend(["- None", ""])
+    else:
+        for warning in connector_warnings:
+            lines.append(f"- {warning.get('connector_name')}: `{warning.get('status')}` during `{warning.get('step_name')}`")
+            if warning.get("status") == "needs_reauth":
+                lines.append("  - Google Drive Sync requires re-authentication. Existing local artifacts were used where available.")
+            lines.append(f"  - Summary: {warning.get('error_summary')}")
+            lines.append(f"  - Recommended action: {warning.get('recommended_user_action')}")
+            lines.append(f"  - Continued using local artifacts: {warning.get('local_artifacts_used')}")
+        lines.append("")
     research_steps = [step for step in run.executed_steps if step.get("command") == "process research"]
     if research_steps:
         details = _map(research_steps[-1].get("details"))
@@ -737,6 +757,18 @@ def _built_in_workflows() -> list[WorkflowDefinition]:
 
 def _step(name: str, command: str, arguments: JsonMap | None = None, *, continue_on_failure: bool = False) -> WorkflowStep:
     return WorkflowStep(name=name, command=command, arguments=arguments or {}, enabled=True, continue_on_failure=continue_on_failure)
+
+
+def _connector_warnings(steps: list[JsonMap]) -> list[JsonMap]:
+    warnings: list[JsonMap] = []
+    for step in steps:
+        details = _map(step.get("details"))
+        warning = _map(details.get("connector_warning"))
+        if warning:
+            warnings.append(warning)
+        for item in _map_list(details.get("connector_warnings")):
+            warnings.append(item)
+    return warnings
 
 
 def detect_new_research_inputs(root: Path) -> list[JsonMap]:

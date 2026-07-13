@@ -26,6 +26,15 @@ MARKDOWN_EXPORT_MIME_TYPE = "text/markdown"
 TEXT_EXPORT_MIME_TYPE = "text/plain"
 DRIVE_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 SCOPE_ALIASES = {"drive.readonly": DRIVE_READONLY_SCOPE, DRIVE_READONLY_SCOPE: DRIVE_READONLY_SCOPE}
+CONNECTOR_REAUTH_TERMS = [
+    "invalid_grant",
+    "token has been expired or revoked",
+    "expired or revoked",
+    "invalid credentials",
+    "reauth",
+    "authorization required",
+]
+GOOGLE_DRIVE_REAUTH_ACTION = "Remove or refresh the local Google Drive token, then run: python -m constellation drive sync --dry-run"
 
 
 @dataclass(frozen=True)
@@ -251,6 +260,31 @@ def google_drive_dependencies_installed() -> bool:
     return True
 
 
+def classify_connector_error(error: Exception | str) -> str:
+    text = str(error).lower()
+    if any(term in text for term in CONNECTOR_REAUTH_TERMS):
+        return "needs_reauth"
+    if isinstance(error, GoogleDriveDependencyError) or "dependencies are not installed" in text:
+        return "unavailable"
+    if not text.strip():
+        return "unknown"
+    return "failed"
+
+
+def connector_warning(connector_name: str, step_name: str, error: Exception | str, *, local_artifacts_used: bool = True) -> JsonMap:
+    status = classify_connector_error(error)
+    summary = _error_summary(str(error))
+    recommended_action = GOOGLE_DRIVE_REAUTH_ACTION if status == "needs_reauth" else "Review connector configuration and retry the sync command."
+    return {
+        "connector_name": connector_name,
+        "status": status,
+        "step_name": step_name,
+        "error_summary": summary,
+        "recommended_user_action": recommended_action,
+        "local_artifacts_used": local_artifacts_used,
+    }
+
+
 def normalize_scopes(raw_scopes: Any) -> list[str]:
     scopes: list[str] = []
     if not isinstance(raw_scopes, list):
@@ -400,6 +434,13 @@ def _scope_string(value: Any) -> str | None:
         if isinstance(key, str) and isinstance(raw, str):
             return f"{key}:{raw}".strip()
     return None
+
+
+def _error_summary(value: str, limit: int = 240) -> str:
+    text = " ".join(value.split())
+    if len(text) > limit:
+        text = text[:limit].rstrip()
+    return text
 
 
 def _digest(value: str) -> str:

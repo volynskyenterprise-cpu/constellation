@@ -2,6 +2,8 @@
 
 ## Next Engineering Milestones
 
+- Add connector warning history retention and comparison across Morning runs.
+- Add connector-specific recovery documentation for Google Drive token refresh.
 - Performance Intelligence MVP complete; extend v6 with human-reviewed thesis accuracy, signal quality, catalyst accuracy, and learning-loop promotion workflows.
 - Add capability-level documentation that maps Observe, Understand, Decide, and Improve phases to operating workflows and outputs.
 - Add Performance Intelligence attribution analysis after explicit outcome data is supplied by the user.

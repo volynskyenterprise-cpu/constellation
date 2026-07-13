@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from constellation.cli import main
 from constellation.dashboard import ExecutiveDashboardStore
+from constellation.google_drive import GoogleDriveError
 from constellation.research import ResearchError
 from constellation.workflow import WorkflowDefinition, WorkflowEngine, WorkflowStep, WorkflowStore, collect_research_run_ids
 
@@ -69,6 +70,54 @@ class WorkflowAutomationTests(unittest.TestCase):
             self.assertEqual(drive_step["status"], "skipped")
             research_step = next(step for step in run.executed_steps if step["command"] == "process research")
             self.assertEqual(research_step["details"]["new_research_files_detected"], 0)
+
+    def test_morning_workflow_continues_when_drive_needs_reauth(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_minimal_tree(root, drive_enabled=True)
+
+            with patch("constellation.workflow.GoogleDriveConnector.status", return_value=_ready_drive_status()):
+                with patch("constellation.daily.GoogleDriveConnector.status", return_value=_ready_drive_status()):
+                    with patch("constellation.workflow.GoogleDriveConnector.sync", side_effect=GoogleDriveError("invalid_grant: Token has been expired or revoked")):
+                        with patch("constellation.daily.GoogleDriveConnector.sync", side_effect=GoogleDriveError("invalid_grant: Token has been expired or revoked")):
+                            run = WorkflowStore(root).run("Morning")
+
+            drive_step = next(step for step in run.executed_steps if step["command"] == "drive sync")
+            daily_step = next(step for step in run.executed_steps if step["command"] == "daily")
+            report = (root / "outputs" / "workflows" / "workflow-report.md").read_text(encoding="utf-8")
+            dashboard = ExecutiveDashboardStore(root).generate(overwrite=True)
+            brief = json.loads((root / "outputs" / "ai-markets" / "briefings" / "morning-brief.json").read_text(encoding="utf-8"))
+
+            self.assertEqual(run.status, "completed_with_warnings")
+            self.assertEqual(drive_step["status"], "degraded")
+            self.assertEqual(daily_step["status"], "completed_with_warnings")
+            self.assertIn("Connector Warnings", report)
+            self.assertIn("requires re-authentication", report)
+            self.assertTrue(dashboard.connector_warning_summary["connector_warnings_available"])
+            self.assertIn("Google Drive", dashboard.connector_warning_summary["connectors_needing_reauth"])
+            self.assertTrue(dashboard.connector_warning_summary["local_artifacts_used"])
+            self.assertTrue(any("Google Drive requires re-authentication" in item for item in brief["limitations"]))
+
+    def test_non_auth_drive_failure_still_fails_blocking_workflow(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_minimal_tree(root, drive_enabled=True)
+            definition = WorkflowDefinition(
+                id="drive-failure",
+                name="Drive Failure",
+                description="Blocking drive failure.",
+                enabled=True,
+                created_at="2026-07-06T00:00:00-07:00",
+                updated_at="2026-07-06T00:00:00-07:00",
+                steps=[WorkflowStep("Google Drive Sync", "drive sync", {}, True, False)],
+            )
+
+            with patch("constellation.workflow.GoogleDriveConnector.status", return_value=_ready_drive_status()):
+                with patch("constellation.workflow.GoogleDriveConnector.sync", side_effect=GoogleDriveError("quota exceeded")):
+                    run = WorkflowEngine(root).run(definition)
+
+            self.assertEqual(run.status, "failed")
+            self.assertEqual(run.executed_steps[0]["status"], "failed")
 
     def test_morning_workflow_detects_and_processes_imported_research(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -300,7 +349,7 @@ _MORNING_COMMANDS = [
 ]
 
 
-def _create_minimal_tree(root: Path, *, include_google_config: bool = True) -> None:
+def _create_minimal_tree(root: Path, *, include_google_config: bool = True, drive_enabled: bool = False) -> None:
     for relative in [
         "inbox/google-drive/incoming",
         "inbox/gmail/incoming",
@@ -319,7 +368,27 @@ def _create_minimal_tree(root: Path, *, include_google_config: bool = True) -> N
             "  - drive.readonly\n",
             encoding="utf-8",
         )
-    (root / "config" / "sources.yaml").write_text("sources: []\n", encoding="utf-8")
+    if drive_enabled:
+        (root / "config" / "sources.yaml").write_text(
+            "sources:\n"
+            "  - id: drive_test\n"
+            "    source_type: google_drive\n"
+            "    folder_id: folder_test\n"
+            "    enabled: true\n",
+            encoding="utf-8",
+        )
+    else:
+        (root / "config" / "sources.yaml").write_text("sources: []\n", encoding="utf-8")
+
+
+def _ready_drive_status() -> dict:
+    return {
+        "config_present": True,
+        "dependencies_installed": True,
+        "credentials_path_configured": True,
+        "token_path_configured": True,
+        "enabled_sources": ["drive_test"],
+    }
 
 
 if __name__ == "__main__":
