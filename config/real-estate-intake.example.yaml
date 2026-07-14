@@ -1,0 +1,16 @@
+real_estate_intake:
+  enabled: false
+  assignment_root: real-estate/assignments
+  source_mode: reference
+
+  sources:
+    - id: pkos_aoc_intake
+      enabled: false
+      source_type: local_directory
+      root_path: C:/LOCAL/PATH/TO/PKOS
+      include_patterns:
+        - 03-operations/aoc/07-automation/intake/incoming/*.json
+        - 03-operations/aoc/07-automation/intake/review/*.json
+        - 03-operations/aoc/07-automation/intake/review/*.md
+        - 03-operations/aoc/02-assignments/*.md
+      archive_processed: false

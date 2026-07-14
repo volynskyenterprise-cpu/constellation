@@ -112,6 +112,16 @@ This private assignment tree is ignored by Git. Public examples remain under `re
 
 The MVP does not parse PDFs, OCR images, retrieve permits, analyze MLS files, select comparables, generate adjustments, produce value opinions, or make USPAP conclusions.
 
+## v7.1 Implementation - Assignment Auto-Ingestion
+
+The second implemented Real Estate Intelligence capability removes manual assignment setup friction.
+
+Assignment Auto-Ingestion reads structured local intake artifacts, detects assignment candidates, creates or merges private assignment folders, writes `assignment.yaml`, references or copies source files, builds Assignment Intelligence automatically, writes intake manifests, and refreshes the dashboard.
+
+It supports optional local PKOS/AOC integration through gitignored config files. It does not hardcode external vault paths and does not create a dependency on PKOS.
+
+The v7.1 implementation still does not parse arbitrary narrative content, select comparables, generate adjustments, interpret permits, produce value opinions, or make USPAP conclusions.
+
 ## 5. Institutional Valuation Operating System
 
 Real Estate Intelligence should operate as an institutional layer around the appraisal workflow.

@@ -169,6 +169,7 @@ class ExecutiveDashboardBuilder:
         performance_summary = _performance_summary(performance)
         thesis_accuracy_summary = _thesis_accuracy_summary(thesis_accuracy)
         real_estate_summary = RealEstateAssignmentStore(self.root).summary()
+        real_estate_summary.update(_real_estate_intake_summary(_read_optional_json(self.root / "outputs" / "real-estate" / "intake" / "latest-intake.json")))
         connector_warning_summary = _connector_warning_summary(daily_run, workflow)
         risks_gaps = _risks_gaps(morning, theses)
         actions = _actions(morning, status, risks_gaps)
@@ -645,6 +646,19 @@ def _connector_warning_summary(daily_run: JsonMap, workflow: JsonMap) -> JsonMap
         "connectors_needing_reauth": sorted({str(item.get("connector_name")) for item in deduped if item.get("status") == "needs_reauth"}),
         "local_artifacts_used": any(bool(item.get("local_artifacts_used")) for item in deduped),
         "connector_warning_report_path": "outputs/workflows/workflow-report.md" if deduped else None,
+    }
+
+
+def _real_estate_intake_summary(intake: JsonMap) -> JsonMap:
+    counts = _map(intake.get("counts"))
+    records = _map_list(intake.get("records", []))
+    return {
+        "real_estate_intake_available": bool(intake),
+        "latest_real_estate_intake_run_id": intake.get("intake_run_id"),
+        "real_estate_intake_imported_count": counts.get("imported", 0),
+        "real_estate_intake_duplicate_count": counts.get("skipped_duplicate", 0),
+        "real_estate_intake_error_count": counts.get("errors", 0),
+        "latest_real_estate_intake_assignment_ids": [str(record.get("detected_assignment_id")) for record in records[:5]],
     }
 
 

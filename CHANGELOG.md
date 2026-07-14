@@ -2,6 +2,16 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.1.0 - Real Estate Assignment Auto-Ingestion
+
+- Added deterministic Real Estate Assignment Auto-Ingestion for structured local intake files.
+- Added `python -m constellation real-estate intake ...` commands for status, scan, import, history, and record inspection.
+- Added optional local intake configuration with gitignored `config/real-estate-intake.yaml` and `config/real-estate-intake.local.yaml`.
+- Added reference and copy source modes with checksum and source-path provenance.
+- Added deterministic assignment ID normalization, alias-based field mapping, duplicate detection, non-overwriting merge behavior, and conflict fact creation.
+- Automatic intake import now creates/updates private assignment case files, builds Assignment Intelligence, writes intake manifests, and refreshes the dashboard.
+- Preserved no-provider, no-OpenAI, no-LLM, no-embedding, no-web, no-Gmail, no-calendar, no-autonomous-valuation behavior.
+
 ## 7.0.1 - Assignment Template and Empty-Fact Handling
 
 - Fixed Real Estate Assignment Intelligence so empty structured fact values are omitted instead of becoming populated facts.

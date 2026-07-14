@@ -86,7 +86,7 @@ def _parse_list(lines: list[tuple[int, str, int]], index: int, indent: int) -> t
             result.append(item)
             continue
 
-        if ":" in item_text:
+        if ":" in item_text and not _is_quoted(item_text):
             key, value = _parse_key_value(item_text, line_number)
             item_dict: dict[str, Any] = {key: value}
             while index < len(lines) and lines[index][0] > current_indent:
@@ -123,3 +123,7 @@ def _parse_scalar(value: str) -> Any:
     if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
         return value[1:-1]
     return value
+
+
+def _is_quoted(value: str) -> bool:
+    return (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'"))

@@ -24,6 +24,7 @@ from .pkos import PKOSError, PKOSKnowledgeOrganization
 from .performance import PerformanceIntelligenceError, PerformanceIntelligenceStore
 from .thesis_accuracy import ThesisAccuracyError, ThesisAccuracyStore
 from .prompts import PromptUnavailable
+from .real_estate_intake import RealEstateIntakeEngine, RealEstateIntakeError, RealEstateIntakeStore
 from .real_estate import RealEstateAssignmentStore, RealEstateError
 from .reports import InstitutionalResearchReportError, InstitutionalResearchReportStore, report_summary
 from .research import ResearchError, ResearchOrganization
@@ -354,6 +355,18 @@ def main(argv: list[str] | None = None) -> int:
     ]:
         command_parser = real_estate_assignment_subparsers.add_parser(command_name, help=help_text)
         command_parser.add_argument("assignment_id", help="Assignment ID.")
+    real_estate_intake_parser = real_estate_subparsers.add_parser("intake", help="Auto-ingest Real Estate assignments from structured local intake.")
+    real_estate_intake_subparsers = real_estate_intake_parser.add_subparsers(dest="real_estate_intake_command", required=True)
+    real_estate_intake_subparsers.add_parser("status", help="Show Real Estate intake status.")
+    real_estate_intake_scan_parser = real_estate_intake_subparsers.add_parser("scan", help="Scan configured Real Estate intake sources.")
+    real_estate_intake_scan_parser.add_argument("--source", help="Optional source ID.")
+    real_estate_intake_import_parser = real_estate_intake_subparsers.add_parser("import", help="Import structured Real Estate intake files.")
+    real_estate_intake_import_parser.add_argument("--source", help="Optional source ID.")
+    real_estate_intake_import_parser.add_argument("--file", type=Path, help="Explicit structured intake file.")
+    real_estate_intake_import_parser.add_argument("--open", action="store_true", help="Open generated assignment brief in VS Code if available.")
+    real_estate_intake_subparsers.add_parser("history", help="List Real Estate intake history.")
+    real_estate_intake_show_parser = real_estate_intake_subparsers.add_parser("show", help="Show one intake record.")
+    real_estate_intake_show_parser.add_argument("intake_id", help="Intake ID.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -1391,6 +1404,41 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "real-estate":
         store = RealEstateAssignmentStore(args.root.resolve())
         try:
+            if args.real_estate_command == "intake":
+                engine = RealEstateIntakeEngine(args.root.resolve())
+                intake_store = RealEstateIntakeStore(args.root.resolve())
+                if args.real_estate_intake_command == "status":
+                    _print_real_estate_intake_status(engine.status())
+                    return 0
+                if args.real_estate_intake_command == "scan":
+                    candidates = engine.scan(source_id=args.source)
+                    if not candidates:
+                        print("No Real Estate intake candidates found.")
+                        return 0
+                    for candidate in candidates:
+                        print(
+                            f"{candidate.intake_id} assignment_id={candidate.detected_assignment_id} "
+                            f"source={candidate.source_id} already_imported={candidate.already_imported} "
+                            f"mapped={len(candidate.field_mappings)} warnings={len(candidate.warnings)} path={candidate.source_path}"
+                        )
+                    return 0
+                if args.real_estate_intake_command == "import":
+                    result = engine.import_candidates(source_id=args.source, file_path=args.file, open_brief=args.open)
+                    _print_real_estate_intake_manifest(result.manifest.to_dict(), result.dashboard_refreshed)
+                    return 0
+                if args.real_estate_intake_command == "history":
+                    for manifest in intake_store.history():
+                        counts = _map(manifest.get("counts"))
+                        print(f"{manifest.get('intake_run_id')} imported={counts.get('imported', 0)} duplicates={counts.get('skipped_duplicate', 0)} errors={counts.get('errors', 0)} created_at={manifest.get('created_at')}")
+                    return 0
+                if args.real_estate_intake_command == "show":
+                    for manifest in intake_store.history():
+                        for record in _map_list(manifest.get("records", [])):
+                            if record.get("intake_id") == args.intake_id:
+                                print(json.dumps(record, indent=2, sort_keys=True))
+                                return 0
+                    print(f"error: intake record not found: {args.intake_id}")
+                    return 1
             if args.real_estate_command == "assignments":
                 assignment_ids = store.list_assignment_ids()
                 if not assignment_ids:
@@ -1450,7 +1498,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"source_manifest: {store.output_dir(assignment_id) / 'source-manifest.md'}")
                 print(f"evidence_index: {store.output_dir(assignment_id) / 'evidence-index.md'}")
                 return 0
-        except RealEstateError as exc:
+        except (RealEstateError, RealEstateIntakeError) as exc:
             print(f"error: {exc}")
             return 1
     return 2
@@ -1576,6 +1624,34 @@ def _print_real_estate_assignment_status(data, report_path: Path) -> None:
     print(f"conflict_count: {data.get('conflict_count', 0)}")
     print(f"risk_count: {data.get('risk_count', 0)}")
     print(f"report_path: {report_path}")
+
+
+def _print_real_estate_intake_status(status) -> None:
+    print(f"config_available: {status.get('config_available')}")
+    print(f"config_path: {status.get('config_path') or ''}")
+    print(f"assignment_root: {status.get('assignment_root')}")
+    print(f"enabled_sources: {','.join(_string_list(status.get('enabled_sources', [])))}")
+    print(f"detected_candidate_count: {status.get('detected_candidate_count', 0)}")
+    print(f"imported_count: {status.get('imported_count', 0)}")
+    print(f"skipped_duplicate_count: {status.get('skipped_duplicate_count', 0)}")
+    print(f"error_count: {status.get('error_count', 0)}")
+    print(f"manifest_path: {status.get('manifest_path')}")
+
+
+def _print_real_estate_intake_manifest(manifest, dashboard_refreshed: bool) -> None:
+    counts = _map(manifest.get("counts"))
+    print(f"intake_run_id: {manifest.get('intake_run_id')}")
+    print(f"imported: {counts.get('imported', 0)}")
+    print(f"updated: {counts.get('updated', 0)}")
+    print(f"skipped_duplicate: {counts.get('skipped_duplicate', 0)}")
+    print(f"errors: {counts.get('errors', 0)}")
+    print(f"dashboard_refreshed: {dashboard_refreshed}")
+    for record in _map_list(manifest.get("records", [])):
+        print(
+            f"assignment_id: {record.get('detected_assignment_id')} status={record.get('import_status')} "
+            f"mapped={len(_string_list(record.get('fields_mapped', [])))} conflicts={len(_string_list(record.get('conflicts_created', [])))} "
+            f"brief={record.get('assignment_brief_path')}"
+        )
 
 
 def _print_monitor_run(run) -> None:

@@ -361,6 +361,30 @@ Private assignment files belong under `real-estate/assignments/<ASSIGNMENT_ID>/`
 
 Structured facts are optional. Empty fact values are omitted; `unit`, `notes`, and other metadata fields are never substituted as values.
 
+Assignment Auto-Ingestion reduces setup friction by creating private assignment files directly from structured local intake artifacts:
+
+```bash
+python -m constellation real-estate intake status
+python -m constellation real-estate intake scan
+python -m constellation real-estate intake import
+python -m constellation real-estate intake import --file PATH
+```
+
+Target flow:
+
+```text
+Structured assignment intake artifact
+    -> assignment detected
+    -> private case folder created or merged
+    -> assignment.yaml populated from explicit fields
+    -> sources referenced or copied
+    -> Assignment Intelligence built
+    -> assignment brief generated
+    -> dashboard refreshed
+```
+
+Use `config/real-estate-intake.example.yaml` as a placeholder template for optional PKOS/AOC or other local structured intake sources. Real paths belong only in gitignored local config. `source_mode: reference` preserves original paths without copying files; `source_mode: copy` copies files from configured roots into the private assignment `sources/` directory.
+
 ### Source Monitoring
 
 ```bash

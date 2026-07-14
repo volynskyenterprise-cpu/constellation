@@ -17,6 +17,8 @@ config/decision-journal.yaml
 config/decision-journal.local.yaml
 config/real-estate-assignment.yaml
 config/real-estate-assignment.local.yaml
+config/real-estate-intake.yaml
+config/real-estate-intake.local.yaml
 outputs/ai-markets/portfolio/local-exports/
 
 journal/ai-markets/*.md

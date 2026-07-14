@@ -507,15 +507,19 @@ def _source_records(root: Path, assignment: RealEstateAssignment) -> list[RealEs
     base = assignment_directory(root, assignment.assignment_id)
     files: list[Path] = []
     for source_path in assignment.source_paths + ["notes", "evidence"]:
-        path = base / source_path
+        candidate = Path(source_path)
+        path = candidate if candidate.is_absolute() else base / source_path
         if path.is_file():
             files.append(path)
         elif path.exists():
             files.extend(item for item in path.rglob("*") if item.is_file() and item.suffix.lower() in SUPPORTED_SOURCE_EXTENSIONS)
     records = []
     seen = set()
-    for path in sorted(files, key=lambda item: str(item.relative_to(base)).lower()):
-        rel = str(path.relative_to(base))
+    for path in sorted(files, key=lambda item: _source_sort_path(item, base)):
+        try:
+            rel = str(path.relative_to(base))
+        except ValueError:
+            rel = str(path)
         if rel in seen:
             continue
         seen.add(rel)
@@ -804,6 +808,13 @@ def _file_checksum(path: Path) -> str:
         for chunk in iter(lambda: handle.read(65536), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _source_sort_path(path: Path, base: Path) -> str:
+    try:
+        return str(path.relative_to(base)).lower()
+    except ValueError:
+        return str(path).lower()
 
 
 def _has_explicit_fact_value(item: JsonMap) -> bool:
