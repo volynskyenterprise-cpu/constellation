@@ -2,6 +2,17 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.0.0 - Real Estate Assignment Intelligence MVP
+
+- Added deterministic Real Estate Assignment Intelligence as the first Real Estate Intelligence capability.
+- Added private local assignment conventions under gitignored `real-estate/assignments/`.
+- Added `python -m constellation real-estate assignment ...` commands for templates, builds, status, source manifests, missing information, risks, timelines, and exports.
+- Added Assignment Intelligence outputs under `outputs/real-estate/assignments/`.
+- Integrated Real Estate Assignment Intelligence summary fields into the Executive Dashboard.
+- Added public sanitized examples and documentation for the v7.0 Assignment Intelligence MVP.
+- Preserved no-provider, no-OpenAI, no-LLM, no-embedding, no-web, no-Gmail, no-calendar, no-autonomous-execution behavior.
+- Preserved professional valuation boundaries: no generated value opinions, comparable selections, adjustments, USPAP opinions, or appraisal conclusions.
+
 ## 6.1.1 - Executive Brief Refinement and Automated Daily Review Launch
 
 - Refined the AI & Markets Executive Morning Brief into a concise top-five CIO-style daily brief.

@@ -15,12 +15,15 @@ config/portfolio.yaml
 config/portfolio.local.yaml
 config/decision-journal.yaml
 config/decision-journal.local.yaml
+config/real-estate-assignment.yaml
+config/real-estate-assignment.local.yaml
 outputs/ai-markets/portfolio/local-exports/
 
 journal/ai-markets/*.md
 journal/ai-markets/*.yaml
 journal/ai-markets/*.json
 journal/private/**
+real-estate/assignments/**
 
 logs/runs/*
 !logs/runs/README.md
@@ -60,6 +63,7 @@ outputs/morning/
 outputs/memory/
 outputs/evidence-graph/
 outputs/performance/
+outputs/real-estate/
 
 # Local automation logs
 outputs/automation/*.log

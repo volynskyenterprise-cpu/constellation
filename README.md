@@ -1,6 +1,6 @@
 # Constellation
 
-> **Current Status — Phase I Complete (v4.2)**
+> **Current Status - Multi-Domain Intelligence Platform (v7.0)**
 >
 > Constellation AI is an Institutional Investment Operating System.
 >
@@ -71,6 +71,7 @@ Current institutional capabilities include:
 - Knowledge Evolution Engine
 - Institutional Research Reports
 - AI & Markets Intelligence
+- Real Estate Assignment Intelligence
 - ✅ Institutional Intelligence Platform
 - ✅ Operational Intake Pipeline
 - ✅ Google Drive Connector
@@ -268,6 +269,8 @@ config/
 inbox/
 
 workflows/
+
+real-estate/
 ```
 
 ---
@@ -338,6 +341,23 @@ python -m constellation dashboard status
 ```
 
 Executive Dashboard presents current local Constellation state from existing outputs only. It reports missing artifacts as unavailable and writes `outputs/dashboard/dashboard.json` and `outputs/dashboard/dashboard.md`. It also summarizes connector warnings such as Google Drive `needs_reauth` events when available.
+
+### Real Estate Assignment Intelligence
+
+```bash
+python -m constellation real-estate assignments
+python -m constellation real-estate assignment create-template ASSIGNMENT_ID
+python -m constellation real-estate assignment build ASSIGNMENT_ID
+python -m constellation real-estate assignment status ASSIGNMENT_ID
+python -m constellation real-estate assignment sources ASSIGNMENT_ID
+python -m constellation real-estate assignment missing ASSIGNMENT_ID
+python -m constellation real-estate assignment risks ASSIGNMENT_ID
+python -m constellation real-estate assignment export ASSIGNMENT_ID
+```
+
+Real Estate Assignment Intelligence is the first Real Estate Intelligence capability. It organizes local assignment metadata, source-file metadata, missing information, exact structured conflicts, assignment risks, and review timelines. It does not generate value opinions, comparable selections, adjustments, USPAP opinions, or appraisal conclusions.
+
+Private assignment files belong under `real-estate/assignments/<ASSIGNMENT_ID>/` and are ignored by Git. Public examples live in `real-estate/examples/`.
 
 ### Source Monitoring
 
@@ -679,6 +699,18 @@ Future capabilities:
 Primary question answered:
 
 > How can I become a better investor?
+
+## Phase V - Expand Domains
+
+### v7.0.x - Real Estate Intelligence
+
+Extend Constellation's deterministic evidence-first operating model into valuation work while preserving a separate professional domain boundary.
+
+- v7.0.0 - Real Estate Assignment Intelligence
+
+Primary question answered:
+
+> What property am I working on?
 
 ## Operating Philosophy
 

@@ -4,6 +4,11 @@
 
 - Add connector warning history retention and comparison across Morning runs.
 - Add connector-specific recovery documentation for Google Drive token refresh.
+- Real Estate Assignment Intelligence MVP is complete; next Real Estate work should add Comparable Intelligence, Adjustment Intelligence, Neighborhood Intelligence, Permit Intelligence, and Reviewer Intelligence without generating unsupported valuation opinions.
+- Add deterministic MLS export parsing for Real Estate Intelligence after schema examples are supplied.
+- Add deterministic permit record indexing for Real Estate Intelligence after local source formats are supplied.
+- Add Real Estate assignment comparison against prior assignment snapshots.
+- Add Real Estate reviewer condition tracking with explicit source references.
 - Executive Brief Refinement complete; keep Morning Brief concise with full detail in research agenda and appendix.
 - Performance Intelligence MVP and deterministic Thesis Accuracy are complete; extend v6 with signal quality, catalyst accuracy, and learning-loop promotion workflows.
 - Add capability-level documentation that maps Observe, Understand, Decide, and Improve phases to operating workflows and outputs.
@@ -15,8 +20,7 @@
 - Add Learning Loop Optimization reports that promote process improvements into recurring review workflows.
 - Add Performance Intelligence forecast calibration for explicitly recorded forecasts.
 - Add Performance Intelligence portfolio decision review packages without allocation advice.
-- Add Real Estate Intelligence domain design.
-- Add Appraisal Intelligence domain design.
+- Expand Real Estate Intelligence design into implementation plans for Comparable Intelligence and Adjustment Intelligence.
 - Add human-reviewed AI & Markets theme acceptance and suppression notes.
 - Add configurable AI & Markets taxonomy files after MVP validation.
 - Add human-reviewed suppression rules for low-value AI & Markets open questions.

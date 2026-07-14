@@ -1,0 +1,5 @@
+real_estate_assignment:
+  default_root: real-estate/assignments
+  default_status: active
+  default_property_type: single_family_residential
+  private_data_notice: Private local assignment data. Do not commit.

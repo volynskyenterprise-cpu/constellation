@@ -88,6 +88,30 @@ Both domains share architectural primitives:
 
 They remain operationally independent.
 
+## v7.0 Implementation - Assignment Intelligence MVP
+
+The first implemented Real Estate Intelligence capability is Assignment Intelligence.
+
+Assignment Intelligence answers the Phase I Observe question:
+
+> What property am I working on?
+
+It creates deterministic local assignment records from `assignment.yaml`, source-file metadata, and explicitly supplied structured facts. It produces assignment briefs, source manifests, evidence indexes, missing-information reports, risk reports, timeline records, history snapshots, and deltas.
+
+Private assignment files use:
+
+```text
+real-estate/assignments/<ASSIGNMENT_ID>/
+  assignment.yaml
+  sources/
+  notes/
+  evidence/
+```
+
+This private assignment tree is ignored by Git. Public examples remain under `real-estate/examples/`.
+
+The MVP does not parse PDFs, OCR images, retrieve permits, analyze MLS files, select comparables, generate adjustments, produce value opinions, or make USPAP conclusions.
+
 ## 5. Institutional Valuation Operating System
 
 Real Estate Intelligence should operate as an institutional layer around the appraisal workflow.

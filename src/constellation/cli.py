@@ -24,6 +24,7 @@ from .pkos import PKOSError, PKOSKnowledgeOrganization
 from .performance import PerformanceIntelligenceError, PerformanceIntelligenceStore
 from .thesis_accuracy import ThesisAccuracyError, ThesisAccuracyStore
 from .prompts import PromptUnavailable
+from .real_estate import RealEstateAssignmentStore, RealEstateError
 from .reports import InstitutionalResearchReportError, InstitutionalResearchReportStore, report_summary
 from .research import ResearchError, ResearchOrganization
 from .source_monitor import SourceMonitorError, SourceMonitorStore
@@ -333,6 +334,26 @@ def main(argv: list[str] | None = None) -> int:
     ai_markets_portfolio_parser.add_argument("--delta", action="store_true", help="Show latest portfolio delta.")
     ai_markets_subparsers.add_parser("report", help="Print AI & Markets report path.")
     ai_markets_subparsers.add_parser("export", help="Export AI & Markets Markdown outputs.")
+
+    real_estate_parser = subparsers.add_parser("real-estate", help="Build and inspect deterministic Real Estate Intelligence.")
+    real_estate_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
+    real_estate_subparsers = real_estate_parser.add_subparsers(dest="real_estate_command", required=True)
+    real_estate_subparsers.add_parser("assignments", help="List local Real Estate assignments.")
+    real_estate_assignment_parser = real_estate_subparsers.add_parser("assignment", help="Build and inspect one Real Estate assignment.")
+    real_estate_assignment_subparsers = real_estate_assignment_parser.add_subparsers(dest="real_estate_assignment_command", required=True)
+    for command_name, help_text in [
+        ("build", "Build Assignment Intelligence for an assignment."),
+        ("status", "Show assignment status."),
+        ("show", "Show assignment snapshot JSON."),
+        ("sources", "List assignment sources."),
+        ("missing", "List missing assignment information."),
+        ("risks", "List assignment risks."),
+        ("timeline", "List assignment timeline events."),
+        ("export", "Export assignment brief markdown."),
+        ("create-template", "Create a private local assignment template."),
+    ]:
+        command_parser = real_estate_assignment_subparsers.add_parser(command_name, help=help_text)
+        command_parser.add_argument("assignment_id", help="Assignment ID.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -1367,6 +1388,71 @@ def main(argv: list[str] | None = None) -> int:
         except AIMarketsError as exc:
             print(f"error: {exc}")
             return 1
+    if args.command == "real-estate":
+        store = RealEstateAssignmentStore(args.root.resolve())
+        try:
+            if args.real_estate_command == "assignments":
+                assignment_ids = store.list_assignment_ids()
+                if not assignment_ids:
+                    print("No Real Estate assignments found.")
+                    return 0
+                for assignment_id in assignment_ids:
+                    data = store.build(assignment_id).to_dict()
+                    print(
+                        f"{assignment_id} status={data.get('status')} property_type={data.get('property_type')} "
+                        f"subject={data.get('subject_address') or ''} due={data.get('due_date') or ''} "
+                        f"risks={data.get('risk_count', 0)} missing={data.get('missing_item_count', 0)}"
+                    )
+                return 0
+            assignment_id = args.assignment_id
+            if args.real_estate_assignment_command == "create-template":
+                path = store.create_template(assignment_id)
+                print(f"assignment_template: {path}")
+                print("warning: Private local assignment data. Do not commit.")
+                return 0
+            if args.real_estate_assignment_command == "build":
+                snapshot = store.build(assignment_id)
+                _print_real_estate_assignment_status(snapshot.to_dict(), store.output_dir(assignment_id) / "assignment-brief.md")
+                return 0
+            if args.real_estate_assignment_command == "status":
+                if not (store.output_dir(assignment_id) / "assignment.json").exists():
+                    store.build(assignment_id)
+                _print_real_estate_assignment_status(store.load(assignment_id), store.output_dir(assignment_id) / "assignment-brief.md")
+                return 0
+            if args.real_estate_assignment_command == "show":
+                if not (store.output_dir(assignment_id) / "assignment.json").exists():
+                    store.build(assignment_id)
+                print(json.dumps(store.load(assignment_id), indent=2, sort_keys=True))
+                return 0
+            if args.real_estate_assignment_command == "sources":
+                data = store.build(assignment_id).to_dict()
+                for source in _map_list(data.get("sources", [])):
+                    print(f"{source.get('source_id')} category={source.get('source_category')} file={source.get('filename')} checksum={source.get('checksum')}")
+                return 0
+            if args.real_estate_assignment_command == "missing":
+                data = store.build(assignment_id).to_dict()
+                for item in _map_list(data.get("missing_items", [])):
+                    print(f"{item.get('severity')}: {item.get('field_name')} - {item.get('resolution_guidance')}")
+                return 0
+            if args.real_estate_assignment_command == "risks":
+                data = store.build(assignment_id).to_dict()
+                for risk in _map_list(data.get("risks", [])):
+                    print(f"{risk.get('severity')}: {risk.get('risk_type')} - {risk.get('description')}")
+                return 0
+            if args.real_estate_assignment_command == "timeline":
+                data = store.build(assignment_id).to_dict()
+                for event in _map_list(data.get("timeline", [])):
+                    print(f"{event.get('occurred_at')} {event.get('event_type')}: {event.get('title')}")
+                return 0
+            if args.real_estate_assignment_command == "export":
+                store.build(assignment_id)
+                print(f"assignment_brief: {store.output_dir(assignment_id) / 'assignment-brief.md'}")
+                print(f"source_manifest: {store.output_dir(assignment_id) / 'source-manifest.md'}")
+                print(f"evidence_index: {store.output_dir(assignment_id) / 'evidence-index.md'}")
+                return 0
+        except RealEstateError as exc:
+            print(f"error: {exc}")
+            return 1
     return 2
 
 
@@ -1476,6 +1562,20 @@ def _print_dashboard_status(status) -> None:
     for name, item in status.items():
         state = "available" if item.get("exists") else "unavailable"
         print(f"{state}: {name}: {item.get('path')}")
+
+
+def _print_real_estate_assignment_status(data, report_path: Path) -> None:
+    print(f"available: {bool(data)}")
+    print(f"assignment_id: {data.get('assignment_id') or ''}")
+    print(f"status: {data.get('status') or ''}")
+    print(f"subject_address: {data.get('subject_address') or ''}")
+    print(f"source_count: {data.get('source_count', 0)}")
+    print(f"fact_count: {data.get('fact_count', 0)}")
+    print(f"verified_fact_count: {data.get('verified_fact_count', 0)}")
+    print(f"missing_item_count: {data.get('missing_item_count', 0)}")
+    print(f"conflict_count: {data.get('conflict_count', 0)}")
+    print(f"risk_count: {data.get('risk_count', 0)}")
+    print(f"report_path: {report_path}")
 
 
 def _print_monitor_run(run) -> None:

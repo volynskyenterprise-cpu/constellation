@@ -1,0 +1,36 @@
+# Sanitized example only. Do not place private client data in this file.
+assignment:
+  assignment_id: example-assignment
+  status: active
+  assignment_type: appraisal
+  property_type: single_family_residential
+  intended_use: mortgage_lending
+  client_name: Example Client
+  effective_date: 2026-07-14
+  due_date: 2026-07-21
+  report_type: appraisal_report
+  created_at: 2026-07-14
+  subject:
+    address: 123 Example Avenue
+    city: Example City
+    state: CA
+    postal_code: "90000"
+    county: Example County
+    assessor_parcel_number: EXAMPLE-APN
+  scope:
+    inspection_type: interior_and_exterior
+    valuation_premise: market_value
+    ownership_interest: fee_simple
+  source_paths:
+    - sources/
+  notes:
+    - Sanitized example assignment for Assignment Intelligence.
+  facts:
+    - field_name: gross_living_area
+      value: "2000"
+      unit: square_feet
+      verification_status: client_provided
+      confidence: medium
+      source_paths:
+        - sources/example-floor-plan.pdf
+      notes: Example structured fact only.

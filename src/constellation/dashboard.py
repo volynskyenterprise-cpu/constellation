@@ -9,6 +9,7 @@ from typing import Any
 from . import __version__
 from .io import read_json, write_json
 from .models import JsonMap
+from .real_estate import RealEstateAssignmentStore
 
 
 class ExecutiveDashboardError(RuntimeError):
@@ -56,6 +57,7 @@ class ExecutiveDashboard:
     ai_markets_summary: JsonMap
     performance_intelligence_summary: JsonMap
     thesis_accuracy_summary: JsonMap
+    real_estate_assignment_summary: JsonMap
     connector_warning_summary: JsonMap
     current_risks_gaps: list[str]
     recommended_next_actions: list[str]
@@ -84,6 +86,7 @@ class ExecutiveDashboard:
             "ai_markets_summary": self.ai_markets_summary,
             "performance_intelligence_summary": self.performance_intelligence_summary,
             "thesis_accuracy_summary": self.thesis_accuracy_summary,
+            "real_estate_assignment_summary": self.real_estate_assignment_summary,
             "connector_warning_summary": self.connector_warning_summary,
             "current_risks_gaps": self.current_risks_gaps,
             "recommended_next_actions": self.recommended_next_actions,
@@ -114,6 +117,7 @@ class ExecutiveDashboard:
             ai_markets_summary=_map(data.get("ai_markets_summary")),
             performance_intelligence_summary=_map(data.get("performance_intelligence_summary")),
             thesis_accuracy_summary=_map(data.get("thesis_accuracy_summary")),
+            real_estate_assignment_summary=_map(data.get("real_estate_assignment_summary")),
             connector_warning_summary=_map(data.get("connector_warning_summary")),
             current_risks_gaps=_string_list(data.get("current_risks_gaps", [])),
             recommended_next_actions=_string_list(data.get("recommended_next_actions", [])),
@@ -164,6 +168,7 @@ class ExecutiveDashboardBuilder:
         ai_markets_summary = _ai_markets_summary(ai_markets)
         performance_summary = _performance_summary(performance)
         thesis_accuracy_summary = _thesis_accuracy_summary(thesis_accuracy)
+        real_estate_summary = RealEstateAssignmentStore(self.root).summary()
         connector_warning_summary = _connector_warning_summary(daily_run, workflow)
         risks_gaps = _risks_gaps(morning, theses)
         actions = _actions(morning, status, risks_gaps)
@@ -183,6 +188,8 @@ class ExecutiveDashboardBuilder:
             "performance_pending_outcomes": performance_summary.get("pending_outcome_count"),
             "average_thesis_accuracy_score": thesis_accuracy_summary.get("average_accuracy_score"),
             "theses_needing_review": thesis_accuracy_summary.get("needs_review_count"),
+            "active_real_estate_assignments": real_estate_summary.get("active_assignment_count", 0),
+            "real_estate_missing_items": real_estate_summary.get("total_missing_item_count", 0),
             "connector_warning_count": connector_warning_summary.get("connector_warning_count"),
             "next_files_to_inspect": [item["path"] for item in key_files[:5]],
         }
@@ -205,6 +212,7 @@ class ExecutiveDashboardBuilder:
             ai_markets_summary=ai_markets_summary,
             performance_intelligence_summary=performance_summary,
             thesis_accuracy_summary=thesis_accuracy_summary,
+            real_estate_assignment_summary=real_estate_summary,
             connector_warning_summary=connector_warning_summary,
             current_risks_gaps=risks_gaps,
             recommended_next_actions=actions,
@@ -314,6 +322,9 @@ def render_dashboard_markdown(dashboard: ExecutiveDashboard) -> str:
         "## Thesis Accuracy Summary",
         "",
         *_summary_lines(dashboard.thesis_accuracy_summary),
+        "## Real Estate Assignment Intelligence Summary",
+        "",
+        *_summary_lines(dashboard.real_estate_assignment_summary),
         "## Connector Warning Summary",
         "",
         *_summary_lines(dashboard.connector_warning_summary),
