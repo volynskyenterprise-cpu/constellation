@@ -4,12 +4,15 @@
 
 - Add connector warning history retention and comparison across Morning runs.
 - Add connector-specific recovery documentation for Google Drive token refresh.
+- Executive Brief Refinement complete; keep Morning Brief concise with full detail in research agenda and appendix.
 - Performance Intelligence MVP and deterministic Thesis Accuracy are complete; extend v6 with signal quality, catalyst accuracy, and learning-loop promotion workflows.
 - Add capability-level documentation that maps Observe, Understand, Decide, and Improve phases to operating workflows and outputs.
 - Add Performance Intelligence attribution analysis after explicit outcome data is supplied by the user.
 - Add Performance Intelligence win/loss analysis gated by explicit user-supplied review data.
 - Add human-reviewed Thesis Accuracy period labels for quarterly review cycles.
 - Add Performance Intelligence signal quality scoring with human-reviewed weights.
+- Add Performance Intelligence catalyst accuracy scoring with human-reviewed outcomes.
+- Add Learning Loop Optimization reports that promote process improvements into recurring review workflows.
 - Add Performance Intelligence forecast calibration for explicitly recorded forecasts.
 - Add Performance Intelligence portfolio decision review packages without allocation advice.
 - Add Real Estate Intelligence domain design.

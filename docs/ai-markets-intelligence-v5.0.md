@@ -267,7 +267,24 @@ Outputs:
 - `outputs/ai-markets/briefings/brief-history.json`
 - `outputs/ai-markets/briefings/brief-delta.json`
 
-The brief includes executive summary, what changed, what matters today, lifecycle snapshot, portfolio/watchlist review, catalyst monitor, decision journal queue, risks, research agenda, recommended files, open questions, limitations, and provenance.
+The brief includes a header, executive summary, top five priorities, what changed, theme lifecycle snapshot, portfolio/watchlist review, catalyst monitor, decision and performance review, risks, recommended reading, limitations, provenance, and appendix.
+
+v6.1.1 refines the Executive Morning Brief for daily executive use:
+
+- The main brief shows no more than five top priorities.
+- Raw evidence fragments, URLs, timestamp links, `None` placeholders, and Markdown remnants are excluded from the main executive sections.
+- Catalyst, risk, and agenda items are deduplicated through deterministic normalization only.
+- Catalyst titles prefer structured category/theme/entity fields over raw source excerpts.
+- The full research agenda remains available in `outputs/ai-markets/briefings/research-agenda.md`.
+- Supporting IDs, source paths, unavailable artifacts, and deterministic limitations move to the appendix and provenance sections.
+
+Research agenda structure:
+
+- Top 5 Executive Priorities
+- Remaining High Priority
+- Medium Priority
+- Low Priority
+- Appendix / Provenance
 
 It is deterministic only. It does not perform market prediction, retrieve web data, call providers, provide financial advice, or make autonomous decisions.
 

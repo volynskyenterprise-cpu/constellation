@@ -2,6 +2,15 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 6.1.1 - Executive Brief Refinement and Automated Daily Review Launch
+
+- Refined the AI & Markets Executive Morning Brief into a concise top-five CIO-style daily brief.
+- Moved supporting research agenda detail, IDs, source paths, unavailable artifacts, and limitations into appendix/provenance sections.
+- Added deterministic agenda, catalyst, and risk deduplication and cleaner structured catalyst/risk titles.
+- Calibrated configured watchlist items without current evidence to medium priority unless another high-priority rule applies.
+- Updated the Windows Morning launcher to open the Morning Brief and Performance Learning Loop in Visual Studio Code after successful workflow runs.
+- Preserved deterministic local-only behavior with no providers, OpenAI, LLM inference, embeddings, web retrieval, Gmail, calendar integration, trading execution, financial advice, or autonomous investment decisions.
+
 ## 6.1.0 - Thesis Accuracy
 
 - Added deterministic Thesis Accuracy as a Performance Intelligence layer.

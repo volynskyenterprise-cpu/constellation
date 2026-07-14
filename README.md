@@ -369,6 +369,26 @@ If Google Drive OAuth has expired or been revoked, the Google Drive step is mark
 python -m constellation drive sync --dry-run
 ```
 
+### Automated Daily Routine
+
+The Windows Morning launcher is `tools/run_constellation_morning.bat`. The local Task Scheduler task runs it daily at 6:45 AM.
+
+After a successful Morning workflow, the launcher opens the concise AI & Markets Executive Morning Brief and Performance Learning Loop in Visual Studio Code:
+
+- `outputs/ai-markets/briefings/morning-brief.md`
+- `outputs/performance/learning-loop.md`
+
+The Task Scheduler task must use **Run only when user is logged on** because Visual Studio Code is opened interactively. If the `code` command is unavailable, the launcher logs a warning and preserves the Morning workflow exit code.
+
+Manual fallback:
+
+```bash
+python -m constellation workflow run Morning
+python -m constellation ai-markets brief
+python -m constellation performance
+code -r outputs/ai-markets/briefings/morning-brief.md outputs/performance/learning-loop.md
+```
+
 ### Knowledge Evolution
 
 ```bash
@@ -424,7 +444,7 @@ python -m constellation ai-markets report
 python -m constellation ai-markets export
 ```
 
-AI & Markets Intelligence classifies existing local Constellation artifacts into deterministic themes, entities, catalysts, risks, prioritized executive questions, watchlists, and content ideas. Theme Lifecycle tracks whether each theme is emerging, active, strengthening, high conviction, weakening, contradicted, or archived. Portfolio Intelligence maps optional local portfolio/watchlist config and detected entities to themes, lifecycle statuses, risks, and review priorities. Catalyst Monitoring organizes catalyst categories, time horizons, priorities, risks, and changes. Decision Journal preserves private local research memory. v5.5.0 adds the Executive Morning Brief, the primary daily AI & Markets briefing artifact. It uses fixed keyword and exact matching only and does not provide financial advice or trading recommendations.
+AI & Markets Intelligence classifies existing local Constellation artifacts into deterministic themes, entities, catalysts, risks, prioritized executive questions, watchlists, and content ideas. Theme Lifecycle tracks whether each theme is emerging, active, strengthening, high conviction, weakening, contradicted, or archived. Portfolio Intelligence maps optional local portfolio/watchlist config and detected entities to themes, lifecycle statuses, risks, and review priorities. Catalyst Monitoring organizes catalyst categories, time horizons, priorities, risks, and changes. Decision Journal preserves private local research memory. v5.5.0 adds the Executive Morning Brief, the primary daily AI & Markets briefing artifact. v6.1.1 refines it into a concise top-five executive brief with supporting details moved to the appendix and full research agenda. It uses fixed keyword and exact matching only and does not provide financial advice or trading recommendations.
 
 Local portfolio config is optional. Use `config/portfolio.example.yaml` as a template, and keep real local configs in `config/portfolio.yaml` or `config/portfolio.local.yaml`, which are gitignored.
 

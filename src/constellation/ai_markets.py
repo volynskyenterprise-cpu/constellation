@@ -175,6 +175,8 @@ BRIEF_INPUTS = {
     "evidence_graph": Path("outputs/evidence-graph/evidence-graph.json"),
     "thesis": Path("outputs/thesis/theses.json"),
     "evolution": Path("outputs/evolution/evolution.json"),
+    "performance": Path("outputs/performance/performance-intelligence.json"),
+    "thesis_accuracy": Path("outputs/performance/thesis-accuracy.json"),
 }
 
 
@@ -1374,7 +1376,12 @@ class AIMarketsBriefSnapshot:
             "research_agenda": [item.to_dict() for item in self.research_agenda],
             "research_agenda_count": len(self.research_agenda),
             "high_priority_agenda_count": sum(1 for item in self.research_agenda if item.priority == "high"),
+            "medium_priority_count": sum(1 for item in self.research_agenda if item.priority == "medium"),
+            "low_priority_count": sum(1 for item in self.research_agenda if item.priority == "low"),
             "top_agenda_items": [item.title for item in self.research_agenda[:5]],
+            "top_priorities": [item.to_dict() for item in self.research_agenda[:5]],
+            "top_priority_count": min(5, len(self.research_agenda)),
+            "remaining_high_priority_count": max(0, sum(1 for item in self.research_agenda if item.priority == "high") - sum(1 for item in self.research_agenda[:5] if item.priority == "high")),
             "morning_priorities": [item.to_dict() for item in self.morning_priorities],
             "morning_priority_count": len(self.morning_priorities),
             "delta": self.delta.to_dict(),
@@ -1485,6 +1492,10 @@ class AIMarketsBriefStore:
             "overdue_review_count": data.get("overdue_review_count", 0),
             "research_agenda_count": data.get("research_agenda_count", 0),
             "high_priority_agenda_count": data.get("high_priority_agenda_count", 0),
+            "top_priority_count": data.get("top_priority_count", 0),
+            "remaining_high_priority_count": data.get("remaining_high_priority_count", 0),
+            "medium_priority_count": data.get("medium_priority_count", 0),
+            "low_priority_count": data.get("low_priority_count", 0),
             "brief_path": str(self.report_path),
             "agenda_path": str(self.agenda_path),
         }
@@ -2020,6 +2031,7 @@ def render_decision_timeline(snapshot: AIMarketsDecisionSnapshot) -> str:
 
 def render_executive_brief(snapshot: AIMarketsBriefSnapshot) -> str:
     data = snapshot.to_dict()
+    top_priorities = _map_list(data.get("top_priorities", []))
     lines = [
         "# AI & Markets Executive Morning Brief",
         "",
@@ -2036,30 +2048,61 @@ def render_executive_brief(snapshot: AIMarketsBriefSnapshot) -> str:
         f"- Catalysts: {data.get('total_catalyst_count', 0)}",
         f"- Open decisions: {data.get('open_decision_count', 0)}",
         f"- Research agenda items: {data.get('research_agenda_count', 0)}",
+        f"- Top priorities: {data.get('top_priority_count', 0)}",
+        f"- Remaining high priority: {data.get('remaining_high_priority_count', 0)}",
+        f"- Medium priority: {data.get('medium_priority_count', 0)}",
+        f"- Low priority: {data.get('low_priority_count', 0)}",
+        f"- Full agenda: `outputs/ai-markets/briefings/research-agenda.md`",
+        "",
+        "## Top 5 Priorities",
         "",
     ]
+    if not top_priorities:
+        lines.extend(["- No executive priorities currently identified.", ""])
+    for index, item in enumerate(top_priorities[:5], start=1):
+        lines.extend(
+            [
+                f"### {index}. {_clean_brief_text(str(item.get('title') or 'Unclassified Review'))}",
+                "",
+                f"- Type: {_clean_brief_text(str(item.get('source_type') or 'unknown')).replace('_', ' ').title()}",
+                f"- Priority: {str(item.get('priority', '')).title()}",
+                f"- Reason: {_clean_brief_text(str(item.get('reason') or 'Priority selected by deterministic rule.'))}",
+                f"- Related themes: {', '.join(_string_list(item.get('related_themes', []))) or 'None'}",
+                f"- Related entities: {', '.join(_string_list(item.get('related_entities', []))) or 'None'}",
+                f"- Related catalyst or risk: {', '.join(_string_list(item.get('related_catalysts', [])) + _string_list(item.get('related_risks', []))) or 'None'}",
+                f"- Source: {', '.join(_string_list(item.get('source_paths', []))) or 'None'}",
+                "",
+            ]
+        )
     for section in snapshot.sections:
         lines.extend([f"## {section.title}", ""])
         lines.extend(_bullet(section.items or ["No items."]))
-    lines.extend(["## Research Agenda", ""])
-    lines.extend(_agenda_markdown_lines(snapshot.research_agenda))
     lines.extend(["## Limitations", ""])
     lines.extend(_bullet(snapshot.limitations))
     lines.extend(["## Provenance", ""])
     lines.extend(_bullet([f"{key}: {value}" for key, value in snapshot.provenance.get("consumed_artifacts", {}).items()]))
+    lines.extend(["## Appendix", ""])
+    lines.extend(_appendix_lines(snapshot))
     return "\n".join(lines)
 
 
 def render_research_agenda(snapshot: AIMarketsBriefSnapshot) -> str:
-    return "\n".join(["# AI & Markets Research Agenda", "", *_agenda_markdown_lines(snapshot.research_agenda)])
+    return "\n".join(["# AI & Markets Research Agenda", "", *_agenda_markdown_lines(snapshot.research_agenda, snapshot.to_dict())])
 
 
-def _agenda_markdown_lines(items: list[AIMarketsResearchAgendaItem]) -> list[str]:
+def _agenda_markdown_lines(items: list[AIMarketsResearchAgendaItem], data: JsonMap | None = None) -> list[str]:
     lines: list[str] = []
+    top_ids = {str(item.get("agenda_id")) for item in _map_list((data or {}).get("top_priorities", []))}
+    top_items = [item for item in items if item.agenda_id in top_ids][:5]
+    lines.extend(["## Top 5 Executive Priorities", ""])
+    lines.extend(_agenda_item_lines(top_items) if top_items else ["- No executive priorities currently identified.", ""])
     for priority in ["high", "medium", "low"]:
-        lines.extend([f"## {priority.title()} Priority", ""])
-        group = [item for item in items if item.priority == priority]
-        lines.extend(_bullet([f"{item.title} - {item.reason}" for item in group] or [f"No {priority} priority agenda items."]))
+        title = "Remaining High Priority" if priority == "high" else f"{priority.title()} Priority"
+        lines.extend([f"## {title}", ""])
+        group = [item for item in items if item.priority == priority and item.agenda_id not in top_ids]
+        lines.extend(_agenda_item_lines(group) if group else [f"- No {title.lower()} agenda items.", ""])
+    lines.extend(["## Appendix / Provenance", ""])
+    lines.extend(_bullet([f"{item.agenda_id}: {', '.join(item.source_paths) or 'No source path'}" for item in items] or ["No agenda provenance."]))
     return lines
 
 
@@ -2737,9 +2780,9 @@ def _portfolio_priority(statuses: list[str], risk_count: int, confidence: str, e
     if confidence == "high" and risk_count > 0:
         return "high", "Review because high-confidence evidence has attached risk."
     if configured and evidence_count == 0:
-        return "high", "Review because configured exposure has no current evidence."
+        return "medium", "Monitor because configured exposure has no current evidence."
     if configured and any(status == "emerging" for status in statuses):
-        return "high", "Review because configured exposure is tied to an emerging theme."
+        return "medium", "Monitor because configured exposure is tied to an emerging theme."
     if any(status == "active" for status in statuses) and evidence_count > 0:
         return "medium", "Monitor because active theme has supporting evidence."
     if confidence == "medium" or 1 <= risk_count <= 2:
@@ -3318,23 +3361,43 @@ def _brief_metrics(artifacts: dict[str, JsonMap], agenda: list[AIMarketsResearch
     catalysts = _map(artifacts.get("catalysts"))
     decisions = _map(artifacts.get("decisions"))
     lifecycle = _map(artifacts.get("lifecycle"))
+    performance = _map(artifacts.get("performance"))
+    thesis_accuracy = _map(artifacts.get("thesis_accuracy"))
+    deduped_catalysts = _dedupe_records(_map_list(catalysts.get("catalysts", [])), _catalyst_dedupe_key)
+    suppressed = max(0, len(_map_list(catalysts.get("catalysts", []))) - len(deduped_catalysts))
+    top_priorities = [item.to_dict() for item in agenda[:5]]
     return {
         "theme_count": len(_map_list(ai.get("themes", []))),
         "entity_count": len(_map_list(ai.get("entities", []))),
         "risk_count": len(_map_list(ai.get("risks", []))),
+        "executive_risk_count": min(5, len(_dedupe_records(_map_list(ai.get("risks", [])), _risk_dedupe_key))),
         "watchlist_count": _int(portfolio.get("watchlist_count")),
         "portfolio_mode": portfolio.get("mode"),
         "high_priority_review_count": _int(portfolio.get("high_priority_review_count")),
+        "medium_priority_review_count": _portfolio_medium_review_count(portfolio),
         "total_catalyst_count": _int(catalysts.get("total_catalyst_count")),
         "high_priority_catalyst_count": _int(catalysts.get("high_priority_catalyst_count")),
+        "deduplicated_catalyst_count": len(deduped_catalysts),
+        "suppressed_duplicate_count": suppressed,
         "due_review_count": _int(decisions.get("due_review_count")),
         "overdue_review_count": _int(decisions.get("overdue_review_count")),
         "open_decision_count": _int(decisions.get("open_decision_count")),
+        "pending_outcome_count": _int(performance.get("pending_outcome_count")),
+        "performance_signal_count": _int(performance.get("performance_signal_count")),
+        "high_severity_signal_count": _int(performance.get("high_severity_signal_count")),
+        "thesis_accuracy_average": _int(_map(thesis_accuracy.get("summary")).get("average_accuracy_score")),
+        "thesis_review_count": _int(_map(thesis_accuracy.get("summary")).get("needs_review_count")),
         "top_themes": [str(item.get("theme_name")) for item in _map_list(lifecycle.get("themes", []))[:5]],
         "top_entities": [str(item.get("symbol")) for item in _map_list(ai.get("entities", []))[:5]],
-        "top_catalysts": [str(item.get("title")) for item in _map_list(catalysts.get("catalysts", []))[:5]],
-        "top_risks": [str(item.get("description")) for item in _map_list(ai.get("risks", []))[:5]],
+        "top_catalysts": [_canonical_catalyst_title(item) for item in deduped_catalysts[:5]],
+        "top_risks": [_canonical_risk_title(item) for item in _dedupe_records(_map_list(ai.get("risks", [])), _risk_dedupe_key)[:5]],
         "top_agenda_items": [item.title for item in agenda[:5]],
+        "top_priorities": top_priorities,
+        "top_priority_count": len(top_priorities),
+        "remaining_high_priority_count": max(0, sum(1 for item in agenda if item.priority == "high") - sum(1 for item in agenda[:5] if item.priority == "high")),
+        "medium_priority_count": sum(1 for item in agenda if item.priority == "medium"),
+        "low_priority_count": sum(1 for item in agenda if item.priority == "low"),
+        "appendix_item_count": len(agenda) + len(_string_list(artifacts.get("source_artifacts_missing", []))),
     }
 
 
@@ -3348,31 +3411,40 @@ def _brief_agenda(artifacts: dict[str, JsonMap], missing: list[str]) -> list[AIM
     for entry in _map_list(decisions.get("entries", [])):
         review_status = _map(entry.get("review")).get("review_status")
         if review_status in {"due", "overdue"}:
-            items.append(_agenda_item(f"Review decision: {entry.get('title')}", "high", f"Decision review is {review_status}.", "decision_review", _string_list(entry.get("related_themes", [])), _string_list(entry.get("related_entities", [])), [], [str(entry.get("entry_id"))], _string_list(entry.get("related_risks", [])), ["outputs/ai-markets/decisions/decision-review-queue.md"]))
+            items.append(_agenda_item(f"Decision Review: {_clean_title(entry.get('title'), 'Decision Review')}", "high", f"Decision review is {review_status}.", "decision_review", _string_list(entry.get("related_themes", [])), _string_list(entry.get("related_entities", [])), [], [str(entry.get("entry_id"))], _string_list(entry.get("related_risks", [])), ["outputs/ai-markets/decisions/decision-review-queue.md"]))
     for catalyst in _map_list(catalysts.get("catalysts", [])):
         if catalyst.get("priority") == "high":
-            items.append(_agenda_item(f"Monitor catalyst: {catalyst.get('title')}", "high", "High-priority catalyst is present.", "catalyst", _string_list(catalyst.get("related_themes", [])), _string_list(catalyst.get("related_entities", [])), [str(catalyst.get("catalyst_id"))], [], _string_list(catalyst.get("related_risks", [])), ["outputs/ai-markets/catalysts/catalyst-monitor.md"]))
+            items.append(_agenda_item(_canonical_catalyst_title(catalyst), "high", "High-priority catalyst is present.", "catalyst", _string_list(catalyst.get("related_themes", [])), _string_list(catalyst.get("related_entities", [])), [str(catalyst.get("catalyst_id"))], [], _string_list(catalyst.get("related_risks", [])), ["outputs/ai-markets/catalysts/catalyst-monitor.md"]))
     for item in _map_list(portfolio.get("positions", [])) + _map_list(portfolio.get("watchlist", [])) + _map_list(portfolio.get("detected_entities", [])):
-        if item.get("research_priority") == "high":
-            items.append(_agenda_item(f"Review exposure: {item.get('symbol')}", "high", str(item.get("priority_reason", "High-priority portfolio review.")), "portfolio_review", _string_list(item.get("related_themes", [])), [str(item.get("symbol"))], [], [], _string_list(item.get("related_risks", [])), ["outputs/ai-markets/portfolio/portfolio-intelligence.md"]))
+        priority = str(item.get("research_priority") or "low")
+        if priority in {"high", "medium"}:
+            items.append(_agenda_item(f"Portfolio Review: {_clean_title(item.get('symbol'), 'Unclassified Exposure')}", priority, str(item.get("priority_reason", "Portfolio or watchlist review.")), "portfolio_review", _string_list(item.get("related_themes", [])), [str(item.get("symbol"))], [], [], _string_list(item.get("related_risks", [])), ["outputs/ai-markets/portfolio/portfolio-intelligence.md"]))
     for theme in _map_list(lifecycle.get("themes", [])):
         if theme.get("current_status") in {"contradicted", "weakening"}:
-            items.append(_agenda_item(f"Check theme: {theme.get('theme_name')}", "high", f"Theme lifecycle status is {theme.get('current_status')}.", "theme_lifecycle", [str(theme.get("theme_name"))], _string_list(theme.get("related_entities", [])), [], [], _string_list(theme.get("related_risks", [])), ["outputs/ai-markets/theme-lifecycle.md"]))
+            items.append(_agenda_item(f"Theme Review: {_clean_title(theme.get('theme_name'), 'Unclassified Theme')}", "high", f"Theme lifecycle status is {theme.get('current_status')}.", "theme_lifecycle", [str(theme.get("theme_name"))], _string_list(theme.get("related_entities", [])), [], [], _string_list(theme.get("related_risks", [])), ["outputs/ai-markets/theme-lifecycle.md"]))
     for question in _map_list(ai.get("executive_questions", [])):
-        items.append(_agenda_item(f"Check evidence for question: {question.get('question')}", "medium", "Executive open question exists.", "open_question", _string_list(question.get("related_themes", [])), [], [], [], [], ["outputs/ai-markets/executive-questions.md"]))
+        items.append(_agenda_item(f"Open Question: {_clean_title(question.get('question'), 'Executive Question')}", "medium", "Executive open question exists.", "open_question", _string_list(question.get("related_themes", [])), [], [], [], [], ["outputs/ai-markets/executive-questions.md"]))
     for name in missing:
         items.append(_agenda_item(f"Check missing artifact: {name}", "low", "Source artifact was unavailable for the brief.", "missing_artifact", [], [], [], [], [], [str(BRIEF_INPUTS[name])]))
     return _unique_agenda(items)
 
 
 def _agenda_item(title: str, priority: str, reason: str, source_type: str, themes: list[str], entities: list[str], catalysts: list[str], decisions: list[str], risks: list[str], paths: list[str]) -> AIMarketsResearchAgendaItem:
-    agenda_id = f"agenda_{_digest(title + priority + source_type)}"
-    return AIMarketsResearchAgendaItem(agenda_id, _short(title), priority, reason, source_type, sorted(set(themes)), sorted(set(entities)), sorted(set(catalysts)), sorted(set(decisions)), sorted(set(risks)), sorted(set(paths)), {"source_type": source_type})
+    clean_title = _clean_title(title, "Unclassified Review")
+    clean_reason = _clean_brief_text(reason)
+    key = _agenda_dedupe_key(clean_title, source_type, themes, entities, catalysts, decisions, risks)
+    agenda_id = f"agenda_{_digest(key)}"
+    return AIMarketsResearchAgendaItem(agenda_id, _short(clean_title), priority, clean_reason, source_type, sorted(set(themes)), sorted(set(entities)), sorted(set(catalysts)), sorted(set(decisions)), sorted(set(risks)), sorted(set(paths)), {"source_type": source_type, "dedupe_key": key})
 
 
 def _unique_agenda(items: list[AIMarketsResearchAgendaItem]) -> list[AIMarketsResearchAgendaItem]:
-    by_id = {item.agenda_id: item for item in items}
-    return [by_id[key] for key in sorted(by_id)]
+    by_key: dict[str, AIMarketsResearchAgendaItem] = {}
+    for item in sorted(items, key=_agenda_sort_key):
+        key = str(_map(item.provenance).get("dedupe_key") or item.agenda_id)
+        existing = by_key.get(key)
+        if existing is None or _priority_rank(item.priority) < _priority_rank(existing.priority):
+            by_key[key] = item
+    return [by_key[key] for key in sorted(by_key)]
 
 
 def _brief_priorities(agenda: list[AIMarketsResearchAgendaItem]) -> list[AIMarketsMorningPriority]:
@@ -3388,20 +3460,119 @@ def _brief_sections(artifacts: dict[str, JsonMap], agenda: list[AIMarketsResearc
     catalysts = _map(artifacts.get("catalysts"))
     decisions = _map(artifacts.get("decisions"))
     ai = _map(artifacts.get("ai_markets"))
+    performance = _map(artifacts.get("performance"))
+    thesis_accuracy = _map(artifacts.get("thesis_accuracy"))
     changed = _brief_changes(artifacts)
-    matters = [item.title for item in agenda if item.priority == "high"][:8]
+    deduped_catalysts = _dedupe_records(_map_list(catalysts.get("catalysts", [])), _catalyst_dedupe_key)
+    deduped_risks = _dedupe_records(_map_list(ai.get("risks", [])), _risk_dedupe_key)
     return [
         AIMarketsExecutiveBriefSection("What Changed", changed or ["No new changes detected from available artifacts."]),
-        AIMarketsExecutiveBriefSection("What Matters Today", matters or ["No high-priority agenda items currently identified."]),
-        AIMarketsExecutiveBriefSection("Theme Lifecycle Snapshot", [f"{item.get('theme_name')}: {item.get('current_status')}" for item in _map_list(lifecycle.get("themes", []))[:10]] or ["Theme lifecycle unavailable."]),
-        AIMarketsExecutiveBriefSection("Portfolio / Watchlist Review", [f"Mode: {portfolio.get('mode', 'unavailable')}", f"Watchlist count: {portfolio.get('watchlist_count', 0)}", f"High-priority reviews: {portfolio.get('high_priority_review_count', 0)}"]),
-        AIMarketsExecutiveBriefSection("Catalyst Monitor", [f"Total catalysts: {catalysts.get('total_catalyst_count', 0)}", f"High-priority catalysts: {catalysts.get('high_priority_catalyst_count', 0)}", f"Risk-linked catalysts: {catalysts.get('risk_linked_catalyst_count', 0)}"]),
-        AIMarketsExecutiveBriefSection("Decision Journal Review Queue", [f"Entries: {decisions.get('entry_count', 0)}", f"Due reviews: {decisions.get('due_review_count', 0)}", f"Overdue reviews: {decisions.get('overdue_review_count', 0)}"] or ["No decision journal data."]),
-        AIMarketsExecutiveBriefSection("Risks to Monitor", [str(item.get("description")) for item in _map_list(ai.get("risks", []))[:8]] or ["No AI & Markets risks identified."]),
-        AIMarketsExecutiveBriefSection("Recommended Reading / Files", ["outputs/ai-markets/ai-markets-report.md", "outputs/ai-markets/portfolio/portfolio-intelligence.md", "outputs/ai-markets/catalysts/catalyst-monitor.md", "outputs/ai-markets/decisions/decision-review-queue.md", "outputs/dashboard/dashboard.md"]),
-        AIMarketsExecutiveBriefSection("Open Questions", [str(item.get("question")) for item in _map_list(ai.get("executive_questions", []))[:5]] or ["No executive questions currently identified."]),
-        AIMarketsExecutiveBriefSection("Source Artifact Gaps", missing or ["No missing source artifacts."]),
+        AIMarketsExecutiveBriefSection("Theme Lifecycle Snapshot", _theme_lifecycle_brief_lines(lifecycle)),
+        AIMarketsExecutiveBriefSection("Portfolio / Watchlist Review", _portfolio_brief_lines(portfolio)),
+        AIMarketsExecutiveBriefSection("Catalyst Monitor", _catalyst_brief_lines(catalysts, deduped_catalysts)),
+        AIMarketsExecutiveBriefSection("Decision and Performance Review", _decision_performance_lines(decisions, performance, thesis_accuracy)),
+        AIMarketsExecutiveBriefSection("Risks to Monitor", [_canonical_risk_title(item) for item in deduped_risks[:5]] or ["No AI & Markets risks identified."]),
+        AIMarketsExecutiveBriefSection("Recommended Reading", ["outputs/ai-markets/briefings/research-agenda.md", "outputs/ai-markets/ai-markets-report.md", "outputs/ai-markets/portfolio/portfolio-intelligence.md", "outputs/ai-markets/catalysts/catalyst-monitor.md", "outputs/performance/learning-loop.md", "outputs/performance/thesis-accuracy.md"]),
     ]
+
+
+def _theme_lifecycle_brief_lines(lifecycle: JsonMap) -> list[str]:
+    themes = _map_list(lifecycle.get("themes", []))
+    if not themes:
+        return ["Theme lifecycle unavailable."]
+    labels = [
+        ("Strengthening", "strengthening"),
+        ("High Conviction", "high_conviction"),
+        ("Active", "active"),
+        ("Emerging", "emerging"),
+        ("Weakening", "weakening"),
+        ("Contradicted", "contradicted"),
+    ]
+    lines: list[str] = []
+    for label, status in labels:
+        names = [_clean_title(item.get("theme_name"), "Unclassified Theme") for item in themes if item.get("current_status") == status]
+        if names:
+            lines.append(f"{label}: {', '.join(names[:5])}")
+    return lines or ["No non-empty theme lifecycle groups."]
+
+
+def _portfolio_brief_lines(portfolio: JsonMap) -> list[str]:
+    items = _map_list(portfolio.get("positions", [])) + _map_list(portfolio.get("watchlist", [])) + _map_list(portfolio.get("detected_entities", []))
+    top = sorted([item for item in items if item.get("research_priority") in {"high", "medium"}], key=lambda item: (_priority_rank(str(item.get("research_priority"))), str(item.get("symbol"))))[:5]
+    return [
+        f"Mode: {portfolio.get('mode', 'unavailable')}",
+        f"Watchlist count: {portfolio.get('watchlist_count', 0)}",
+        f"High-priority reviews: {portfolio.get('high_priority_review_count', 0)}",
+        f"Medium-priority reviews: {_portfolio_medium_review_count(portfolio)}",
+        "Top review items: " + (", ".join(f"{_clean_title(item.get('symbol'), 'Unclassified')}: {item.get('research_priority')}" for item in top) if top else "None"),
+        "Portfolio report: outputs/ai-markets/portfolio/portfolio-intelligence.md",
+    ]
+
+
+def _catalyst_brief_lines(catalysts: JsonMap, deduped: list[JsonMap]) -> list[str]:
+    lines = [
+        f"Total catalysts: {catalysts.get('total_catalyst_count', 0)}",
+        f"High-priority catalysts: {catalysts.get('high_priority_catalyst_count', 0)}",
+        f"Deduplicated catalysts shown: {min(5, len(deduped))}",
+    ]
+    for catalyst in deduped[:5]:
+        lines.append(
+            f"{_canonical_catalyst_title(catalyst)} - category={catalyst.get('category', 'unknown')} priority={catalyst.get('priority', 'unknown')} horizon={catalyst.get('time_horizon', 'unknown')} themes={', '.join(_string_list(catalyst.get('related_themes', []))) or 'None'} entities={', '.join(_string_list(catalyst.get('related_watchlist_symbols', [])) + _string_list(catalyst.get('related_entities', []))) or 'None'}"
+        )
+    lines.append("Catalyst monitor: outputs/ai-markets/catalysts/catalyst-monitor.md")
+    return lines
+
+
+def _decision_performance_lines(decisions: JsonMap, performance: JsonMap, thesis_accuracy: JsonMap) -> list[str]:
+    thesis_summary = _map(thesis_accuracy.get("summary"))
+    return [
+        f"Open decisions: {decisions.get('open_decision_count', 0)}",
+        f"Due reviews: {decisions.get('due_review_count', 0)}",
+        f"Overdue reviews: {decisions.get('overdue_review_count', 0)}",
+        f"Pending outcomes: {performance.get('pending_outcome_count', 0)}",
+        f"Performance signals: {performance.get('performance_signal_count', 0)}",
+        f"High-severity signals: {performance.get('high_severity_signal_count', 0)}",
+        f"Thesis Accuracy average: {thesis_summary.get('average_accuracy_score', 0)}",
+        f"Thesis review count: {thesis_summary.get('needs_review_count', 0)}",
+        "Decision Journal: outputs/ai-markets/decisions/decision-journal.md",
+        "Learning Loop: outputs/performance/learning-loop.md",
+        "Thesis Accuracy: outputs/performance/thesis-accuracy.md",
+    ]
+
+
+def _agenda_item_lines(items: list[AIMarketsResearchAgendaItem]) -> list[str]:
+    if not items:
+        return ["- None", ""]
+    lines: list[str] = []
+    for item in items:
+        lines.append(f"- {item.title} ({item.priority}, {item.source_type}) - {item.reason}")
+    lines.append("")
+    return lines
+
+
+def _appendix_lines(snapshot: AIMarketsBriefSnapshot) -> list[str]:
+    remaining = snapshot.research_agenda[5:]
+    lines = [
+        "### Remaining Agenda Items",
+        "",
+        *_agenda_item_lines(remaining),
+        "### Evidence / Catalyst / Risk IDs",
+        "",
+    ]
+    ids: list[str] = []
+    for item in snapshot.research_agenda:
+        ids.extend(item.related_catalysts)
+        ids.extend(item.related_risks)
+        ids.extend(item.related_decisions)
+    lines.extend(_bullet(sorted(set(ids)) or ["No supporting IDs recorded."]))
+    lines.extend(["### Source Paths", ""])
+    source_paths = sorted({path for item in snapshot.research_agenda for path in item.source_paths})
+    lines.extend(_bullet(source_paths or ["No source paths recorded."]))
+    lines.extend(["### Unavailable Artifacts", ""])
+    lines.extend(_bullet(snapshot.source_artifacts_missing or ["No unavailable artifacts."]))
+    lines.extend(["### Deterministic Limitations", ""])
+    lines.extend(_bullet(snapshot.limitations))
+    return lines
 
 
 def _brief_changes(artifacts: dict[str, JsonMap]) -> list[str]:
@@ -3456,6 +3627,121 @@ def _severity_rank(severity: str) -> int:
 def _short(text: str) -> str:
     clean = " ".join(text.split())
     return clean[:220] if len(clean) > 220 else clean
+
+
+def _clean_title(value: Any, fallback: str) -> str:
+    clean = _clean_brief_text(str(value or ""))
+    if not clean or clean.lower() in {"none", "null", "n/a"}:
+        return fallback
+    clean = re.sub(r"^(monitor catalyst|review exposure|check theme|check evidence for question|review decision):\s*", "", clean, flags=re.IGNORECASE)
+    return _short(clean) or fallback
+
+
+def _clean_brief_text(text: str) -> str:
+    clean = re.sub(r"https?://\S+", "", text)
+    clean = re.sub(r"\beg_evidence_[A-Za-z0-9_:-]+", "", clean)
+    clean = re.sub(r"\bev_[A-Za-z0-9_:-]+", "", clean)
+    clean = re.sub(r"\b\d{1,2}:\d{2}(?::\d{2})?\b", "", clean)
+    clean = re.sub(r"YouTube.*?(privacy|history|terms|sign in).*", "", clean, flags=re.IGNORECASE)
+    clean = clean.replace("* **", "").replace("**", "").replace("*", "")
+    clean = re.sub(r"\bNone\b", "", clean)
+    clean = clean.strip(" -:|")
+    clean = re.sub(r"\s+", " ", clean).strip(" -:|")
+    return clean
+
+
+def _normalize_brief_key(text: str) -> str:
+    clean = _clean_brief_text(text).lower()
+    clean = re.sub(r"^(monitor catalyst|review exposure|check theme|check evidence for question|review decision)\s+", "", clean)
+    clean = re.sub(r"[^\w\s]", " ", clean)
+    return re.sub(r"\s+", " ", clean).strip()
+
+
+def _agenda_dedupe_key(title: str, source_type: str, themes: list[str], entities: list[str], catalysts: list[str], decisions: list[str], risks: list[str]) -> str:
+    linked_ids = [] if source_type == "catalyst" else catalysts or decisions or risks
+    parts = [
+        source_type,
+        _normalize_brief_key(title),
+        ",".join(sorted(_normalize_brief_key(item) for item in themes)),
+        ",".join(sorted(_normalize_brief_key(item) for item in entities)),
+        ",".join(sorted(linked_ids)),
+    ]
+    return "|".join(parts)
+
+
+def _canonical_catalyst_title(catalyst: JsonMap) -> str:
+    category = str(catalyst.get("category") or "").replace("_", " ").title()
+    themes = _string_list(catalyst.get("related_themes", []))
+    entities = _string_list(catalyst.get("related_watchlist_symbols", [])) or _string_list(catalyst.get("related_entities", []))
+    structured = _clean_title(catalyst.get("title"), "")
+    if category:
+        return f"{category} Catalyst"
+    if structured and not _looks_raw_title(structured):
+        return structured
+    if category and entities:
+        return f"{', '.join(entities[:2])} {category} Catalyst"
+    if category and themes:
+        return f"{themes[0]} - {category} Catalyst"
+    if category:
+        return f"{category} Catalyst"
+    if themes:
+        return f"{themes[0]} Catalyst Review"
+    return "Unclassified Catalyst Review"
+
+
+def _canonical_risk_title(risk: JsonMap) -> str:
+    description = _clean_title(risk.get("description"), "")
+    themes = _string_list(risk.get("related_themes", []))
+    entities = _string_list(risk.get("related_entities", []))
+    risk_id = str(risk.get("risk_id") or "")
+    if description and not _looks_raw_title(description):
+        return description
+    if themes and entities:
+        return f"{themes[0]} Risk - {entities[0]}"
+    if themes:
+        return f"{themes[0]} Risk"
+    return risk_id or "Unclassified Risk Review"
+
+
+def _looks_raw_title(title: str) -> bool:
+    lowered = title.lower()
+    return bool(re.search(r"\beg_evidence_|\bev_|youtube|https?://|\*\s*\*\*|\bnone\b", lowered)) or len(title) > 140
+
+
+def _catalyst_dedupe_key(catalyst: JsonMap) -> str:
+    return "|".join(
+        [
+            _normalize_brief_key(str(catalyst.get("category", ""))),
+            ",".join(sorted(_normalize_brief_key(item) for item in _string_list(catalyst.get("related_themes", [])))),
+            ",".join(sorted(_normalize_brief_key(item) for item in _string_list(catalyst.get("related_entities", [])) + _string_list(catalyst.get("related_watchlist_symbols", [])))),
+        ]
+    )
+
+
+def _risk_dedupe_key(risk: JsonMap) -> str:
+    return "|".join(
+        [
+            _normalize_brief_key(str(risk.get("risk_id", "")) or str(risk.get("description", ""))),
+            ",".join(sorted(_normalize_brief_key(item) for item in _string_list(risk.get("related_themes", [])))),
+            ",".join(sorted(_normalize_brief_key(item) for item in _string_list(risk.get("related_entities", [])))),
+        ]
+    )
+
+
+def _dedupe_records(records: list[JsonMap], key_fn) -> list[JsonMap]:
+    by_key: dict[str, JsonMap] = {}
+    for record in records:
+        key = key_fn(record)
+        existing = by_key.get(key)
+        if existing is None or _priority_rank(str(record.get("priority"))) < _priority_rank(str(existing.get("priority"))):
+            by_key[key] = record
+    return [by_key[key] for key in sorted(by_key, key=lambda key: (_priority_rank(str(by_key[key].get("priority"))), key))]
+
+
+def _portfolio_medium_review_count(portfolio: JsonMap) -> int:
+    items = _map_list(portfolio.get("positions", [])) + _map_list(portfolio.get("watchlist", [])) + _map_list(portfolio.get("detected_entities", []))
+    exposures = _map_list(portfolio.get("exposures", []))
+    return sum(1 for item in items if item.get("research_priority") == "medium") + sum(1 for item in exposures if item.get("research_priority") == "medium")
 
 
 def _ids(record: JsonMap) -> list[str]:

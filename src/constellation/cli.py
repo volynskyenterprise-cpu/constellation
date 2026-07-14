@@ -1286,8 +1286,7 @@ def main(argv: list[str] | None = None) -> int:
                     for item in _map_list(brief_store.load().get("research_agenda", [])):
                         print(f"{item.get('priority')}: {item.get('agenda_id')} source={item.get('source_type')} title={item.get('title')}")
                     return 0
-                if args.export or not brief_store.json_path.exists():
-                    brief_store.build()
+                brief_store.build()
                 _print_ai_markets_brief_status(brief_store.status())
                 return 0
             if args.ai_markets_command == "risks":
@@ -1729,6 +1728,10 @@ def _print_ai_markets_brief_status(status) -> None:
     print(f"overdue_review_count: {status.get('overdue_review_count', 0)}")
     print(f"research_agenda_count: {status.get('research_agenda_count', 0)}")
     print(f"high_priority_agenda_count: {status.get('high_priority_agenda_count', 0)}")
+    print(f"top_priority_count: {status.get('top_priority_count', 0)}")
+    print(f"remaining_high_priority_count: {status.get('remaining_high_priority_count', 0)}")
+    print(f"medium_priority_count: {status.get('medium_priority_count', 0)}")
+    print(f"low_priority_count: {status.get('low_priority_count', 0)}")
     print(f"brief_path: {status.get('brief_path')}")
     print(f"agenda_path: {status.get('agenda_path')}")
 

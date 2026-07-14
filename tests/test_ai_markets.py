@@ -752,6 +752,81 @@ class AIMarketsTests(unittest.TestCase):
             self.assertNotIn("sell ", text)
             self.assertNotIn("price target", text)
 
+    def test_executive_brief_limits_top_priorities_and_preserves_full_agenda(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_noisy_brief_artifacts(root)
+
+            AIMarketsBriefStore(root).build()
+            data = AIMarketsBriefStore(root).load()
+            brief = (root / "outputs" / "ai-markets" / "briefings" / "morning-brief.md").read_text(encoding="utf-8")
+            agenda = (root / "outputs" / "ai-markets" / "briefings" / "research-agenda.md").read_text(encoding="utf-8")
+
+            self.assertLessEqual(data["top_priority_count"], 5)
+            self.assertLessEqual(len(data["top_priorities"]), 5)
+            self.assertGreaterEqual(data["research_agenda_count"], data["top_priority_count"])
+            self.assertIn("Remaining High Priority", agenda)
+            self.assertIn("Medium Priority", agenda)
+            self.assertIn("Appendix / Provenance", agenda)
+            self.assertIn("## Appendix", brief)
+
+    def test_executive_brief_excludes_raw_evidence_noise_from_main_sections(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_noisy_brief_artifacts(root)
+
+            AIMarketsBriefStore(root).build()
+            brief = (root / "outputs" / "ai-markets" / "briefings" / "morning-brief.md").read_text(encoding="utf-8")
+            main = brief.split("## Appendix", 1)[0]
+
+            self.assertNotIn("eg_evidence_", main)
+            self.assertNotIn("https://youtube.com", main)
+            self.assertNotIn("* **", main)
+            self.assertNotIn("None * Federal Reserve", main)
+
+    def test_executive_brief_deduplicates_catalysts_and_uses_structured_titles(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_noisy_brief_artifacts(root)
+
+            AIMarketsBriefStore(root).build()
+            data = AIMarketsBriefStore(root).load()
+            titles = [item["title"] for item in data["research_agenda"] if item["source_type"] == "catalyst"]
+
+            self.assertEqual(data["deduplicated_catalyst_count"], 1)
+            self.assertEqual(data["suppressed_duplicate_count"], 1)
+            self.assertEqual(titles, ["Fed Policy Catalyst"])
+
+    def test_watchlist_without_current_evidence_is_medium_priority(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_portfolio_config(root, positions=False)
+            AIMarketsStore(root).build()
+
+            AIMarketsBriefStore(root).build()
+            agenda = AIMarketsBriefStore(root).load()["research_agenda"]
+            portfolio_items = [item for item in agenda if item["source_type"] == "portfolio_review"]
+
+            self.assertTrue(portfolio_items)
+            self.assertTrue(all(item["priority"] == "medium" for item in portfolio_items))
+
+    def test_executive_brief_combined_decision_performance_section(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            _create_tree(root)
+            _write_noisy_brief_artifacts(root)
+
+            AIMarketsBriefStore(root).build()
+            brief = (root / "outputs" / "ai-markets" / "briefings" / "morning-brief.md").read_text(encoding="utf-8")
+
+            self.assertIn("## Decision and Performance Review", brief)
+            self.assertIn("Learning Loop: outputs/performance/learning-loop.md", brief)
+            self.assertIn("Thesis Accuracy: outputs/performance/thesis-accuracy.md", brief)
+
     def test_no_provider_calls(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -903,6 +978,42 @@ def _write_catalyst_artifacts(root: Path) -> None:
         {"evidence_id": "ev_cat3", "source_id": "source-c", "summary": "Power bottleneck risk for data center energy demand."},
     ]
     write_json(root / "outputs" / "reports" / "latest-report.json", {"report_id": "report_cat", "evidence_references": refs, "sections": []})
+
+
+def _write_noisy_brief_artifacts(root: Path) -> None:
+    write_json(
+        root / "outputs" / "ai-markets" / "ai-markets.json",
+        {
+            "themes": [],
+            "entities": [],
+            "risks": [
+                {"risk_id": "risk_fed", "description": "eg_evidence_ev_noise None * Federal Reserve: https://youtube.com/watch?v=test&t=123s risk excerpt", "related_themes": ["Macro Liquidity"], "related_entities": ["BTC"]},
+                {"risk_id": "risk_fed", "description": "Federal Reserve policy risk", "related_themes": ["Macro Liquidity"], "related_entities": ["BTC"]},
+            ],
+            "executive_questions": [{"question": "What evidence confirms liquidity risk?", "related_themes": ["Macro Liquidity"]}],
+        },
+    )
+    write_json(
+        root / "outputs" / "ai-markets" / "theme-lifecycle.json",
+        {"themes": [{"theme_name": "Macro Liquidity", "current_status": "weakening", "related_entities": ["BTC"], "related_risks": ["risk_fed"]}], "transitions": []},
+    )
+    write_json(
+        root / "outputs" / "ai-markets" / "catalysts" / "catalyst-monitor.json",
+        {
+            "total_catalyst_count": 2,
+            "high_priority_catalyst_count": 2,
+            "risk_linked_catalyst_count": 2,
+            "new_catalyst_count": 2,
+            "catalysts": [
+                {"catalyst_id": "cat_fed_1", "title": "eg_evidence_ev_noise None * Federal Reserve: https://youtube.com/watch?v=test&t=123s", "category": "fed_policy", "priority": "high", "time_horizon": "near_term", "related_themes": ["Macro Liquidity"], "related_entities": ["BTC"], "related_watchlist_symbols": ["BTC"], "related_risks": ["risk_fed"]},
+                {"catalyst_id": "cat_fed_2", "title": "* **None** Federal Reserve policy duplicate", "category": "fed_policy", "priority": "high", "time_horizon": "near_term", "related_themes": ["Macro Liquidity"], "related_entities": ["BTC"], "related_watchlist_symbols": ["BTC"], "related_risks": ["risk_fed"]},
+            ],
+        },
+    )
+    write_json(root / "outputs" / "ai-markets" / "portfolio" / "portfolio-intelligence.json", {"mode": "watchlist", "watchlist_count": 1, "high_priority_review_count": 0, "positions": [], "watchlist": [{"symbol": "BTC", "research_priority": "medium", "related_themes": ["Macro Liquidity"], "related_risks": []}], "detected_entities": [], "exposures": []})
+    write_json(root / "outputs" / "ai-markets" / "decisions" / "decision-journal.json", {"entry_count": 1, "open_decision_count": 1, "due_review_count": 1, "overdue_review_count": 0, "entries": [{"entry_id": "decision_1", "title": "Federal Reserve Policy Review", "related_themes": ["Macro Liquidity"], "related_entities": ["BTC"], "related_risks": [], "review": {"review_status": "due"}}]})
+    write_json(root / "outputs" / "performance" / "performance-intelligence.json", {"pending_outcome_count": 1, "performance_signal_count": 2, "high_severity_signal_count": 1})
+    write_json(root / "outputs" / "performance" / "thesis-accuracy.json", {"summary": {"average_accuracy_score": 63, "needs_review_count": 0}})
 
 
 def _write_decision_entry(root: Path, *, filename: str = "entry.md", title: str = "Review AI Infrastructure", review_at: str = "2099-01-01", status: str = "open", outcome: bool = False) -> None:

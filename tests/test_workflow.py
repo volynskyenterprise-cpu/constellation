@@ -314,6 +314,24 @@ class WorkflowAutomationTests(unittest.TestCase):
 
             generate.assert_not_called()
 
+    def test_morning_launcher_opens_review_files_only_after_success(self) -> None:
+        script = Path("tools/run_constellation_morning.bat").read_text(encoding="utf-8").lower()
+
+        self.assertIn('if "%exit_code%"=="0"', script)
+        self.assertIn("where code >nul 2>&1", script)
+        self.assertIn('start "" code -r', script)
+        self.assertIn("outputs\\ai-markets\\briefings\\morning-brief.md", script)
+        self.assertIn("outputs\\performance\\learning-loop.md", script)
+        self.assertNotIn("research-agenda.md", script)
+
+    def test_morning_launcher_preserves_exit_code_and_handles_missing_code_cli(self) -> None:
+        script = Path("tools/run_constellation_morning.bat").read_text(encoding="utf-8").lower()
+
+        self.assertIn("review launch warning: vs code command not available.", script)
+        self.assertIn("review files launched in vs code.", script)
+        self.assertIn("endlocal & exit /b %exit_code%", script)
+        self.assertIn('set "repo=%%~fi"', script)
+
     def test_latest_workflow_json_shape(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
