@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import date, datetime
 from hashlib import sha256
@@ -570,13 +571,13 @@ def _facts(assignment: RealEstateAssignment, sources: list[RealEstateSourceRecor
         field = str(item.get("field_name") or "")
         if not field:
             continue
+        if not _has_explicit_fact_value(item):
+            continue
         status = _valid_or_default(str(item.get("verification_status") or "client_provided"), VALID_VERIFICATION, "client_provided")
         confidence = _valid_or_default(str(item.get("confidence") or ("high" if status == "verified" else "medium")), VALID_CONFIDENCE, "unknown")
         linked = [source_ids_by_path.get(path.replace("\\", "/"), path) for path in _string_list(item.get("source_paths", []))]
-        value = str(item.get("value") if item.get("value") is not None else "")
-        if item.get("unit"):
-            value = f"{value} {item.get('unit')}".strip()
-        facts.append(_fact(assignment.assignment_id, "structured_fact", field, value, status, sorted(set(linked)), confidence, {"notes": item.get("notes", "")}))
+        value = _normalize_fact_value(item.get("value"))
+        facts.append(_fact(assignment.assignment_id, "structured_fact", field, value, status, sorted(set(linked)), confidence, {"notes": item.get("notes", ""), "unit": item.get("unit")}))
     return sorted(facts, key=lambda item: (item.field_name, item.fact_id))
 
 
@@ -805,6 +806,33 @@ def _file_checksum(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _has_explicit_fact_value(item: JsonMap) -> bool:
+    if "value" not in item:
+        return False
+    value = item.get("value")
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, bool):
+        return True
+    if isinstance(value, (int, float)):
+        return True
+    if isinstance(value, (list, dict)):
+        return bool(value)
+    return True
+
+
+def _normalize_fact_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (list, dict)):
+        return json.dumps(value, sort_keys=True)
+    return str(value)
+
+
 def _assignment_template(assignment_id: str) -> str:
     return (
         "# Private local assignment data. Do not commit.\n"
@@ -833,14 +861,7 @@ def _assignment_template(assignment_id: str) -> str:
         "    - sources/\n"
         "  notes:\n"
         "    - Private local assignment data. Do not commit.\n"
-        "  facts:\n"
-        "    - field_name: gross_living_area\n"
-        "      value: \"\"\n"
-        "      unit: square_feet\n"
-        "      verification_status: client_provided\n"
-        "      source_paths:\n"
-        "        - sources/\n"
-        "      notes: \"\"\n"
+        "  facts: []\n"
     )
 
 

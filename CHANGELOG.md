@@ -2,6 +2,14 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.0.1 - Assignment Template and Empty-Fact Handling
+
+- Fixed Real Estate Assignment Intelligence so empty structured fact values are omitted instead of becoming populated facts.
+- Preserved valid zero and boolean false fact values.
+- Kept `unit` as structured fact provenance metadata and prevented it from being substituted as the fact value.
+- Updated the generated assignment template and public example to use `facts: []` instead of active empty placeholder facts.
+- Preserved deterministic local-only Real Estate behavior with no providers, OpenAI, LLM inference, embeddings, web retrieval, Gmail, calendar integration, or valuation conclusions.
+
 ## 7.0.0 - Real Estate Assignment Intelligence MVP
 
 - Added deterministic Real Estate Assignment Intelligence as the first Real Estate Intelligence capability.

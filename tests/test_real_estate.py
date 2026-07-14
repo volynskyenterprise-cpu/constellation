@@ -87,6 +87,44 @@ def write_assignment(root: Path, assignment_id: str = "test-assignment", *, miss
     return assignment_dir
 
 
+def write_assignment_with_facts(root: Path, fact_block: str, assignment_id: str = "fact-assignment") -> Path:
+    assignment_dir = root / "real-estate" / "assignments" / assignment_id
+    (assignment_dir / "sources").mkdir(parents=True, exist_ok=True)
+    (assignment_dir / "sources" / "floor-plan.txt").write_text("sanitized source fixture", encoding="utf-8")
+    assignment_yaml = (
+        "assignment:\n"
+        f"  assignment_id: {assignment_id}\n"
+        "  status: active\n"
+        "  assignment_type: appraisal\n"
+        "  property_type: single_family_residential\n"
+        "  intended_use: mortgage_lending\n"
+        "  client_name: Sanitized Client\n"
+        "  effective_date: 2026-07-14\n"
+        "  due_date: 2099-07-21\n"
+        "  report_type: appraisal_report\n"
+        "  created_at: 2026-07-14\n"
+        "  subject:\n"
+        "    address: 123 Example Avenue\n"
+        "    city: Example City\n"
+        "    state: CA\n"
+        '    postal_code: "90000"\n'
+        "    county: Example County\n"
+        "    assessor_parcel_number: EXAMPLE-APN\n"
+        "  scope:\n"
+        "    inspection_type: interior_and_exterior\n"
+        "    valuation_premise: market_value\n"
+        "    ownership_interest: fee_simple\n"
+        "  source_paths:\n"
+        "    - sources/\n"
+        "  notes:\n"
+        "    - Sanitized fact parsing assignment.\n"
+        "  facts:\n"
+        f"{fact_block}"
+    )
+    (assignment_dir / "assignment.yaml").write_text(assignment_yaml, encoding="utf-8")
+    return assignment_dir
+
+
 class RealEstateAssignmentTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tempdir = tempfile.TemporaryDirectory()
@@ -287,6 +325,119 @@ class RealEstateAssignmentTests(unittest.TestCase):
         first = self.store.build("test-assignment").snapshot_id
         second = self.store.build("test-assignment").snapshot_id
         self.assertEqual(first, second)
+
+    def test_empty_fact_value_is_omitted(self) -> None:
+        write_assignment_with_facts(
+            self.root,
+            "    - field_name: gross_living_area\n"
+            '      value: ""\n'
+            "      unit: square_feet\n"
+            "      verification_status: client_provided\n",
+        )
+        facts = self.store.build("fact-assignment").to_dict()["facts"]
+        self.assertNotIn("gross_living_area", {fact["field_name"] for fact in facts})
+
+    def test_null_fact_value_is_omitted(self) -> None:
+        write_assignment_with_facts(
+            self.root,
+            "    - field_name: gross_living_area\n"
+            "      value: null\n"
+            "      unit: square_feet\n"
+            "      verification_status: client_provided\n",
+        )
+        facts = self.store.build("fact-assignment").to_dict()["facts"]
+        self.assertNotIn("gross_living_area", {fact["field_name"] for fact in facts})
+
+    def test_whitespace_fact_value_is_omitted(self) -> None:
+        write_assignment_with_facts(
+            self.root,
+            "    - field_name: gross_living_area\n"
+            "      value: \"   \"\n"
+            "      unit: square_feet\n"
+            "      notes: do not use this note as a value\n",
+        )
+        facts = self.store.build("fact-assignment").to_dict()["facts"]
+        self.assertNotIn("gross_living_area", {fact["field_name"] for fact in facts})
+
+    def test_unit_and_notes_are_never_substituted_for_value(self) -> None:
+        write_assignment_with_facts(
+            self.root,
+            "    - field_name: gross_living_area\n"
+            "      unit: square_feet\n"
+            "      notes: note text should not become a value\n",
+        )
+        data = self.store.build("fact-assignment").to_dict()
+        values = {fact["value"] for fact in data["facts"]}
+        self.assertNotIn("square_feet", values)
+        self.assertNotIn("note text should not become a value", values)
+        brief = (self.store.output_dir("fact-assignment") / "assignment-brief.md").read_text(encoding="utf-8")
+        self.assertNotIn("gross_living_area` = `square_feet", brief)
+
+    def test_numeric_zero_fact_value_is_preserved(self) -> None:
+        write_assignment_with_facts(
+            self.root,
+            "    - field_name: garage_space_count\n"
+            "      value: 0\n"
+            "      verification_status: verified\n",
+        )
+        structured = [fact for fact in self.store.build("fact-assignment").to_dict()["facts"] if fact["field_name"] == "garage_space_count"]
+        self.assertEqual(len(structured), 1)
+        self.assertEqual(structured[0]["value"], "0")
+
+    def test_boolean_false_fact_value_is_preserved(self) -> None:
+        write_assignment_with_facts(
+            self.root,
+            "    - field_name: has_pool\n"
+            "      value: false\n"
+            "      verification_status: verified\n",
+        )
+        structured = [fact for fact in self.store.build("fact-assignment").to_dict()["facts"] if fact["field_name"] == "has_pool"]
+        self.assertEqual(len(structured), 1)
+        self.assertEqual(structured[0]["value"], "false")
+
+    def test_valid_string_fact_value_is_preserved(self) -> None:
+        write_assignment_with_facts(
+            self.root,
+            "    - field_name: quality_rating\n"
+            "      value: average\n"
+            "      verification_status: client_provided\n",
+        )
+        structured = [fact for fact in self.store.build("fact-assignment").to_dict()["facts"] if fact["field_name"] == "quality_rating"]
+        self.assertEqual(len(structured), 1)
+        self.assertEqual(structured[0]["value"], "average")
+
+    def test_valid_numeric_fact_preserves_unit_as_metadata(self) -> None:
+        write_assignment_with_facts(
+            self.root,
+            "    - field_name: gross_living_area\n"
+            "      value: 2500\n"
+            "      unit: square_feet\n"
+            "      verification_status: client_provided\n",
+        )
+        structured = [fact for fact in self.store.build("fact-assignment").to_dict()["facts"] if fact["field_name"] == "gross_living_area"]
+        self.assertEqual(len(structured), 1)
+        self.assertEqual(structured[0]["value"], "2500")
+        self.assertEqual(structured[0]["provenance"]["unit"], "square_feet")
+
+    def test_empty_template_produces_no_substantive_property_fact(self) -> None:
+        self.store.create_template("template-build")
+        data = self.store.build("template-build").to_dict()
+        self.assertNotIn("gross_living_area", {fact["field_name"] for fact in data["facts"]})
+        self.assertGreater(data["missing_item_count"], 0)
+
+    def test_empty_fact_does_not_create_duplicate_missing_items_or_risks(self) -> None:
+        write_assignment_with_facts(
+            self.root,
+            "    - field_name: gross_living_area\n"
+            '      value: ""\n'
+            "      unit: square_feet\n"
+            "      verification_status: client_provided\n",
+        )
+        data = self.store.build("fact-assignment").to_dict()
+        missing_ids = [item["missing_item_id"] for item in data["missing_items"]]
+        risk_ids = [item["risk_id"] for item in data["risks"]]
+        self.assertEqual(len(missing_ids), len(set(missing_ids)))
+        self.assertEqual(len(risk_ids), len(set(risk_ids)))
 
 
 if __name__ == "__main__":

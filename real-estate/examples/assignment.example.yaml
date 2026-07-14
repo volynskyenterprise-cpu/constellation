@@ -25,12 +25,4 @@ assignment:
     - sources/
   notes:
     - Sanitized example assignment for Assignment Intelligence.
-  facts:
-    - field_name: gross_living_area
-      value: "2000"
-      unit: square_feet
-      verification_status: client_provided
-      confidence: medium
-      source_paths:
-        - sources/example-floor-plan.pdf
-      notes: Example structured fact only.
+  facts: []

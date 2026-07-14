@@ -5,6 +5,7 @@
 - Add connector warning history retention and comparison across Morning runs.
 - Add connector-specific recovery documentation for Google Drive token refresh.
 - Real Estate Assignment Intelligence MVP is complete; next Real Estate work should add Comparable Intelligence, Adjustment Intelligence, Neighborhood Intelligence, Permit Intelligence, and Reviewer Intelligence without generating unsupported valuation opinions.
+- Empty structured fact handling is fixed in v7.0.1; keep future Real Estate templates free of active blank placeholder facts.
 - Add deterministic MLS export parsing for Real Estate Intelligence after schema examples are supplied.
 - Add deterministic permit record indexing for Real Estate Intelligence after local source formats are supplied.
 - Add Real Estate assignment comparison against prior assignment snapshots.

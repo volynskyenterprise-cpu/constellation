@@ -70,6 +70,14 @@ Generated files include:
 - `assignment-history.json`
 - `assignment-delta.json`
 
+## Structured Facts
+
+Structured facts are optional. The default template uses `facts: []`.
+
+When facts are provided, `value` must be explicit. Empty, missing, null, or whitespace-only values are omitted from the fact list. `unit`, `notes`, `verification_status`, and `source_paths` are metadata fields and are never substituted as the fact value.
+
+Valid zero and boolean false values are preserved.
+
 ## Dashboard Integration
 
 The Executive Dashboard includes a Real Estate Assignment Intelligence section when local assignments exist. It reports active, waiting, review, and overdue assignment counts, missing-item counts, risk counts, highest-priority assignments, and latest assignment brief paths.

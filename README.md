@@ -359,6 +359,8 @@ Real Estate Assignment Intelligence is the first Real Estate Intelligence capabi
 
 Private assignment files belong under `real-estate/assignments/<ASSIGNMENT_ID>/` and are ignored by Git. Public examples live in `real-estate/examples/`.
 
+Structured facts are optional. Empty fact values are omitted; `unit`, `notes`, and other metadata fields are never substituted as values.
+
 ### Source Monitoring
 
 ```bash
