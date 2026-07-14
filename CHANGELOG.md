@@ -2,6 +2,15 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.1.1 - Real Estate Assignment Consolidation
+
+- Added deterministic Assignment Consolidation for Real Estate Intelligence.
+- Added assignment clusters, relationships, conflicts, history, and delta outputs under `outputs/real-estate/consolidation/`.
+- Added `python -m constellation real-estate consolidation` with status, clusters, conflicts, relationships, and export commands.
+- Integrated consolidated assignment, artifact, knowledge pack, reviewer note, and conflict counts into the Executive Dashboard.
+- Extended Assignment Briefs with consolidation artifacts, relationships, and conflicts when consolidation data exists.
+- Preserved deterministic local-only behavior with no providers, OpenAI, LLM inference, embeddings, semantic similarity, web retrieval, Gmail, calendar integration, valuation opinions, comparable selection, adjustments, or USPAP conclusions.
+
 ## 7.1.0 - Real Estate Assignment Auto-Ingestion
 
 - Added deterministic Real Estate Assignment Auto-Ingestion for structured local intake files.

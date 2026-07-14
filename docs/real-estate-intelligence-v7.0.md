@@ -122,6 +122,14 @@ It supports optional local PKOS/AOC integration through gitignored config files.
 
 The v7.1 implementation still does not parse arbitrary narrative content, select comparables, generate adjustments, interpret permits, produce value opinions, or make USPAP conclusions.
 
+## v7.1.1 Implementation - Assignment Consolidation
+
+Assignment Consolidation groups multiple intake artifacts that represent the same real-world assignment into one canonical assignment view.
+
+It creates deterministic clusters, relationships, conflicts, history, and deltas from existing local Real Estate intake and assignment artifacts.
+
+Consolidation is based only on explicit IDs, normalized addresses, dates, and structured field overlap. It does not use semantic similarity, provider calls, external address services, or valuation inference.
+
 ## 5. Institutional Valuation Operating System
 
 Real Estate Intelligence should operate as an institutional layer around the appraisal workflow.

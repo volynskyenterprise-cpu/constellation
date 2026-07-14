@@ -170,6 +170,7 @@ class ExecutiveDashboardBuilder:
         thesis_accuracy_summary = _thesis_accuracy_summary(thesis_accuracy)
         real_estate_summary = RealEstateAssignmentStore(self.root).summary()
         real_estate_summary.update(_real_estate_intake_summary(_read_optional_json(self.root / "outputs" / "real-estate" / "intake" / "latest-intake.json")))
+        real_estate_summary.update(_real_estate_consolidation_summary(_read_optional_json(self.root / "outputs" / "real-estate" / "consolidation" / "assignment-clusters.json")))
         connector_warning_summary = _connector_warning_summary(daily_run, workflow)
         risks_gaps = _risks_gaps(morning, theses)
         actions = _actions(morning, status, risks_gaps)
@@ -659,6 +660,29 @@ def _real_estate_intake_summary(intake: JsonMap) -> JsonMap:
         "real_estate_intake_duplicate_count": counts.get("skipped_duplicate", 0),
         "real_estate_intake_error_count": counts.get("errors", 0),
         "latest_real_estate_intake_assignment_ids": [str(record.get("detected_assignment_id")) for record in records[:5]],
+    }
+
+
+def _real_estate_consolidation_summary(consolidation: JsonMap) -> JsonMap:
+    counts = _map(consolidation.get("counts"))
+    clusters = _map_list(consolidation.get("clusters", []))
+    return {
+        "real_estate_consolidation_available": bool(consolidation),
+        "consolidated_assignment_count": counts.get("assignment_count", len(clusters)),
+        "consolidated_artifact_count": counts.get("artifact_count", 0),
+        "consolidated_knowledge_pack_count": counts.get("knowledge_pack_count", 0),
+        "consolidated_assignments_with_reviewer_notes": counts.get("assignments_with_reviewer_notes", 0),
+        "consolidated_assignments_with_conflicts": counts.get("assignments_with_conflicts", 0),
+        "top_active_assignments": [
+            {
+                "assignment_id": cluster.get("canonical_assignment_id"),
+                "property": cluster.get("property_address"),
+                "artifact_count": cluster.get("artifact_count", 0),
+                "status": cluster.get("assignment_status"),
+                "last_activity": cluster.get("last_seen"),
+            }
+            for cluster in clusters[:5]
+        ],
     }
 
 

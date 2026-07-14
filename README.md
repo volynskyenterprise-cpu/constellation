@@ -385,6 +385,18 @@ Structured assignment intake artifact
 
 Use `config/real-estate-intake.example.yaml` as a placeholder template for optional PKOS/AOC or other local structured intake sources. Real paths belong only in gitignored local config. `source_mode: reference` preserves original paths without copying files; `source_mode: copy` copies files from configured roots into the private assignment `sources/` directory.
 
+Assignment Consolidation groups multiple artifacts for the same real-world assignment into one canonical assignment view:
+
+```bash
+python -m constellation real-estate consolidation
+python -m constellation real-estate consolidation status
+python -m constellation real-estate consolidation clusters
+python -m constellation real-estate consolidation conflicts
+python -m constellation real-estate consolidation relationships
+```
+
+It reports Assignments, Artifacts, Knowledge Packs, assignments with reviewer notes, assignments with conflicts, and top active assignments. Consolidation uses exact IDs, normalized addresses, dates, and structured field overlap only. It does not use semantic similarity or valuation inference.
+
 ### Source Monitoring
 
 ```bash

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .artifacts import ArtifactError
 from .ai_markets import AIMarketsBriefStore, AIMarketsCatalystStore, AIMarketsDecisionJournalStore, AIMarketsError, AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore
+from .assignment_consolidation import AssignmentConsolidationEngine, AssignmentConsolidationError, AssignmentConsolidationStore
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .daily import DailyPipelineError, DailyPipelineStore
 from .dashboard import ExecutiveDashboardError, ExecutiveDashboardStore
@@ -367,6 +368,13 @@ def main(argv: list[str] | None = None) -> int:
     real_estate_intake_subparsers.add_parser("history", help="List Real Estate intake history.")
     real_estate_intake_show_parser = real_estate_intake_subparsers.add_parser("show", help="Show one intake record.")
     real_estate_intake_show_parser.add_argument("intake_id", help="Intake ID.")
+    real_estate_consolidation_parser = real_estate_subparsers.add_parser("consolidation", help="Consolidate Real Estate assignment artifacts.")
+    real_estate_consolidation_subparsers = real_estate_consolidation_parser.add_subparsers(dest="real_estate_consolidation_command")
+    real_estate_consolidation_subparsers.add_parser("status", help="Show Assignment Consolidation status.")
+    real_estate_consolidation_subparsers.add_parser("clusters", help="List consolidated assignment clusters.")
+    real_estate_consolidation_subparsers.add_parser("conflicts", help="List assignment consolidation conflicts.")
+    real_estate_consolidation_subparsers.add_parser("relationships", help="List assignment relationships.")
+    real_estate_consolidation_subparsers.add_parser("export", help="Export assignment consolidation Markdown.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -1439,6 +1447,35 @@ def main(argv: list[str] | None = None) -> int:
                                 return 0
                     print(f"error: intake record not found: {args.intake_id}")
                     return 1
+            if args.real_estate_command == "consolidation":
+                consolidation_store = AssignmentConsolidationStore(args.root.resolve())
+                if args.real_estate_consolidation_command is None:
+                    snapshot = AssignmentConsolidationEngine(args.root.resolve()).build()
+                    _print_assignment_consolidation_summary(snapshot.to_dict())
+                    return 0
+                if args.real_estate_consolidation_command == "status":
+                    _print_assignment_consolidation_status(AssignmentConsolidationEngine(args.root.resolve()).status())
+                    return 0
+                if args.real_estate_consolidation_command == "clusters":
+                    data = consolidation_store.load()
+                    for cluster in _map_list(data.get("clusters", [])):
+                        print(f"{cluster.get('canonical_assignment_id')} artifacts={cluster.get('artifact_count', 0)} property={cluster.get('property_address', '')} conflicts={len(_map_list(cluster.get('conflicts', [])))}")
+                    return 0
+                if args.real_estate_consolidation_command == "conflicts":
+                    path = consolidation_store.conflicts_json
+                    data = read_json(path) if path.exists() else {"conflicts": []}
+                    for conflict in _map_list(data.get("conflicts", [])):
+                        print(f"{conflict.get('conflict_id')} assignment={conflict.get('canonical_assignment_id')} field={conflict.get('field')} values={conflict.get('values')}")
+                    return 0
+                if args.real_estate_consolidation_command == "relationships":
+                    path = consolidation_store.relationships_json
+                    data = read_json(path) if path.exists() else {"relationships": []}
+                    for relationship in _map_list(data.get("relationships", [])):
+                        print(f"{relationship.get('relationship_id')} type={relationship.get('relationship_type')} confidence={relationship.get('confidence')} reason={relationship.get('reason')}")
+                    return 0
+                if args.real_estate_consolidation_command == "export":
+                    print(f"assignment_clusters: {consolidation_store.clusters_md}")
+                    return 0
             if args.real_estate_command == "assignments":
                 assignment_ids = store.list_assignment_ids()
                 if not assignment_ids:
@@ -1498,7 +1535,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"source_manifest: {store.output_dir(assignment_id) / 'source-manifest.md'}")
                 print(f"evidence_index: {store.output_dir(assignment_id) / 'evidence-index.md'}")
                 return 0
-        except (RealEstateError, RealEstateIntakeError) as exc:
+        except (RealEstateError, RealEstateIntakeError, AssignmentConsolidationError) as exc:
             print(f"error: {exc}")
             return 1
     return 2
@@ -1652,6 +1689,27 @@ def _print_real_estate_intake_manifest(manifest, dashboard_refreshed: bool) -> N
             f"mapped={len(_string_list(record.get('fields_mapped', [])))} conflicts={len(_string_list(record.get('conflicts_created', [])))} "
             f"brief={record.get('assignment_brief_path')}"
         )
+
+
+def _print_assignment_consolidation_summary(snapshot) -> None:
+    counts = _map(snapshot.get("counts"))
+    print(f"snapshot_id: {snapshot.get('snapshot_id')}")
+    print(f"assignments: {counts.get('assignment_count', 0)}")
+    print(f"artifacts: {counts.get('artifact_count', 0)}")
+    print(f"knowledge_packs: {counts.get('knowledge_pack_count', 0)}")
+    print(f"assignments_with_reviewer_notes: {counts.get('assignments_with_reviewer_notes', 0)}")
+    print(f"assignments_with_conflicts: {counts.get('assignments_with_conflicts', 0)}")
+    print(f"relationships: {counts.get('relationship_count', 0)}")
+
+
+def _print_assignment_consolidation_status(status) -> None:
+    print(f"available: {status.get('available')}")
+    print(f"assignments: {status.get('assignment_count', 0)}")
+    print(f"artifacts: {status.get('artifact_count', 0)}")
+    print(f"knowledge_packs: {status.get('knowledge_pack_count', 0)}")
+    print(f"assignments_with_reviewer_notes: {status.get('assignments_with_reviewer_notes', 0)}")
+    print(f"assignments_with_conflicts: {status.get('assignments_with_conflicts', 0)}")
+    print(f"clusters_path: {status.get('clusters_path')}")
 
 
 def _print_monitor_run(run) -> None:

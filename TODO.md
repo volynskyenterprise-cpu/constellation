@@ -7,6 +7,7 @@
 - Real Estate Assignment Intelligence MVP is complete; next Real Estate work should add Comparable Intelligence, Adjustment Intelligence, Neighborhood Intelligence, Permit Intelligence, and Reviewer Intelligence without generating unsupported valuation opinions.
 - Empty structured fact handling is fixed in v7.0.1; keep future Real Estate templates free of active blank placeholder facts.
 - Real Estate Assignment Auto-Ingestion is complete; keep future Real Estate work focused on Comparable Intelligence, Adjustment Intelligence, Neighborhood Intelligence, Permit Intelligence, Reviewer Intelligence, Narrative Intelligence, and the Valuation Learning Loop.
+- Real Estate Assignment Consolidation is complete; future work should add human-reviewed split/merge notes and reviewer workflow queues.
 - Add deterministic MLS export parsing for Real Estate Intelligence after schema examples are supplied.
 - Add deterministic permit record indexing for Real Estate Intelligence after local source formats are supplied.
 - Add Real Estate assignment comparison against prior assignment snapshots.

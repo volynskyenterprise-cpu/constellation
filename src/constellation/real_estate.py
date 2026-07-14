@@ -334,7 +334,7 @@ class RealEstateAssignmentStore:
             history.append(data)
         write_json(directory / "assignment-history.json", {"snapshots": history})
         directory.mkdir(parents=True, exist_ok=True)
-        (directory / "assignment-brief.md").write_text(render_assignment_brief(snapshot), encoding="utf-8")
+        (directory / "assignment-brief.md").write_text(render_assignment_brief(snapshot) + _render_consolidation_section(self.root, snapshot.assignment.assignment_id), encoding="utf-8")
         (directory / "source-manifest.md").write_text(render_source_manifest(snapshot), encoding="utf-8")
         (directory / "evidence-index.md").write_text(render_evidence_index(snapshot), encoding="utf-8")
         (directory / "missing-information.md").write_text(render_missing_information(snapshot), encoding="utf-8")
@@ -440,6 +440,43 @@ def render_assignment_brief(snapshot: RealEstateAssignmentSnapshot) -> str:
             *_summary_lines(snapshot.provenance),
         ]
     )
+
+
+def _render_consolidation_section(root: Path, assignment_id: str) -> str:
+    path = root / "outputs" / "real-estate" / "consolidation" / "assignment-clusters.json"
+    if not path.exists():
+        return ""
+    try:
+        data = read_json(path)
+    except Exception:
+        return ""
+    for cluster in _map_list(data.get("clusters", [])):
+        if cluster.get("canonical_assignment_id") != assignment_id:
+            continue
+        lines = [
+            "",
+            "## Assignment Consolidation",
+            "",
+            f"- Artifacts: {cluster.get('artifact_count', 0)}",
+            f"- Knowledge pack available: {cluster.get('knowledge_pack_available', False)}",
+            f"- Reviewer notes available: {cluster.get('reviewer_notes_available', False)}",
+            f"- Relationships: {len(cluster.get('relationships', [])) if isinstance(cluster.get('relationships'), list) else 0}",
+            f"- Conflicts: {len(_map_list(cluster.get('conflicts', [])))}",
+            "",
+            "### Artifacts",
+            "",
+        ]
+        for artifact in _map_list(cluster.get("artifacts", [])):
+            lines.append(f"- `{artifact.get('artifact_type')}` source=`{artifact.get('source_path')}`")
+        lines.extend(["", "### Consolidation Conflicts", ""])
+        conflicts = _map_list(cluster.get("conflicts", []))
+        if conflicts:
+            lines.extend(f"- `{item.get('field')}` values=`{item.get('values')}`" for item in conflicts)
+        else:
+            lines.append("- None")
+        lines.append("")
+        return "\n".join(lines)
+    return ""
 
 
 def render_source_manifest(snapshot: RealEstateAssignmentSnapshot) -> str:
