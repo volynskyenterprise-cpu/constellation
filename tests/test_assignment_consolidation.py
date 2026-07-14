@@ -58,6 +58,23 @@ def write_artifacts(intake_root: Path, *, conflict: bool = False) -> list[Path]:
     return files
 
 
+def write_json_artifact(intake_root: Path, name: str, data: dict) -> Path:
+    path = intake_root / "incoming" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    return path
+
+
+def write_md_artifact(intake_root: Path, name: str, data: dict | None = None) -> Path:
+    path = intake_root / "incoming" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if data is None:
+        path.write_text("# Review\n\nNo structured assignment fields.\n", encoding="utf-8")
+    else:
+        path.write_text("\n".join(f"{key}: {value}" for key, value in data.items()), encoding="utf-8")
+    return path
+
+
 class AssignmentConsolidationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tempdir = tempfile.TemporaryDirectory()
@@ -72,6 +89,9 @@ class AssignmentConsolidationTests(unittest.TestCase):
     def test_address_normalization(self) -> None:
         self.assertEqual(normalize_address("123 Example Street, Unit 4"), "123 example st unit 4")
         self.assertEqual(normalize_address("123 Example St."), "123 example st")
+        self.assertEqual(normalize_address("&nbsp;&nbsp;&nbsp;430 S Rodeo Dr &nbsp; &nbsp;"), "430 s rodeo dr")
+        self.assertEqual(normalize_address("12222 Wilshire Blvd #312"), "12222 wilshire blvd unit 312")
+        self.assertEqual(normalize_address("12222 Wilshire Boulevard Apt 312"), "12222 wilshire blvd unit 312")
 
     def test_assignment_clustering_and_duplicate_grouping(self) -> None:
         for path in write_artifacts(self.intake_root):
@@ -157,6 +177,161 @@ class AssignmentConsolidationTests(unittest.TestCase):
         for phrase in ["opinion of value", "recommended comparable", "adjustment amount", "uspap compliant opinion"]:
             self.assertNotIn(phrase, text)
         self.assertEqual(snapshot.counts["artifact_count"], 4)
+
+    def test_html_entity_cleanup_suppresses_false_address_conflict(self) -> None:
+        paths = [
+            write_json_artifact(self.intake_root, "clean.json", {"order_id": "RODEO-1", "subject_address": "430 S Rodeo Dr", "city": "Beverly Hills", "state": "CA"}),
+            write_json_artifact(self.intake_root, "html.json", {"source_type": "gmail", "subject_address": "&nbsp;&nbsp;430 S Rodeo Dr&nbsp;", "city": "Beverly Hills", "state": "CA"}),
+        ]
+        for path in paths:
+            RealEstateIntakeEngine(self.root).import_candidates(file_path=path)
+        snapshot = AssignmentConsolidationEngine(self.root).build()
+        self.assertEqual(snapshot.counts["assignment_count"], 1)
+        self.assertEqual(snapshot.counts["true_identity_conflict_count"], 0)
+
+    def test_exact_json_markdown_basename_pairing_and_empty_markdown_attached(self) -> None:
+        paths = [
+            write_json_artifact(self.intake_root, "gmail-abc123.json", {"source_type": "gmail", "order_id": "PAIR-1", "subject_address": "10 Paired Street"}),
+            write_md_artifact(self.intake_root, "gmail-abc123.md"),
+        ]
+        for path in paths:
+            RealEstateIntakeEngine(self.root).import_candidates(file_path=path)
+        snapshot = AssignmentConsolidationEngine(self.root).build()
+        self.assertEqual(snapshot.counts["assignment_count"], 1)
+        self.assertEqual(snapshot.counts["artifact_count"], 2)
+        self.assertEqual(snapshot.counts["source_companion_count"], 1)
+        self.assertEqual(snapshot.counts["unassigned_artifact_count"], 0)
+        self.assertIn("source_companion", {item.relationship_type for item in snapshot.relationships})
+
+    def test_unpaired_empty_markdown_becomes_unassigned(self) -> None:
+        path = write_md_artifact(self.intake_root, "lonely-review.md")
+        RealEstateIntakeEngine(self.root).import_candidates(file_path=path)
+        snapshot = AssignmentConsolidationEngine(self.root).build()
+        self.assertEqual(snapshot.counts["assignment_count"], 0)
+        self.assertEqual(snapshot.counts["unassigned_artifact_count"], 1)
+
+    def test_source_generated_gmail_and_axis_ids_are_aliases_not_conflicts(self) -> None:
+        paths = [
+            write_json_artifact(self.intake_root, "gmail-laurel.json", {"source_type": "gmail", "subject_address": "524 Laurel Avenue", "city": "Los Angeles", "state": "CA"}),
+            write_json_artifact(self.intake_root, "axis-laurel.json", {"source_type": "axis", "order_id": "524-LAUREL", "subject_address": "524 Laurel Ave", "city": "Los Angeles", "state": "CA"}),
+        ]
+        for path in paths:
+            RealEstateIntakeEngine(self.root).import_candidates(file_path=path)
+        snapshot = AssignmentConsolidationEngine(self.root).build()
+        cluster = snapshot.clusters[0]
+        self.assertEqual(snapshot.counts["assignment_count"], 1)
+        self.assertGreater(snapshot.counts["alias_count"], 0)
+        self.assertEqual(snapshot.counts["true_identity_conflict_count"], 0)
+        self.assertIn("524-laurel", cluster.source_generated_ids)
+
+    def test_address_derived_alias_preserved(self) -> None:
+        path = write_json_artifact(self.intake_root, "gmail-cazador.json", {"source_type": "gmail", "subject_address": "3770 Cazador St", "effective_date": "2026-07-14"})
+        RealEstateIntakeEngine(self.root).import_candidates(file_path=path)
+        snapshot = AssignmentConsolidationEngine(self.root).build()
+        self.assertTrue(snapshot.clusters[0].assignment_aliases)
+        self.assertIn("3770-cazador-st-2026-07-14", snapshot.clusters[0].assignment_aliases)
+
+    def test_explicit_identifier_priority(self) -> None:
+        cases = [
+            ("explicit-assignment.json", {"assignment_id": "ASSIGN-9", "order_id": "ORDER-9", "loan_number": "LOAN-9"}, "assign-9"),
+            ("explicit-order.json", {"order_id": "ORDER-10", "loan_number": "LOAN-10"}, "order-10"),
+            ("explicit-loan.json", {"loan_number": "LOAN-11"}, "loan-11"),
+        ]
+        for filename, data, expected in cases:
+            with self.subTest(filename=filename):
+                self.tearDown()
+                self.setUp()
+                path = write_json_artifact(self.intake_root, filename, data)
+                RealEstateIntakeEngine(self.root).import_candidates(file_path=path)
+                snapshot = AssignmentConsolidationEngine(self.root).build()
+                self.assertEqual(snapshot.clusters[0].canonical_assignment_id, expected)
+
+    def test_true_explicit_order_conflict_retained(self) -> None:
+        paths = [
+            write_json_artifact(self.intake_root, "a.json", {"order_id": "ORDER-A", "subject_address": "100 Conflict Street"}),
+            write_json_artifact(self.intake_root, "b.json", {"order_id": "ORDER-B", "subject_address": "100 Conflict Street"}),
+        ]
+        for path in paths:
+            RealEstateIntakeEngine(self.root).import_candidates(file_path=path)
+        snapshot = AssignmentConsolidationEngine(self.root).build()
+        self.assertEqual(snapshot.counts["assignment_count"], 2)
+        self.assertGreaterEqual(len([r for r in snapshot.relationships if r.relationship_type == "conflicting_assignment"]), 1)
+
+    def test_true_explicit_loan_conflict_retained(self) -> None:
+        paths = [
+            write_json_artifact(self.intake_root, "a.json", {"loan_number": "LOAN-A", "subject_address": "101 Conflict Street"}),
+            write_json_artifact(self.intake_root, "b.json", {"loan_number": "LOAN-B", "subject_address": "101 Conflict Street"}),
+        ]
+        for path in paths:
+            RealEstateIntakeEngine(self.root).import_candidates(file_path=path)
+        snapshot = AssignmentConsolidationEngine(self.root).build()
+        self.assertEqual(snapshot.counts["assignment_count"], 2)
+
+    def test_exact_address_merge_with_missing_city_state(self) -> None:
+        paths = [
+            write_json_artifact(self.intake_root, "a.json", {"subject_address": "652 Broadway", "city": "Santa Monica", "state": "CA"}),
+            write_json_artifact(self.intake_root, "b.json", {"source_type": "gmail", "subject_address": "652 Broadway"}),
+        ]
+        for path in paths:
+            RealEstateIntakeEngine(self.root).import_candidates(file_path=path)
+        self.assertEqual(AssignmentConsolidationEngine(self.root).build().counts["assignment_count"], 1)
+
+    def test_different_units_remain_separate(self) -> None:
+        paths = [
+            write_json_artifact(self.intake_root, "u209.json", {"subject_address": "12222 Wilshire Blvd Unit 209"}),
+            write_json_artifact(self.intake_root, "u307.json", {"subject_address": "12222 Wilshire Blvd #307"}),
+        ]
+        for path in paths:
+            RealEstateIntakeEngine(self.root).import_candidates(file_path=path)
+        self.assertEqual(AssignmentConsolidationEngine(self.root).build().counts["assignment_count"], 2)
+
+    def test_alias_and_unassigned_outputs_and_identity_report(self) -> None:
+        paths = [
+            write_json_artifact(self.intake_root, "gmail-abc.json", {"source_type": "gmail", "order_id": "OUT-1", "subject_address": "20 Output Street"}),
+            write_md_artifact(self.intake_root, "orphan.md"),
+        ]
+        for path in paths:
+            RealEstateIntakeEngine(self.root).import_candidates(file_path=path)
+        AssignmentConsolidationEngine(self.root).build()
+        base = self.root / "outputs" / "real-estate" / "consolidation"
+        self.assertTrue((base / "assignment-aliases.json").exists())
+        self.assertTrue((base / "unassigned-artifacts.json").exists())
+        self.assertTrue((base / "unassigned-artifacts.md").exists())
+        self.assertTrue((base / "identity-resolution-report.md").exists())
+
+    def test_dashboard_identity_summary_and_cli_new_commands(self) -> None:
+        paths = [
+            write_json_artifact(self.intake_root, "gmail-abc123.json", {"source_type": "gmail", "order_id": "CLI-1", "subject_address": "10 CLI Street"}),
+            write_md_artifact(self.intake_root, "gmail-abc123.md"),
+        ]
+        for path in paths:
+            RealEstateIntakeEngine(self.root).import_candidates(file_path=path)
+        AssignmentConsolidationEngine(self.root).build()
+        summary = ExecutiveDashboardBuilder(self.root).build().real_estate_assignment_summary
+        self.assertEqual(summary["canonical_assignment_count"], 1)
+        self.assertGreater(summary["alias_count"], 0)
+        self.assertEqual(summary["source_companion_count"], 1)
+        for command in [
+            ["real-estate", "--root", str(self.root), "consolidation", "aliases"],
+            ["real-estate", "--root", str(self.root), "consolidation", "unassigned"],
+            ["real-estate", "--root", str(self.root), "consolidation", "identity-report"],
+        ]:
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer):
+                code = main(command)
+            self.assertEqual(code, 0, buffer.getvalue())
+
+    def test_history_and_delta_generation(self) -> None:
+        path = write_json_artifact(self.intake_root, "a.json", {"order_id": "DELTA-1", "subject_address": "30 Delta Street"})
+        RealEstateIntakeEngine(self.root).import_candidates(file_path=path)
+        engine = AssignmentConsolidationEngine(self.root)
+        first = engine.build()
+        second = engine.build()
+        self.assertEqual(first.snapshot_id, second.snapshot_id)
+        history = json.loads((self.root / "outputs" / "real-estate" / "consolidation" / "assignment-consolidation-history.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(history["snapshots"]), 1)
+        delta = json.loads((self.root / "outputs" / "real-estate" / "consolidation" / "assignment-consolidation-delta.json").read_text(encoding="utf-8"))
+        self.assertIn("newly_resolved_aliases", delta)
 
 
 if __name__ == "__main__":

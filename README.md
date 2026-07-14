@@ -397,6 +397,8 @@ python -m constellation real-estate consolidation relationships
 
 It reports Assignments, Artifacts, Knowledge Packs, assignments with reviewer notes, assignments with conflicts, and top active assignments. Consolidation uses exact IDs, normalized addresses, dates, and structured field overlap only. It does not use semantic similarity or valuation inference.
 
+v7.1.2 adds Identity Resolution refinements: HTML entity cleanup, source companion pairing for matching JSON/Markdown stems, assignment aliases, unassigned artifacts, true identity conflict reporting, and unit-aware address normalization.
+
 ### Source Monitoring
 
 ```bash

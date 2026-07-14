@@ -669,7 +669,12 @@ def _real_estate_consolidation_summary(consolidation: JsonMap) -> JsonMap:
     return {
         "real_estate_consolidation_available": bool(consolidation),
         "consolidated_assignment_count": counts.get("assignment_count", len(clusters)),
+        "canonical_assignment_count": counts.get("canonical_assignment_count", counts.get("assignment_count", len(clusters))),
         "consolidated_artifact_count": counts.get("artifact_count", 0),
+        "alias_count": counts.get("alias_count", 0),
+        "source_companion_count": counts.get("source_companion_count", 0),
+        "unassigned_artifact_count": counts.get("unassigned_artifact_count", 0),
+        "true_identity_conflict_count": counts.get("true_identity_conflict_count", counts.get("conflict_count", 0)),
         "consolidated_knowledge_pack_count": counts.get("knowledge_pack_count", 0),
         "consolidated_assignments_with_reviewer_notes": counts.get("assignments_with_reviewer_notes", 0),
         "consolidated_assignments_with_conflicts": counts.get("assignments_with_conflicts", 0),

@@ -2,6 +2,17 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.1.2 - Assignment Identity Resolution
+
+- Refined Real Estate Assignment Consolidation identity resolution.
+- Added HTML entity cleanup, `&nbsp;` handling, and unit-aware address normalization.
+- Added source companion pairing for exact JSON/Markdown source stems.
+- Added assignment alias preservation and identity-source reporting.
+- Added unassigned artifact outputs and identity resolution reports.
+- Suppressed false assignment ID conflicts from source-generated aliases while preserving true explicit ID conflicts.
+- Updated dashboard and CLI summaries with canonical assignment, alias, source companion, unassigned artifact, and true identity conflict counts.
+- Preserved deterministic local-only behavior with no providers, OpenAI, LLM inference, embeddings, semantic similarity, web retrieval, Gmail, calendar integration, valuation opinions, comparable selection, adjustments, or USPAP conclusions.
+
 ## 7.1.1 - Real Estate Assignment Consolidation
 
 - Added deterministic Assignment Consolidation for Real Estate Intelligence.

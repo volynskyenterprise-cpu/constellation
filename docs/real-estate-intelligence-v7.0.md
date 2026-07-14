@@ -130,6 +130,12 @@ It creates deterministic clusters, relationships, conflicts, history, and deltas
 
 Consolidation is based only on explicit IDs, normalized addresses, dates, and structured field overlap. It does not use semantic similarity, provider calls, external address services, or valuation inference.
 
+## v7.1.2 Implementation - Assignment Identity Resolution
+
+Assignment Identity Resolution refines consolidation by cleaning HTML entities, pairing source companion artifacts, preserving source-generated aliases, separating unassigned artifacts, and reporting true identity conflicts.
+
+It keeps exact deterministic rules: no fuzzy matching, semantic similarity, provider calls, external address services, or valuation inference.
+
 ## 5. Institutional Valuation Operating System
 
 Real Estate Intelligence should operate as an institutional layer around the appraisal workflow.

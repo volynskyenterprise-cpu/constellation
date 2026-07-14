@@ -374,6 +374,9 @@ def main(argv: list[str] | None = None) -> int:
     real_estate_consolidation_subparsers.add_parser("clusters", help="List consolidated assignment clusters.")
     real_estate_consolidation_subparsers.add_parser("conflicts", help="List assignment consolidation conflicts.")
     real_estate_consolidation_subparsers.add_parser("relationships", help="List assignment relationships.")
+    real_estate_consolidation_subparsers.add_parser("aliases", help="List assignment aliases.")
+    real_estate_consolidation_subparsers.add_parser("unassigned", help="List unassigned assignment artifacts.")
+    real_estate_consolidation_subparsers.add_parser("identity-report", help="Print identity resolution report path.")
     real_estate_consolidation_subparsers.add_parser("export", help="Export assignment consolidation Markdown.")
 
     args = parser.parse_args(argv)
@@ -1473,8 +1476,24 @@ def main(argv: list[str] | None = None) -> int:
                     for relationship in _map_list(data.get("relationships", [])):
                         print(f"{relationship.get('relationship_id')} type={relationship.get('relationship_type')} confidence={relationship.get('confidence')} reason={relationship.get('reason')}")
                     return 0
+                if args.real_estate_consolidation_command == "aliases":
+                    path = consolidation_store.aliases_json
+                    data = read_json(path) if path.exists() else {"aliases": []}
+                    for alias in _map_list(data.get("aliases", [])):
+                        print(f"{alias.get('canonical_assignment_id')} alias={alias.get('alias')} type={alias.get('alias_type')}")
+                    return 0
+                if args.real_estate_consolidation_command == "unassigned":
+                    path = consolidation_store.unassigned_json
+                    data = read_json(path) if path.exists() else {"unassigned_artifacts": []}
+                    for artifact in _map_list(data.get("unassigned_artifacts", [])):
+                        print(f"{artifact.get('artifact_id')} type={artifact.get('artifact_type')} source={artifact.get('source_path')}")
+                    return 0
+                if args.real_estate_consolidation_command == "identity-report":
+                    print(f"identity_resolution_report: {consolidation_store.identity_report_md}")
+                    return 0
                 if args.real_estate_consolidation_command == "export":
                     print(f"assignment_clusters: {consolidation_store.clusters_md}")
+                    print(f"identity_resolution_report: {consolidation_store.identity_report_md}")
                     return 0
             if args.real_estate_command == "assignments":
                 assignment_ids = store.list_assignment_ids()
@@ -1699,6 +1718,10 @@ def _print_assignment_consolidation_summary(snapshot) -> None:
     print(f"knowledge_packs: {counts.get('knowledge_pack_count', 0)}")
     print(f"assignments_with_reviewer_notes: {counts.get('assignments_with_reviewer_notes', 0)}")
     print(f"assignments_with_conflicts: {counts.get('assignments_with_conflicts', 0)}")
+    print(f"aliases: {counts.get('alias_count', 0)}")
+    print(f"source_companions: {counts.get('source_companion_count', 0)}")
+    print(f"unassigned_artifacts: {counts.get('unassigned_artifact_count', 0)}")
+    print(f"true_identity_conflicts: {counts.get('true_identity_conflict_count', 0)}")
     print(f"relationships: {counts.get('relationship_count', 0)}")
 
 
@@ -1709,6 +1732,10 @@ def _print_assignment_consolidation_status(status) -> None:
     print(f"knowledge_packs: {status.get('knowledge_pack_count', 0)}")
     print(f"assignments_with_reviewer_notes: {status.get('assignments_with_reviewer_notes', 0)}")
     print(f"assignments_with_conflicts: {status.get('assignments_with_conflicts', 0)}")
+    print(f"aliases: {status.get('alias_count', 0)}")
+    print(f"source_companions: {status.get('source_companion_count', 0)}")
+    print(f"unassigned_artifacts: {status.get('unassigned_artifact_count', 0)}")
+    print(f"true_identity_conflicts: {status.get('true_identity_conflict_count', 0)}")
     print(f"clusters_path: {status.get('clusters_path')}")
 
 
