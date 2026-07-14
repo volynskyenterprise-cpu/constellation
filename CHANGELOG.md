@@ -2,6 +2,16 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.2.1 - Canonical Operations Hardening
+
+- Added Canonical Operations as the Real Estate operator visibility layer.
+- Synchronized canonical status, migration plan, dashboard, operations report, and review queue counts around one deterministic migration state.
+- Added explicit migration categories: `safe_merge`, `preserve_alias`, `blocked_by_conflict`, `ambiguous`, `orphan`, and `already_migrated`.
+- Added review queue and operations outputs under `outputs/real-estate/canonical/`.
+- Added `python -m constellation real-estate canonical review`, filtered review views, `operations`, `report`, and improved `conflicts`.
+- Updated the Executive Dashboard to report canonical migration, review, blocked, and ambiguous counts from Canonical Operations.
+- Preserved deterministic local-only behavior with no providers, OpenAI, LLM inference, embeddings, semantic or fuzzy matching, web retrieval, Gmail, calendar integration, valuation opinions, comparable selection, adjustments, permit interpretation, automatic live migration, or USPAP conclusions.
+
 ## 7.2.0 - Canonical Assignment Model
 
 - Added the Canonical Assignment Model as the Real Estate persistence and operational layer.

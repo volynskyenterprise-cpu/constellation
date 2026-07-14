@@ -164,10 +164,47 @@ python -m constellation real-estate canonical assignments
 python -m constellation real-estate canonical aliases
 python -m constellation real-estate canonical resolve ALIAS
 python -m constellation real-estate canonical migration-plan
+python -m constellation real-estate canonical review
+python -m constellation real-estate canonical review --blocked
+python -m constellation real-estate canonical review --safe
+python -m constellation real-estate canonical review --ambiguous
+python -m constellation real-estate canonical operations
+python -m constellation real-estate canonical report
+python -m constellation real-estate canonical conflicts
 python -m constellation real-estate canonical migrate --dry-run
 python -m constellation real-estate canonical migrate --apply
 python -m constellation real-estate canonical export
 ```
+
+## Canonical Operations Hardening
+
+v7.2.1 adds Canonical Operations as the operator visibility layer for the Canonical Assignment Model.
+
+Canonical Operations synchronizes:
+
+- canonical status
+- migration plan
+- dashboard migration counts
+- canonical operations report
+- review queue
+- safe, blocked, and ambiguous assignment views
+
+Each migration item is classified as exactly one of:
+
+- `safe_merge`
+- `preserve_alias`
+- `blocked_by_conflict`
+- `ambiguous`
+- `orphan`
+- `already_migrated`
+
+The review queue is written to:
+
+```text
+outputs/real-estate/canonical/review-queue.md
+```
+
+Canonical Operations does not migrate live assignment directories automatically and does not resolve conflicts automatically.
 
 Assignment commands resolve aliases before operating:
 

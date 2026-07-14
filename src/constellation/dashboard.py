@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .canonical_assignments import CanonicalAssignmentEngine, CanonicalAssignmentStore
+from .canonical_assignments import CanonicalAssignmentStore
+from .canonical_operations import CanonicalOperationsEngine
 from .io import read_json, write_json
 from .models import JsonMap
 from .real_estate import RealEstateAssignmentStore
@@ -716,28 +717,35 @@ def _real_estate_canonical_summary(root: Path) -> JsonMap:
             "latest_assignment_brief_paths": [],
         }
     try:
-        if not store.assignments_json.exists():
-            CanonicalAssignmentEngine(root).build()
+        operations = CanonicalOperationsEngine(root).build(save=True)
         data = store.load()
     except Exception:
+        operations = None
         data = {}
     assignments = _map_list(data.get("assignments", []))
     counts = _map(data.get("counts"))
-    plan = _read_optional_json(store.migration_plan_json)
-    plan_counts = _map(plan.get("counts"))
+    operations_summary = _map(operations.summary if operations else {})
     active = [item for item in assignments if item.get("status") == "active"]
     overdue = [item for item in assignments if _is_overdue(str(item.get("due_date", "")), str(item.get("status", "")))]
     top = sorted(assignments, key=lambda item: (str(item.get("due_date") or "9999-99-99"), str(item.get("canonical_assignment_id") or "")))[:5]
     return {
         "canonical_model_available": bool(data),
-        "canonical_assignment_count": counts.get("canonical_assignment_count", len(assignments)),
-        "artifact_count": counts.get("artifact_count", 0),
-        "alias_count": counts.get("alias_count", 0),
-        "unassigned_artifact_count": counts.get("unassigned_artifact_count", 0),
-        "migrated_alias_directory_count": counts.get("migrated_alias_directory_count", plan_counts.get("migrated_alias_directory_count", 0)),
-        "pending_migration_count": counts.get("pending_migration_count", plan_counts.get("pending_migration_count", 0)),
-        "ambiguous_alias_count": counts.get("ambiguous_alias_count", 0),
-        "true_assignment_conflict_count": counts.get("true_assignment_conflict_count", 0),
+        "canonical_assignment_count": operations_summary.get("canonical_assignment_count", counts.get("canonical_assignment_count", len(assignments))),
+        "artifact_count": operations_summary.get("artifact_count", counts.get("artifact_count", 0)),
+        "alias_count": operations_summary.get("alias_count", counts.get("alias_count", 0)),
+        "source_companion_count": operations_summary.get("source_companion_count", counts.get("source_companion_count", 0)),
+        "unassigned_artifact_count": operations_summary.get("unassigned_artifact_count", 0),
+        "migrated_alias_directory_count": operations_summary.get("already_migrated_count", counts.get("migrated_alias_directory_count", 0)),
+        "pending_migration_count": operations_summary.get("pending_migration_count", counts.get("pending_migration_count", 0)),
+        "migration_ready_count": operations_summary.get("migration_ready_count", 0),
+        "blocked_count": operations_summary.get("blocked_count", 0),
+        "ambiguous_count": operations_summary.get("ambiguous_count", 0),
+        "pending_review_count": operations_summary.get("pending_review_count", 0),
+        "ambiguous_alias_count": operations_summary.get("ambiguous_count", counts.get("ambiguous_alias_count", 0)),
+        "true_assignment_conflict_count": operations_summary.get("true_assignment_conflict_count", counts.get("true_assignment_conflict_count", 0)),
+        "migration_state": operations_summary.get("migration_state", "unknown"),
+        "operations_report_path": operations_summary.get("operations_report_path", "outputs/real-estate/canonical/canonical-operations-report.md"),
+        "review_queue_path": operations_summary.get("review_queue_path", "outputs/real-estate/canonical/review-queue.md"),
         "active_assignment_count": len(active),
         "overdue_assignment_count": len(overdue),
         "total_missing_item_count": sum(len(_map_list(item.get("missing_items", []))) for item in assignments),

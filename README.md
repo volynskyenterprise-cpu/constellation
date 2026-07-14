@@ -402,12 +402,21 @@ v7.1.2 adds Identity Resolution refinements: HTML entity cleanup, source compani
 
 v7.2.0 adds the Canonical Assignment Model. Assignment Consolidation remains the identity-resolution layer; the Canonical Assignment Model is now the persistence and operational layer. New intake writes to one canonical directory per real-world assignment, preserves aliases, and stops creating separate Gmail/Axis/address-derived assignment directories for the same assignment.
 
+v7.2.1 hardens Canonical Operations. Canonical status, migration plan, review queue, operations report, and dashboard summaries now use the same migration state. Migration items are categorized as `safe_merge`, `preserve_alias`, `blocked_by_conflict`, `ambiguous`, `orphan`, or `already_migrated`, and review queues are written for human operator review.
+
 ```bash
 python -m constellation real-estate canonical status
 python -m constellation real-estate canonical assignments
 python -m constellation real-estate canonical aliases
 python -m constellation real-estate canonical resolve ALIAS
 python -m constellation real-estate canonical migration-plan
+python -m constellation real-estate canonical review
+python -m constellation real-estate canonical review --blocked
+python -m constellation real-estate canonical review --safe
+python -m constellation real-estate canonical review --ambiguous
+python -m constellation real-estate canonical operations
+python -m constellation real-estate canonical report
+python -m constellation real-estate canonical conflicts
 python -m constellation real-estate canonical migrate --dry-run
 python -m constellation real-estate canonical migrate --apply
 python -m constellation real-estate canonical export

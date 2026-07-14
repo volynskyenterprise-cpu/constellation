@@ -157,6 +157,35 @@ New intake writes to canonical assignment directories instead of creating separa
 
 Migration support is non-destructive. It can identify existing alias directories, write migration plans, mark alias directories as migrated, and preserve rollback metadata. It does not delete source artifacts or private assignment directories.
 
+## v7.2.1 Implementation - Canonical Operations Hardening
+
+Canonical Operations Hardening makes the canonical assignment layer easier to operate safely.
+
+It synchronizes canonical status, migration plan, dashboard counts, review queue, and operations reports around one deterministic migration state.
+
+It adds explicit migration categories:
+
+- `safe_merge`
+- `preserve_alias`
+- `blocked_by_conflict`
+- `ambiguous`
+- `orphan`
+- `already_migrated`
+
+It also adds operator review outputs under:
+
+```text
+outputs/real-estate/canonical/
+```
+
+The key new output is:
+
+```text
+review-queue.md
+```
+
+This is a visibility layer only. It does not automatically migrate live assignment directories, resolve conflicts, infer identity semantically, or generate valuation conclusions.
+
 ## 5. Institutional Valuation Operating System
 
 Real Estate Intelligence should operate as an institutional layer around the appraisal workflow.

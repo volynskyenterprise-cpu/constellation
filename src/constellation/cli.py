@@ -9,6 +9,7 @@ from .artifacts import ArtifactError
 from .ai_markets import AIMarketsBriefStore, AIMarketsCatalystStore, AIMarketsDecisionJournalStore, AIMarketsError, AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore
 from .assignment_consolidation import AssignmentConsolidationEngine, AssignmentConsolidationError, AssignmentConsolidationStore
 from .canonical_assignments import CanonicalAssignmentEngine, CanonicalAssignmentError, CanonicalAssignmentResolver, CanonicalAssignmentStore
+from .canonical_operations import CanonicalOperationsEngine, CanonicalOperationsError, CanonicalOperationsStore
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .daily import DailyPipelineError, DailyPipelineStore
 from .dashboard import ExecutiveDashboardError, ExecutiveDashboardStore
@@ -395,6 +396,13 @@ def main(argv: list[str] | None = None) -> int:
     real_estate_canonical_migrate.add_argument("--dry-run", action="store_true", help="Inspect migration without modifying files.")
     real_estate_canonical_migrate.add_argument("--apply", action="store_true", help="Apply non-destructive alias migration markers.")
     real_estate_canonical_subparsers.add_parser("export", help="Print canonical assignment output paths.")
+    real_estate_canonical_review = real_estate_canonical_subparsers.add_parser("review", help="Show canonical operations review queue.")
+    real_estate_canonical_review.add_argument("--blocked", action="store_true", help="Show blocked assignments only.")
+    real_estate_canonical_review.add_argument("--safe", action="store_true", help="Show safe migration items only.")
+    real_estate_canonical_review.add_argument("--ambiguous", action="store_true", help="Show ambiguous assignments only.")
+    real_estate_canonical_subparsers.add_parser("report", help="Print canonical operations report paths.")
+    real_estate_canonical_subparsers.add_parser("operations", help="Show canonical operations summary.")
+    real_estate_canonical_subparsers.add_parser("conflicts", help="List normalized canonical identity conflicts.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -1515,8 +1523,10 @@ def main(argv: list[str] | None = None) -> int:
             if args.real_estate_command == "canonical":
                 canonical_engine = CanonicalAssignmentEngine(args.root.resolve())
                 canonical_store = CanonicalAssignmentStore(args.root.resolve())
+                operations_engine = CanonicalOperationsEngine(args.root.resolve())
+                operations_store = CanonicalOperationsStore(args.root.resolve())
                 if args.real_estate_canonical_command == "status":
-                    _print_canonical_assignment_status(canonical_engine.status())
+                    _print_canonical_assignment_status(operations_engine.status())
                     return 0
                 if args.real_estate_canonical_command == "assignments":
                     if not canonical_store.assignments_json.exists():
@@ -1549,10 +1559,22 @@ def main(argv: list[str] | None = None) -> int:
                             print(f"- {match.get('alias')} -> {match.get('canonical_assignment_id')} type={match.get('alias_type')}")
                     return 0 if resolution.resolved and not resolution.ambiguous else 1
                 if args.real_estate_canonical_command == "migration-plan":
+                    state = operations_engine.build(save=True)
                     plan = canonical_engine.migration_plan()
                     print(f"migration_id: {plan.migration_id}")
-                    print(f"pending_migration_count: {plan.counts.get('pending_migration_count', 0)}")
+                    for key in [
+                        "pending_migration_count",
+                        "migration_ready_count",
+                        "safe_merge_count",
+                        "preserve_alias_count",
+                        "blocked_by_conflict_count",
+                        "ambiguous_count",
+                        "orphan_count",
+                        "already_migrated_count",
+                    ]:
+                        print(f"{key}: {state.migration_summary.get(key, plan.counts.get(key, 0))}")
                     print(f"migration_plan: {canonical_store.migration_plan_json}")
+                    print(f"migration_summary: {operations_store.migration_summary_json}")
                     return 0
                 if args.real_estate_canonical_command == "migrate":
                     apply = bool(args.apply)
@@ -1565,11 +1587,62 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"backup_manifest: {result.backup_manifest_path}")
                     return 0
                 if args.real_estate_canonical_command == "export":
-                    if not canonical_store.assignments_json.exists():
-                        canonical_engine.build()
+                    operations_engine.build(save=True)
                     print(f"canonical_assignments: {canonical_store.assignments_md}")
                     print(f"alias_index: {canonical_store.alias_index_md}")
                     print(f"canonical_report: {canonical_store.report_md}")
+                    print(f"operations_report: {operations_store.operations_report_md}")
+                    print(f"review_queue: {operations_store.review_queue_md}")
+                    print(f"migration_summary: {operations_store.migration_summary_md}")
+                    return 0
+                if args.real_estate_canonical_command == "review":
+                    state = operations_engine.build(save=True)
+                    if args.blocked:
+                        items = state.blocked_assignments
+                        for item in items:
+                            print(f"{item.get('canonical_assignment_id')} status=blocked reason={item.get('reason')}")
+                    elif args.safe:
+                        items = [item for item in _map_list(state.migration_summary.get("items", [])) if item.get("migration_category") in {"safe_merge", "preserve_alias"}]
+                        for item in items:
+                            print(f"{item.get('source_assignment_id')} -> {item.get('target_canonical_assignment_id')} category={item.get('migration_category')} action={item.get('suggested_operator_action')}")
+                    elif args.ambiguous:
+                        items = state.ambiguous_assignments
+                        for item in items:
+                            print(f"{item.get('canonical_assignment_id')} status=ambiguous reason={item.get('reason')}")
+                    else:
+                        items = state.review_queue
+                        for item in items:
+                            print(f"{item.get('review_item_id')} category={item.get('category')} assignment={item.get('canonical_assignment_id')} reason={item.get('reason')}")
+                    if not items:
+                        print("No canonical review items.")
+                    print(f"review_queue: {operations_store.review_queue_md}")
+                    return 0
+                if args.real_estate_canonical_command == "operations":
+                    state = operations_engine.build(save=True)
+                    _print_canonical_assignment_status(state.summary)
+                    print(f"operations_report: {operations_store.operations_report_md}")
+                    print(f"review_queue: {operations_store.review_queue_md}")
+                    print(f"migration_summary: {operations_store.migration_summary_json}")
+                    return 0
+                if args.real_estate_canonical_command == "report":
+                    operations_engine.build(save=True)
+                    print(f"operations_report: {operations_store.operations_report_md}")
+                    print(f"review_queue: {operations_store.review_queue_md}")
+                    print(f"migration_summary: {operations_store.migration_summary_md}")
+                    print(f"blocked_assignments: {operations_store.blocked_assignments_md}")
+                    print(f"safe_migrations: {operations_store.safe_migrations_md}")
+                    print(f"ambiguous_assignments: {operations_store.ambiguous_assignments_md}")
+                    return 0
+                if args.real_estate_canonical_command == "conflicts":
+                    state = operations_engine.build(save=True)
+                    for conflict in state.conflicts:
+                        print(
+                            f"{conflict.get('conflict_id')} assignment={conflict.get('canonical_assignment_id')} "
+                            f"field={conflict.get('field')} existing={conflict.get('existing_value')} incoming={conflict.get('incoming_value')} "
+                            f"reason={conflict.get('reason_conflict_remains')} action={conflict.get('suggested_operator_action')}"
+                        )
+                    if not state.conflicts:
+                        print("No canonical identity conflicts.")
                     return 0
             if args.real_estate_command == "assignments":
                 canonical_engine = CanonicalAssignmentEngine(args.root.resolve())
@@ -1657,7 +1730,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"source_manifest: {store.output_dir(assignment_id) / 'source-manifest.md'}")
                 print(f"evidence_index: {store.output_dir(assignment_id) / 'evidence-index.md'}")
                 return 0
-        except (RealEstateError, RealEstateIntakeError, AssignmentConsolidationError, CanonicalAssignmentError) as exc:
+        except (RealEstateError, RealEstateIntakeError, AssignmentConsolidationError, CanonicalAssignmentError, CanonicalOperationsError) as exc:
             print(f"error: {exc}")
             return 1
     return 2
@@ -1848,10 +1921,23 @@ def _print_canonical_assignment_status(status) -> None:
     print(f"artifacts: {status.get('artifact_count', 0)}")
     print(f"aliases: {status.get('alias_count', 0)}")
     print(f"pending_migration: {status.get('pending_migration_count', 0)}")
+    print(f"migration_ready: {status.get('migration_ready_count', 0)}")
+    print(f"pending_review: {status.get('pending_review_count', 0)}")
+    print(f"blocked: {status.get('blocked_count', 0)}")
+    print(f"ambiguous: {status.get('ambiguous_count', 0)}")
+    print(f"safe_merge: {status.get('safe_merge_count', 0)}")
+    print(f"preserve_alias: {status.get('preserve_alias_count', 0)}")
+    print(f"blocked_by_conflict: {status.get('blocked_by_conflict_count', 0)}")
+    print(f"orphans: {status.get('orphan_count', 0)}")
+    print(f"already_migrated: {status.get('already_migrated_count', 0)}")
     print(f"migrated_alias_directories: {status.get('migrated_alias_directory_count', 0)}")
     print(f"true_assignment_conflicts: {status.get('true_assignment_conflict_count', 0)}")
     print(f"canonical_assignments_path: {status.get('canonical_assignments_path')}")
     print(f"alias_index_path: {status.get('alias_index_path')}")
+    if status.get("operations_report_path"):
+        print(f"operations_report: {status.get('operations_report_path')}")
+    if status.get("review_queue_path"):
+        print(f"review_queue: {status.get('review_queue_path')}")
 
 
 def _resolve_real_estate_assignment(root: Path, assignment_id: str):

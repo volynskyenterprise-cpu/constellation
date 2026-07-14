@@ -303,7 +303,34 @@ class CanonicalAssignmentEngine:
         assignments = [self._assignment_from_cluster(cluster) for cluster in clusters]
         aliases = self._aliases(assignments)
         previous = self.store.load()
-        plan = self.migration_plan(save=False)
+        provisional_counts = {
+            "canonical_assignment_count": len(assignments),
+            "artifact_count": sum(len(item.source_artifacts) for item in assignments),
+            "alias_count": len(aliases),
+            "source_count": sum(len(item.source_artifacts) for item in assignments),
+            "source_companion_count": sum(len(item.source_companions) for item in assignments),
+            "knowledge_pack_count": sum(1 for item in assignments if item.knowledge_pack_paths),
+            "assignments_with_reviewer_notes": sum(1 for item in assignments if item.reviewer_note_paths),
+            "true_assignment_conflict_count": sum(len(item.conflicts) for item in assignments),
+            "pending_migration_count": 0,
+            "migrated_alias_directory_count": 0,
+            "ambiguous_alias_count": _ambiguous_alias_count(aliases),
+        }
+        provisional_snapshot = CanonicalAssignmentSnapshot(
+            snapshot_id=_snapshot_id(assignments, aliases),
+            created_at=_now_iso(),
+            assignments=assignments,
+            aliases=aliases,
+            delta={},
+            counts=provisional_counts,
+            limitations=[
+                "Canonical Assignment Model uses deterministic IDs, aliases, normalized addresses, and explicit source fields only.",
+                "No fuzzy matching, semantic similarity, LLM inference, web retrieval, comparable selection, or valuation opinion is used.",
+                "Migration is non-destructive; alias directories are never deleted.",
+            ],
+        )
+        self.store.save(provisional_snapshot)
+        plan = self.migration_plan(save=True)
         delta = _snapshot_delta(previous, assignments, aliases, plan)
         counts = {
             "canonical_assignment_count": len(assignments),
@@ -317,6 +344,12 @@ class CanonicalAssignmentEngine:
             "pending_migration_count": plan.counts.get("pending_migration_count", 0),
             "migrated_alias_directory_count": plan.counts.get("migrated_alias_directory_count", 0),
             "ambiguous_alias_count": _ambiguous_alias_count(aliases),
+            "migration_ready_count": plan.counts.get("migration_ready_count", 0),
+            "safe_merge_count": plan.counts.get("safe_merge_count", 0),
+            "preserve_alias_count": plan.counts.get("preserve_alias_count", 0),
+            "blocked_by_conflict_count": plan.counts.get("blocked_by_conflict_count", 0),
+            "orphan_count": plan.counts.get("orphan_count", 0),
+            "already_migrated_count": plan.counts.get("already_migrated_count", 0),
         }
         snapshot = CanonicalAssignmentSnapshot(
             snapshot_id=_snapshot_id(assignments, aliases),
@@ -328,7 +361,7 @@ class CanonicalAssignmentEngine:
             limitations=[
                 "Canonical Assignment Model uses deterministic IDs, aliases, normalized addresses, and explicit source fields only.",
                 "No fuzzy matching, semantic similarity, LLM inference, web retrieval, comparable selection, or valuation opinion is used.",
-                "Migration is non-destructive; alias directories are never deleted in v7.2.0.",
+                "Migration is non-destructive; alias directories are never deleted.",
             ],
         )
         self.store.save(snapshot)
@@ -348,35 +381,60 @@ class CanonicalAssignmentEngine:
             "pending_migration_count": counts.get("pending_migration_count", 0),
             "migrated_alias_directory_count": counts.get("migrated_alias_directory_count", 0),
             "true_assignment_conflict_count": counts.get("true_assignment_conflict_count", 0),
+            "migration_ready_count": counts.get("migration_ready_count", 0),
+            "safe_merge_count": counts.get("safe_merge_count", 0),
+            "preserve_alias_count": counts.get("preserve_alias_count", 0),
+            "blocked_by_conflict_count": counts.get("blocked_by_conflict_count", 0),
+            "orphan_count": counts.get("orphan_count", 0),
+            "already_migrated_count": counts.get("already_migrated_count", 0),
             "canonical_assignments_path": str(self.store.assignments_json),
             "alias_index_path": str(self.store.alias_index_json),
         }
 
     def migration_plan(self, *, save: bool = True) -> CanonicalAssignmentMigrationPlan:
         aliases = self.store.load_aliases()
-        alias_by_name = {str(alias.get("alias")): alias for alias in aliases}
+        alias_by_name: dict[str, list[JsonMap]] = {}
         for alias in aliases:
-            alias_by_name[_safe_id(str(alias.get("alias") or ""))] = alias
+            for key in _alias_keys(str(alias.get("alias") or "")):
+                alias_by_name.setdefault(key, []).append(alias)
+        canonical_ids = {str(alias.get("canonical_assignment_id") or "") for alias in aliases if alias.get("canonical_assignment_id")}
+        assignments_by_id = {str(item.get("canonical_assignment_id") or ""): item for item in self.store.load_assignments()}
         store = RealEstateAssignmentStore(self.root)
         actions = []
         for assignment_id in store.list_assignment_ids():
             directory = store.assignment_root() / assignment_id
-            match = alias_by_name.get(assignment_id) or alias_by_name.get(_safe_id(assignment_id))
-            if match and str(match.get("canonical_assignment_id")) != assignment_id:
-                target = str(match.get("canonical_assignment_id"))
+            if assignment_id in canonical_ids:
+                continue
+            matches_by_canonical: dict[str, JsonMap] = {}
+            for key in _alias_keys(assignment_id):
+                for match in alias_by_name.get(key, []):
+                    target = str(match.get("canonical_assignment_id") or "")
+                    if target and target != assignment_id:
+                        matches_by_canonical[target] = match
+            if len(matches_by_canonical) > 1:
+                actions.append(_migration_action(assignment_id, "", directory, directory, "ambiguous_alias", "ambiguous", "review_required", "ambiguous"))
+                continue
+            if len(matches_by_canonical) == 1:
+                target, match = next(iter(matches_by_canonical.items()))
                 marker = directory / "canonical-migration.json"
-                status = "already_migrated" if marker.exists() else "planned"
-                action = "preserve_as_alias" if marker.exists() else "merge_into_canonical"
-                actions.append(_migration_action(assignment_id, target, directory, store.assignment_root() / target, str(match.get("alias_type") or "alias"), action, status))
+                target_assignment = _map(assignments_by_id.get(target))
+                if marker.exists():
+                    category = "already_migrated"
+                    action = "preserve_as_alias"
+                    status = "already_migrated"
+                elif _map_list(target_assignment.get("conflicts")):
+                    category = "blocked_by_conflict"
+                    action = "blocked_by_conflict"
+                    status = "blocked"
+                else:
+                    files = [path for path in directory.rglob("*") if path.is_file()] if directory.exists() else []
+                    category = "preserve_alias" if len(files) <= 1 else "safe_merge"
+                    action = "preserve_as_alias" if category == "preserve_alias" else "merge_into_canonical"
+                    status = "planned"
+                actions.append(_migration_action(assignment_id, target, directory, store.assignment_root() / target, str(match.get("alias_type") or "alias"), action, status, category))
             elif assignment_id:
-                actions.append(_migration_action(assignment_id, assignment_id, directory, directory, "canonical_assignment_id", "no_action", "complete"))
-        counts = {
-            "action_count": len(actions),
-            "pending_migration_count": sum(1 for item in actions if item.get("action") == "merge_into_canonical" and item.get("status") == "planned"),
-            "migrated_alias_directory_count": sum(1 for item in actions if item.get("status") == "already_migrated"),
-            "blocked_by_conflict_count": sum(1 for item in actions if item.get("action") == "blocked_by_conflict"),
-            "orphan_count": sum(1 for item in actions if item.get("action") == "orphan"),
-        }
+                actions.append(_migration_action(assignment_id, "", directory, directory, "unknown", "orphan", "review_required", "orphan"))
+        counts = _migration_counts(actions)
         plan = CanonicalAssignmentMigrationPlan(f"canonical_migration_{_digest(json.dumps(actions, sort_keys=True))}", _now_iso(), actions, counts, {"rule": "non_destructive_alias_directory_detection"})
         if save:
             self.store.save_migration_plan(plan)
@@ -388,7 +446,8 @@ class CanonicalAssignmentEngine:
             return CanonicalAssignmentMigrationResult(plan.migration_id, False, _now_iso(), plan.actions, plan.counts, "", {"mode": "dry_run"})
         applied_actions = []
         for action in plan.actions:
-            if action.get("action") != "merge_into_canonical" or action.get("status") != "planned":
+            category = str(action.get("migration_category") or "")
+            if category not in {"safe_merge", "preserve_alias"} or action.get("status") != "planned":
                 applied_actions.append(action)
                 continue
             source = Path(str(action.get("source_directory")))
@@ -405,10 +464,10 @@ class CanonicalAssignmentEngine:
             write_json(source / "canonical-migration.json", marker)
             updated = dict(action)
             updated["status"] = "already_migrated"
+            updated["migration_category"] = "already_migrated"
+            updated["action"] = "preserve_as_alias"
             applied_actions.append(updated)
-        counts = dict(plan.counts)
-        counts["migrated_alias_directory_count"] = sum(1 for item in applied_actions if item.get("status") == "already_migrated" and item.get("source_assignment_id") != item.get("target_canonical_assignment_id"))
-        counts["pending_migration_count"] = sum(1 for item in applied_actions if item.get("action") == "merge_into_canonical" and item.get("status") == "planned")
+        counts = _migration_counts(applied_actions)
         result = CanonicalAssignmentMigrationResult(plan.migration_id, True, _now_iso(), applied_actions, counts, str(self.store.backup_manifest_json), {"mode": "apply", "deletion": "not_supported_in_v7_2_0"})
         self.store.save_migration_result(result)
         return result
@@ -710,10 +769,36 @@ def _alias_keys(value: str) -> set[str]:
     return {item for item in keys if item}
 
 
-def _migration_action(source_id: str, target_id: str, source_dir: Path, target_dir: Path, alias_type: str, action: str, status: str) -> JsonMap:
+def _migration_counts(actions: list[JsonMap]) -> JsonMap:
+    categories = ["safe_merge", "preserve_alias", "blocked_by_conflict", "ambiguous", "orphan", "already_migrated"]
+    counts = {category + "_count": sum(1 for item in actions if item.get("migration_category") == category) for category in categories}
+    counts["action_count"] = len(actions)
+    counts["pending_migration_count"] = sum(1 for item in actions if item.get("migration_category") != "already_migrated")
+    counts["migration_ready_count"] = counts["safe_merge_count"] + counts["preserve_alias_count"]
+    counts["migrated_alias_directory_count"] = counts["already_migrated_count"]
+    return counts
+
+
+def _migration_action(source_id: str, target_id: str, source_dir: Path, target_dir: Path, alias_type: str, action: str, status: str, category: str) -> JsonMap:
     files = sorted(str(path) for path in source_dir.rglob("*") if path.is_file()) if source_dir.exists() else []
+    reason = {
+        "safe_merge": "Alias directory resolves deterministically to a canonical assignment and has source files to preserve.",
+        "preserve_alias": "Alias directory resolves deterministically and should be preserved as an alias.",
+        "blocked_by_conflict": "Canonical target has explicit conflicts that require review before migration.",
+        "ambiguous": "Alias directory matches multiple canonical assignments.",
+        "orphan": "Assignment directory does not match a canonical assignment or alias.",
+        "already_migrated": "Alias directory is already marked as migrated.",
+    }.get(category, "Review migration item.")
+    suggested = {
+        "safe_merge": "Review source files, then run canonical migrate --apply if acceptable.",
+        "preserve_alias": "Preserve alias marker and verify future writes target the canonical assignment.",
+        "blocked_by_conflict": "Resolve identity conflicts manually before applying migration.",
+        "ambiguous": "Resolve to an explicit canonical assignment ID before migration.",
+        "orphan": "Review whether this directory should become a source artifact or remain unassigned.",
+        "already_migrated": "No action required.",
+    }.get(category, "Resolve manually.")
     return {
-        "migration_id": f"migration_{_digest(source_id + target_id + action)}",
+        "migration_id": f"migration_{_digest(source_id + target_id + action + category)}",
         "source_assignment_id": source_id,
         "target_canonical_assignment_id": target_id,
         "source_directory": str(source_dir),
@@ -725,7 +810,12 @@ def _migration_action(source_id: str, target_id: str, source_dir: Path, target_d
         "conflicts": [],
         "action": action,
         "status": status,
-        "provenance": {"rule": "alias_index_directory_comparison"},
+        "migration_category": category,
+        "affected_source_count": len(files),
+        "reason": reason,
+        "risk_level": "high" if category in {"blocked_by_conflict", "ambiguous"} else "medium" if category == "orphan" else "low",
+        "suggested_operator_action": suggested,
+        "provenance": {"rule": "alias_index_directory_comparison", "category_rule": category},
     }
 
 
