@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
 from . import __version__
+from .canonical_assignments import CanonicalAssignmentEngine, CanonicalAssignmentStore
 from .io import read_json, write_json
 from .models import JsonMap
 from .real_estate import RealEstateAssignmentStore
@@ -171,6 +172,7 @@ class ExecutiveDashboardBuilder:
         real_estate_summary = RealEstateAssignmentStore(self.root).summary()
         real_estate_summary.update(_real_estate_intake_summary(_read_optional_json(self.root / "outputs" / "real-estate" / "intake" / "latest-intake.json")))
         real_estate_summary.update(_real_estate_consolidation_summary(_read_optional_json(self.root / "outputs" / "real-estate" / "consolidation" / "assignment-clusters.json")))
+        real_estate_summary.update(_real_estate_canonical_summary(self.root))
         connector_warning_summary = _connector_warning_summary(daily_run, workflow)
         risks_gaps = _risks_gaps(morning, theses)
         actions = _actions(morning, status, risks_gaps)
@@ -689,6 +691,80 @@ def _real_estate_consolidation_summary(consolidation: JsonMap) -> JsonMap:
             for cluster in clusters[:5]
         ],
     }
+
+
+def _real_estate_canonical_summary(root: Path) -> JsonMap:
+    store = CanonicalAssignmentStore(root)
+    has_real_estate_inputs = bool(RealEstateAssignmentStore(root).list_assignment_ids()) or (root / "outputs" / "real-estate" / "intake" / "latest-intake.json").exists() or (root / "outputs" / "real-estate" / "consolidation" / "assignment-clusters.json").exists()
+    if not has_real_estate_inputs and not store.assignments_json.exists():
+        return {
+            "canonical_model_available": False,
+            "canonical_assignment_count": 0,
+            "artifact_count": 0,
+            "alias_count": 0,
+            "unassigned_artifact_count": 0,
+            "migrated_alias_directory_count": 0,
+            "pending_migration_count": 0,
+            "ambiguous_alias_count": 0,
+            "true_assignment_conflict_count": 0,
+            "active_assignment_count": 0,
+            "overdue_assignment_count": 0,
+            "total_missing_item_count": 0,
+            "total_risk_count": 0,
+            "total_assignment_risk_count": 0,
+            "top_active_assignments": [],
+            "latest_assignment_brief_paths": [],
+        }
+    try:
+        if not store.assignments_json.exists():
+            CanonicalAssignmentEngine(root).build()
+        data = store.load()
+    except Exception:
+        data = {}
+    assignments = _map_list(data.get("assignments", []))
+    counts = _map(data.get("counts"))
+    plan = _read_optional_json(store.migration_plan_json)
+    plan_counts = _map(plan.get("counts"))
+    active = [item for item in assignments if item.get("status") == "active"]
+    overdue = [item for item in assignments if _is_overdue(str(item.get("due_date", "")), str(item.get("status", "")))]
+    top = sorted(assignments, key=lambda item: (str(item.get("due_date") or "9999-99-99"), str(item.get("canonical_assignment_id") or "")))[:5]
+    return {
+        "canonical_model_available": bool(data),
+        "canonical_assignment_count": counts.get("canonical_assignment_count", len(assignments)),
+        "artifact_count": counts.get("artifact_count", 0),
+        "alias_count": counts.get("alias_count", 0),
+        "unassigned_artifact_count": counts.get("unassigned_artifact_count", 0),
+        "migrated_alias_directory_count": counts.get("migrated_alias_directory_count", plan_counts.get("migrated_alias_directory_count", 0)),
+        "pending_migration_count": counts.get("pending_migration_count", plan_counts.get("pending_migration_count", 0)),
+        "ambiguous_alias_count": counts.get("ambiguous_alias_count", 0),
+        "true_assignment_conflict_count": counts.get("true_assignment_conflict_count", 0),
+        "active_assignment_count": len(active),
+        "overdue_assignment_count": len(overdue),
+        "total_missing_item_count": sum(len(_map_list(item.get("missing_items", []))) for item in assignments),
+        "total_risk_count": sum(len(_map_list(item.get("risks", []))) for item in assignments),
+        "total_assignment_risk_count": sum(len(_map_list(item.get("risks", []))) for item in assignments),
+        "top_active_assignments": [
+            {
+                "assignment_id": item.get("canonical_assignment_id"),
+                "property": _map(item.get("subject")).get("address"),
+                "artifact_count": len(_map_list(item.get("source_artifacts", []))),
+                "status": item.get("status"),
+                "risk_count": len(_map_list(item.get("risks", []))),
+                "last_activity": item.get("last_seen") or item.get("updated_at"),
+            }
+            for item in top
+        ],
+        "latest_assignment_brief_paths": [str(Path("outputs/real-estate/assignments") / str(item.get("canonical_assignment_id")) / "assignment-brief.md") for item in top],
+    }
+
+
+def _is_overdue(due_date: str, status: str) -> bool:
+    if status in {"completed", "archived"} or not due_date:
+        return False
+    try:
+        return date.fromisoformat(due_date) < date.today()
+    except ValueError:
+        return False
 
 
 def _risks_gaps(morning: JsonMap, theses: list[JsonMap]) -> list[str]:

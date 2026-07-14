@@ -13,6 +13,7 @@ from .io import read_json, write_json
 from .models import JsonMap
 from .real_estate import RealEstateAssignmentStore
 from .real_estate_intake import RealEstateIntakeEngine, RealEstateIntakeStore
+from .canonical_assignments import normalize_date
 
 
 class AssignmentConsolidationError(RuntimeError):
@@ -382,7 +383,7 @@ def _intake_artifacts(root: Path) -> list[AssignmentArtifact]:
                     client=_first(candidate.structured_data, ["client_name", "client"]),
                     lender=_clean_text(str(candidate.structured_data.get("lender") or "")),
                     amc=_clean_text(str(candidate.structured_data.get("amc") or "")),
-                    effective_date=_clean_text(str(candidate.structured_data.get("effective_date") or "")),
+                    effective_date=normalize_date(candidate.structured_data.get("effective_date") or ""),
                     imported_at="",
                     source_stem=_source_stem(candidate.source_path),
                     source_generated_alias=candidate.detected_assignment_id,
@@ -415,7 +416,7 @@ def _artifact_from_intake_record(record: JsonMap) -> AssignmentArtifact:
         client=_first(fields, ["client_name", "client"]),
         lender=_clean_text(str(fields.get("lender") or "")),
         amc=_clean_text(str(fields.get("amc") or "")),
-        effective_date=_clean_text(str(fields.get("effective_date") or "")),
+        effective_date=normalize_date(fields.get("effective_date") or ""),
         imported_at=str(record.get("imported_at") or ""),
         source_stem=_source_stem(path),
         source_generated_alias=str(record.get("detected_assignment_id") or ""),
@@ -451,7 +452,7 @@ def _assignment_artifacts(root: Path) -> list[AssignmentArtifact]:
                 client=str(data.get("client_name") or ""),
                 lender="",
                 amc="",
-                effective_date=str(data.get("effective_date") or ""),
+                effective_date=normalize_date(data.get("effective_date") or ""),
                 imported_at=str(data.get("created_at") or ""),
                 source_stem=_source_stem(str(path)),
                 source_generated_alias=assignment_id,
@@ -844,7 +845,7 @@ def _source_stem(path: str) -> str:
 
 def _address_alias(data: JsonMap) -> str:
     address = _first(data, ["subject_address", "property_address", "address"])
-    effective = _clean_text(str(data.get("effective_date") or data.get("due_date") or ""))
+    effective = normalize_date(data.get("effective_date") or data.get("due_date") or "")
     if address and effective:
         return _safe_id(f"{normalize_address(address)}-{effective}")
     if address:

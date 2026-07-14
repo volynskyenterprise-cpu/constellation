@@ -136,6 +136,27 @@ Assignment Identity Resolution refines consolidation by cleaning HTML entities, 
 
 It keeps exact deterministic rules: no fuzzy matching, semantic similarity, provider calls, external address services, or valuation inference.
 
+## v7.2.0 Implementation - Canonical Assignment Model
+
+The Canonical Assignment Model makes one canonical assignment object the operational center of Real Estate Intelligence.
+
+Target flow:
+
+```text
+Intake Artifacts
+  -> Identity Resolution
+  -> Canonical Assignment
+  -> Assignment Intelligence
+  -> Comparable Intelligence
+  -> Adjustment Intelligence
+```
+
+Assignment Consolidation decides which artifacts belong together. The Canonical Assignment Model persists one assignment directory, alias index, source index, assignment brief, timeline, fact set, missing-information set, and risk set for each real-world assignment.
+
+New intake writes to canonical assignment directories instead of creating separate directories for Gmail aliases, Axis aliases, or address-derived aliases. Assignment CLI commands resolve aliases before operating when resolution is unambiguous.
+
+Migration support is non-destructive. It can identify existing alias directories, write migration plans, mark alias directories as migrated, and preserve rollback metadata. It does not delete source artifacts or private assignment directories.
+
 ## 5. Institutional Valuation Operating System
 
 Real Estate Intelligence should operate as an institutional layer around the appraisal workflow.

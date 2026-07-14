@@ -9,6 +9,8 @@
 - Real Estate Assignment Auto-Ingestion is complete; keep future Real Estate work focused on Comparable Intelligence, Adjustment Intelligence, Neighborhood Intelligence, Permit Intelligence, Reviewer Intelligence, Narrative Intelligence, and the Valuation Learning Loop.
 - Real Estate Assignment Consolidation is complete; future work should add human-reviewed split/merge notes and reviewer workflow queues.
 - Assignment Identity Resolution is complete; future consolidation work should add human-reviewed merge/split overrides and reviewer-facing identity queues.
+- Canonical Assignment Model is complete; future Real Estate work should build Comparable Intelligence, Adjustment Intelligence, Neighborhood Intelligence, Permit Intelligence, Reviewer Intelligence, Narrative Intelligence, and the Valuation Learning Loop on canonical assignments only.
+- Add human-reviewed canonical assignment split/merge override notes and reviewer-facing identity queues after v7.2 stabilizes.
 - Add deterministic MLS export parsing for Real Estate Intelligence after schema examples are supplied.
 - Add deterministic permit record indexing for Real Estate Intelligence after local source formats are supplied.
 - Add Real Estate assignment comparison against prior assignment snapshots.

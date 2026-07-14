@@ -5,13 +5,14 @@ import json
 import re
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
 from .dashboard import ExecutiveDashboardStore
+from .canonical_assignments import CanonicalAssignmentEngine, CanonicalAssignmentResolver, normalize_address, normalize_date, normalize_path, normalize_postal_code
 from .io import read_json, write_json
 from .models import JsonMap
 from .real_estate import RealEstateAssignmentStore, assignment_directory
@@ -283,13 +284,25 @@ class RealEstateIntakeEngine:
     def import_candidates(self, *, source_id: str | None = None, file_path: Path | None = None, open_brief: bool = False) -> RealEstateIntakeResult:
         records: list[RealEstateIntakeRecord] = []
         errors: list[JsonMap] = []
-        for candidate in self.scan(source_id=source_id, file_path=file_path):
+        imported_keys = self.store.imported_keys()
+        candidates = sorted(self.scan(source_id=source_id, file_path=file_path), key=_candidate_import_sort_key)
+        try:
+            CanonicalAssignmentEngine(self.root).build()
+        except Exception:
+            pass
+        for candidate in candidates:
             try:
-                if candidate.already_imported and assignment_directory(self.root, candidate.detected_assignment_id).exists():
+                candidate = self._canonical_candidate(candidate)
+                duplicate = _record_key(candidate.source_path, candidate.checksum, candidate.detected_assignment_id) in imported_keys
+                if duplicate and assignment_directory(self.root, candidate.detected_assignment_id).exists():
                     records.append(self._record(candidate, "skipped_duplicate", [], [], []))
                     continue
                 record = self._import_candidate(candidate)
                 records.append(record)
+                try:
+                    CanonicalAssignmentEngine(self.root).build()
+                except Exception:
+                    pass
                 if open_brief and record.assignment_brief_path:
                     _open_in_code(Path(record.assignment_brief_path))
             except Exception as exc:
@@ -303,6 +316,10 @@ class RealEstateIntakeEngine:
         }
         manifest = RealEstateIntakeManifest(f"real_estate_intake_{_digest('|'.join(record.intake_id for record in records) + _now_iso())}", _now_iso(), records, errors, counts)
         self.store.save(manifest)
+        try:
+            CanonicalAssignmentEngine(self.root).build()
+        except Exception:
+            pass
         dashboard_refreshed = False
         try:
             ExecutiveDashboardStore(self.root).generate(overwrite=True)
@@ -333,13 +350,36 @@ class RealEstateIntakeEngine:
         merged, conflicts = _merge_assignment(existing, candidate)
         source_mode = str(self.store.load_config().get("source_mode") or "reference")
         sources = self._link_sources(candidate, source_mode)
-        source_paths = sorted(set(_string_list(_map(merged.get("assignment")).get("source_paths", [])) + [item.assignment_source_path for item in sources]))
+        source_paths = sorted(set(normalize_path(item) for item in _string_list(_map(merged.get("assignment")).get("source_paths", [])) + [item.assignment_source_path for item in sources] if item))
         merged["assignment"]["source_paths"] = source_paths
-        merged["assignment"]["provenance"] = {"auto_ingested_from": candidate.source_path, "original_identifier": candidate.original_identifier}
+        merged["assignment"]["provenance"] = {"auto_ingested_from": normalize_path(candidate.source_path), "original_identifier": candidate.original_identifier, "canonical_assignment_id": candidate.detected_assignment_id}
         _write_assignment_yaml(assignment_path, merged["assignment"])
         snapshot = self.assignment_store.build(candidate.detected_assignment_id)
         status = "updated" if existing else "imported"
         return self._record(candidate, status, conflicts, [item.to_dict() for item in sources], [str(item.assignment_source_path) for item in sources], snapshot.to_dict())
+
+    def _canonical_candidate(self, candidate: RealEstateAssignmentCandidate) -> RealEstateAssignmentCandidate:
+        resolution = CanonicalAssignmentResolver(self.root).resolve_fields(
+            candidate.structured_data,
+            source_alias=candidate.detected_assignment_id,
+            source_path=candidate.source_path,
+        )
+        canonical_id = resolution.canonical_assignment_id or candidate.detected_assignment_id
+        if canonical_id == candidate.detected_assignment_id:
+            return candidate
+        data = dict(candidate.structured_data)
+        data.setdefault("source_generated_alias", candidate.detected_assignment_id)
+        data.setdefault("canonical_assignment_id", canonical_id)
+        warnings = list(candidate.warnings)
+        warnings.append(f"Resolved alias {candidate.detected_assignment_id} to canonical assignment {canonical_id}.")
+        return replace(
+            candidate,
+            detected_assignment_id=canonical_id,
+            original_identifier=candidate.original_identifier or candidate.detected_assignment_id,
+            structured_data=data,
+            warnings=warnings,
+            already_imported=False,
+        )
 
     def _link_sources(self, candidate: RealEstateAssignmentCandidate, source_mode: str) -> list[RealEstateSourceAttachment]:
         config = self.store.load_config()
@@ -534,14 +574,14 @@ def _merge_value(container: JsonMap, field: str, incoming: Any, candidate: RealE
     existing = str(container.get(field) or "").strip()
     if not existing or existing in {"unknown", "other"}:
         container[field] = incoming_value
-    elif existing != incoming_value:
+    elif _merge_compare_value(prefix + field, existing) != _merge_compare_value(prefix + field, incoming_value):
         conflicts.append(prefix + field)
 
 
 def _merge_conflict_facts(existing_facts: Any, candidate: RealEstateAssignmentCandidate, conflicts: list[str]) -> list[JsonMap]:
     facts = _map_list(existing_facts)
     present = {(str(item.get("field_name")), str(item.get("value"))) for item in facts}
-    source_path = candidate.source_path
+    source_path = normalize_path(candidate.source_path)
     for field in conflicts:
         incoming = next((mapping.value for mapping in candidate.field_mappings if _field_matches(mapping.target_field, field)), None)
         if incoming is None:
@@ -582,6 +622,10 @@ def _default_assignment(assignment_id: str) -> JsonMap:
         "source_paths": [],
         "notes": ["Auto-ingested from structured local intake. Review before valuation analysis."],
         "facts": [],
+        "value_origin": {
+            "assignment_type": "system_placeholder",
+            "property_type": "system_placeholder",
+        },
     }
 
 
@@ -691,6 +735,16 @@ def _record_key(source_path: Any, checksum: Any, assignment_id: Any) -> str:
     return "|".join([str(source_path or ""), str(checksum or ""), str(assignment_id or "")])
 
 
+def _merge_compare_value(field: str, value: Any) -> str:
+    if field in {"subject.address", "address"}:
+        return normalize_address(value)
+    if field in {"effective_date", "due_date"}:
+        return normalize_date(value)
+    if field in {"subject.postal_code", "postal_code"}:
+        return normalize_postal_code(value)[:5]
+    return str(value or "").strip()
+
+
 def _file_checksum(path: Path) -> str:
     digest = sha256()
     with path.open("rb") as handle:
@@ -730,3 +784,20 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value if item is not None]
+
+
+def _candidate_import_sort_key(candidate: RealEstateAssignmentCandidate) -> tuple[int, str, str]:
+    data = candidate.structured_data
+    if _has_value(data.get("assignment_id")):
+        rank = 0
+    elif _has_value(data.get("order_id")):
+        rank = 1
+    elif _has_value(data.get("loan_number")):
+        rank = 2
+    elif _has_value(_first_value(data, ["subject_address", "property_address", "address"])) and _has_value(_first_value(data, ["effective_date", "valuation_date", "due_date", "delivery_date", "report_due"])):
+        rank = 3
+    elif _has_value(_first_value(data, ["subject_address", "property_address", "address"])):
+        rank = 4
+    else:
+        rank = 5
+    return (rank, candidate.detected_assignment_id, candidate.source_path.lower())

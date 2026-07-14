@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 from pathlib import Path
 
 from .artifacts import ArtifactError
 from .ai_markets import AIMarketsBriefStore, AIMarketsCatalystStore, AIMarketsDecisionJournalStore, AIMarketsError, AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore
 from .assignment_consolidation import AssignmentConsolidationEngine, AssignmentConsolidationError, AssignmentConsolidationStore
+from .canonical_assignments import CanonicalAssignmentEngine, CanonicalAssignmentError, CanonicalAssignmentResolver, CanonicalAssignmentStore
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .daily import DailyPipelineError, DailyPipelineStore
 from .dashboard import ExecutiveDashboardError, ExecutiveDashboardStore
@@ -340,7 +342,8 @@ def main(argv: list[str] | None = None) -> int:
     real_estate_parser = subparsers.add_parser("real-estate", help="Build and inspect deterministic Real Estate Intelligence.")
     real_estate_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
     real_estate_subparsers = real_estate_parser.add_subparsers(dest="real_estate_command", required=True)
-    real_estate_subparsers.add_parser("assignments", help="List local Real Estate assignments.")
+    real_estate_assignments_parser = real_estate_subparsers.add_parser("assignments", help="List canonical Real Estate assignments.")
+    real_estate_assignments_parser.add_argument("--include-aliases", action="store_true", help="Show aliases grouped under each canonical assignment.")
     real_estate_assignment_parser = real_estate_subparsers.add_parser("assignment", help="Build and inspect one Real Estate assignment.")
     real_estate_assignment_subparsers = real_estate_assignment_parser.add_subparsers(dest="real_estate_assignment_command", required=True)
     for command_name, help_text in [
@@ -356,6 +359,8 @@ def main(argv: list[str] | None = None) -> int:
     ]:
         command_parser = real_estate_assignment_subparsers.add_parser(command_name, help=help_text)
         command_parser.add_argument("assignment_id", help="Assignment ID.")
+        if command_name == "show":
+            command_parser.add_argument("--open", action="store_true", help="Open the canonical assignment brief in VS Code if available.")
     real_estate_intake_parser = real_estate_subparsers.add_parser("intake", help="Auto-ingest Real Estate assignments from structured local intake.")
     real_estate_intake_subparsers = real_estate_intake_parser.add_subparsers(dest="real_estate_intake_command", required=True)
     real_estate_intake_subparsers.add_parser("status", help="Show Real Estate intake status.")
@@ -378,6 +383,18 @@ def main(argv: list[str] | None = None) -> int:
     real_estate_consolidation_subparsers.add_parser("unassigned", help="List unassigned assignment artifacts.")
     real_estate_consolidation_subparsers.add_parser("identity-report", help="Print identity resolution report path.")
     real_estate_consolidation_subparsers.add_parser("export", help="Export assignment consolidation Markdown.")
+    real_estate_canonical_parser = real_estate_subparsers.add_parser("canonical", help="Inspect and migrate canonical Real Estate assignments.")
+    real_estate_canonical_subparsers = real_estate_canonical_parser.add_subparsers(dest="real_estate_canonical_command", required=True)
+    real_estate_canonical_subparsers.add_parser("status", help="Show canonical assignment status.")
+    real_estate_canonical_subparsers.add_parser("assignments", help="List canonical assignments.")
+    real_estate_canonical_subparsers.add_parser("aliases", help="List canonical aliases.")
+    real_estate_canonical_resolve = real_estate_canonical_subparsers.add_parser("resolve", help="Resolve an assignment alias.")
+    real_estate_canonical_resolve.add_argument("alias", help="Alias, address, source-generated ID, order ID, or canonical assignment ID.")
+    real_estate_canonical_subparsers.add_parser("migration-plan", help="Generate non-destructive canonical migration plan.")
+    real_estate_canonical_migrate = real_estate_canonical_subparsers.add_parser("migrate", help="Run canonical migration dry-run or apply.")
+    real_estate_canonical_migrate.add_argument("--dry-run", action="store_true", help="Inspect migration without modifying files.")
+    real_estate_canonical_migrate.add_argument("--apply", action="store_true", help="Apply non-destructive alias migration markers.")
+    real_estate_canonical_subparsers.add_parser("export", help="Print canonical assignment output paths.")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -1495,18 +1512,88 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"assignment_clusters: {consolidation_store.clusters_md}")
                     print(f"identity_resolution_report: {consolidation_store.identity_report_md}")
                     return 0
+            if args.real_estate_command == "canonical":
+                canonical_engine = CanonicalAssignmentEngine(args.root.resolve())
+                canonical_store = CanonicalAssignmentStore(args.root.resolve())
+                if args.real_estate_canonical_command == "status":
+                    _print_canonical_assignment_status(canonical_engine.status())
+                    return 0
+                if args.real_estate_canonical_command == "assignments":
+                    if not canonical_store.assignments_json.exists():
+                        canonical_engine.build()
+                    for assignment in _map_list(canonical_store.load().get("assignments", [])):
+                        subject = _map(assignment.get("subject"))
+                        print(
+                            f"{assignment.get('canonical_assignment_id')} status={assignment.get('status')} "
+                            f"subject={subject.get('address', '')} artifacts={len(_map_list(assignment.get('source_artifacts', [])))} "
+                            f"aliases={len(_map_list(assignment.get('aliases', [])))} risks={len(_map_list(assignment.get('risks', [])))} "
+                            f"conflicts={len(_map_list(assignment.get('conflicts', [])))}"
+                        )
+                    return 0
+                if args.real_estate_canonical_command == "aliases":
+                    if not canonical_store.alias_index_json.exists():
+                        canonical_engine.build()
+                    for alias in canonical_store.load_aliases():
+                        print(f"{alias.get('alias')} -> {alias.get('canonical_assignment_id')} type={alias.get('alias_type')} status={alias.get('status')}")
+                    return 0
+                if args.real_estate_canonical_command == "resolve":
+                    resolution = CanonicalAssignmentResolver(args.root.resolve()).resolve(args.alias)
+                    print(f"requested_alias: {resolution.requested_alias}")
+                    print(f"resolved: {resolution.resolved}")
+                    print(f"canonical_assignment_id: {resolution.canonical_assignment_id}")
+                    print(f"alias_type: {resolution.alias_type}")
+                    print(f"ambiguous: {resolution.ambiguous}")
+                    if resolution.matches:
+                        print("matches:")
+                        for match in resolution.matches:
+                            print(f"- {match.get('alias')} -> {match.get('canonical_assignment_id')} type={match.get('alias_type')}")
+                    return 0 if resolution.resolved and not resolution.ambiguous else 1
+                if args.real_estate_canonical_command == "migration-plan":
+                    plan = canonical_engine.migration_plan()
+                    print(f"migration_id: {plan.migration_id}")
+                    print(f"pending_migration_count: {plan.counts.get('pending_migration_count', 0)}")
+                    print(f"migration_plan: {canonical_store.migration_plan_json}")
+                    return 0
+                if args.real_estate_canonical_command == "migrate":
+                    apply = bool(args.apply)
+                    result = canonical_engine.migrate(apply=apply)
+                    print(f"migration_id: {result.migration_id}")
+                    print(f"applied: {result.applied}")
+                    print(f"pending_migration_count: {result.counts.get('pending_migration_count', 0)}")
+                    print(f"migrated_alias_directory_count: {result.counts.get('migrated_alias_directory_count', 0)}")
+                    if result.backup_manifest_path:
+                        print(f"backup_manifest: {result.backup_manifest_path}")
+                    return 0
+                if args.real_estate_canonical_command == "export":
+                    if not canonical_store.assignments_json.exists():
+                        canonical_engine.build()
+                    print(f"canonical_assignments: {canonical_store.assignments_md}")
+                    print(f"alias_index: {canonical_store.alias_index_md}")
+                    print(f"canonical_report: {canonical_store.report_md}")
+                    return 0
             if args.real_estate_command == "assignments":
-                assignment_ids = store.list_assignment_ids()
-                if not assignment_ids:
+                canonical_engine = CanonicalAssignmentEngine(args.root.resolve())
+                canonical_store = CanonicalAssignmentStore(args.root.resolve())
+                if not canonical_store.assignments_json.exists():
+                    canonical_engine.build()
+                assignments = _map_list(canonical_store.load().get("assignments", []))
+                if not assignments:
                     print("No Real Estate assignments found.")
                     return 0
-                for assignment_id in assignment_ids:
-                    data = store.build(assignment_id).to_dict()
+                for assignment in assignments:
+                    assignment_id = str(assignment.get("canonical_assignment_id") or "")
+                    subject = _map(assignment.get("subject"))
                     print(
-                        f"{assignment_id} status={data.get('status')} property_type={data.get('property_type')} "
-                        f"subject={data.get('subject_address') or ''} due={data.get('due_date') or ''} "
-                        f"risks={data.get('risk_count', 0)} missing={data.get('missing_item_count', 0)}"
+                        f"{assignment_id} status={assignment.get('status')} property_type={assignment.get('property_type')} "
+                        f"subject={subject.get('address') or ''} due={assignment.get('due_date') or ''} "
+                        f"artifacts={len(_map_list(assignment.get('source_artifacts', [])))} aliases={len(_map_list(assignment.get('aliases', [])))} "
+                        f"sources={len(_map_list(assignment.get('source_artifacts', [])))} risks={len(_map_list(assignment.get('risks', [])))} "
+                        f"missing={len(_map_list(assignment.get('missing_items', [])))} conflicts={len(_map_list(assignment.get('conflicts', [])))} "
+                        f"last_activity={assignment.get('last_seen') or assignment.get('updated_at') or ''}"
                     )
+                    if args.include_aliases:
+                        for alias in _map_list(assignment.get("aliases", [])):
+                            print(f"  alias: {alias.get('alias')} type={alias.get('alias_type')}")
                 return 0
             assignment_id = args.assignment_id
             if args.real_estate_assignment_command == "create-template":
@@ -1514,6 +1601,20 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"assignment_template: {path}")
                 print("warning: Private local assignment data. Do not commit.")
                 return 0
+            resolution = _resolve_real_estate_assignment(args.root.resolve(), assignment_id)
+            if resolution.ambiguous:
+                print(f"requested_alias: {assignment_id}")
+                print("resolved: False")
+                print("ambiguous: True")
+                for match in resolution.matches:
+                    print(f"- {match.get('canonical_assignment_id')} alias={match.get('alias')} type={match.get('alias_type')}")
+                return 1
+            if resolution.resolved:
+                assignment_id = resolution.canonical_assignment_id
+                print(f"requested_alias: {resolution.requested_alias}")
+                print(f"canonical_assignment_id: {resolution.canonical_assignment_id}")
+                print(f"alias_type: {resolution.alias_type}")
+                print("resolved: True")
             if args.real_estate_assignment_command == "build":
                 snapshot = store.build(assignment_id)
                 _print_real_estate_assignment_status(snapshot.to_dict(), store.output_dir(assignment_id) / "assignment-brief.md")
@@ -1527,6 +1628,8 @@ def main(argv: list[str] | None = None) -> int:
                 if not (store.output_dir(assignment_id) / "assignment.json").exists():
                     store.build(assignment_id)
                 print(json.dumps(store.load(assignment_id), indent=2, sort_keys=True))
+                if args.open:
+                    _open_in_code(store.output_dir(assignment_id) / "assignment-brief.md")
                 return 0
             if args.real_estate_assignment_command == "sources":
                 data = store.build(assignment_id).to_dict()
@@ -1554,7 +1657,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"source_manifest: {store.output_dir(assignment_id) / 'source-manifest.md'}")
                 print(f"evidence_index: {store.output_dir(assignment_id) / 'evidence-index.md'}")
                 return 0
-        except (RealEstateError, RealEstateIntakeError, AssignmentConsolidationError) as exc:
+        except (RealEstateError, RealEstateIntakeError, AssignmentConsolidationError, CanonicalAssignmentError) as exc:
             print(f"error: {exc}")
             return 1
     return 2
@@ -1737,6 +1840,34 @@ def _print_assignment_consolidation_status(status) -> None:
     print(f"unassigned_artifacts: {status.get('unassigned_artifact_count', 0)}")
     print(f"true_identity_conflicts: {status.get('true_identity_conflict_count', 0)}")
     print(f"clusters_path: {status.get('clusters_path')}")
+
+
+def _print_canonical_assignment_status(status) -> None:
+    print(f"available: {status.get('available')}")
+    print(f"canonical_assignments: {status.get('canonical_assignment_count', 0)}")
+    print(f"artifacts: {status.get('artifact_count', 0)}")
+    print(f"aliases: {status.get('alias_count', 0)}")
+    print(f"pending_migration: {status.get('pending_migration_count', 0)}")
+    print(f"migrated_alias_directories: {status.get('migrated_alias_directory_count', 0)}")
+    print(f"true_assignment_conflicts: {status.get('true_assignment_conflict_count', 0)}")
+    print(f"canonical_assignments_path: {status.get('canonical_assignments_path')}")
+    print(f"alias_index_path: {status.get('alias_index_path')}")
+
+
+def _resolve_real_estate_assignment(root: Path, assignment_id: str):
+    resolution = CanonicalAssignmentResolver(root).resolve(assignment_id)
+    if resolution.resolved or resolution.ambiguous:
+        return resolution
+    if (RealEstateAssignmentStore(root).assignment_root() / assignment_id / "assignment.yaml").exists():
+        return type(resolution)(assignment_id, True, assignment_id, "assignment_directory", False, [], [{"rule": "assignment_directory_fallback"}])
+    return resolution
+
+
+def _open_in_code(path: Path) -> None:
+    try:
+        subprocess.run(["code", "-r", str(path)], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        return
 
 
 def _print_monitor_run(run) -> None:

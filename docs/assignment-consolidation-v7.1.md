@@ -4,6 +4,8 @@ Assignment Consolidation groups multiple local intake artifacts that belong to t
 
 This is deterministic assignment consolidation, not document deduplication.
 
+As of v7.2.0, consolidation remains the identity-resolution layer. The Canonical Assignment Model is the persistence and operational layer that writes one assignment directory, one alias index, and one operational assignment record per cluster.
+
 ## Purpose
 
 A single assignment may appear as:
@@ -27,6 +29,16 @@ Canonical Assignment
   -> Evidence
   -> Reviewer Notes
   -> Assignment Intelligence
+```
+
+v7.2.0 persists that view as:
+
+```text
+Consolidation Cluster
+  -> Canonical Assignment
+  -> Alias Index
+  -> Canonical Directory
+  -> Assignment Intelligence Outputs
 ```
 
 ## Rules

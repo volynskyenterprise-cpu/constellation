@@ -4,6 +4,8 @@ Assignment Auto-Ingestion removes manual setup friction from Assignment Intellig
 
 It converts structured local intake artifacts into private assignment case files, builds Assignment Intelligence automatically, and refreshes the dashboard. It organizes intake and evidence. It does not automate valuation judgment.
 
+As of v7.2.0, auto-ingestion routes artifacts through the Canonical Assignment Model before writing assignment files. New intake artifacts update one canonical assignment directory instead of creating separate Gmail, Axis, or address-derived alias directories for the same real-world assignment.
+
 ## Configuration
 
 Committed example:
@@ -149,7 +151,8 @@ Each record includes intake ID, source ID, source path, checksum, detected assig
 ```text
 Structured local intake artifact
   -> Assignment candidate detected
-  -> Private assignment directory created or merged
+  -> Canonical assignment resolved
+  -> Private canonical assignment directory created or merged
   -> assignment.yaml populated from explicit fields
   -> Sources referenced or copied
   -> Assignment Intelligence built automatically

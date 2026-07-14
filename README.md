@@ -375,7 +375,8 @@ Target flow:
 ```text
 Structured assignment intake artifact
     -> assignment detected
-    -> private case folder created or merged
+    -> canonical assignment resolved
+    -> private canonical case folder created or merged
     -> assignment.yaml populated from explicit fields
     -> sources referenced or copied
     -> Assignment Intelligence built
@@ -398,6 +399,23 @@ python -m constellation real-estate consolidation relationships
 It reports Assignments, Artifacts, Knowledge Packs, assignments with reviewer notes, assignments with conflicts, and top active assignments. Consolidation uses exact IDs, normalized addresses, dates, and structured field overlap only. It does not use semantic similarity or valuation inference.
 
 v7.1.2 adds Identity Resolution refinements: HTML entity cleanup, source companion pairing for matching JSON/Markdown stems, assignment aliases, unassigned artifacts, true identity conflict reporting, and unit-aware address normalization.
+
+v7.2.0 adds the Canonical Assignment Model. Assignment Consolidation remains the identity-resolution layer; the Canonical Assignment Model is now the persistence and operational layer. New intake writes to one canonical directory per real-world assignment, preserves aliases, and stops creating separate Gmail/Axis/address-derived assignment directories for the same assignment.
+
+```bash
+python -m constellation real-estate canonical status
+python -m constellation real-estate canonical assignments
+python -m constellation real-estate canonical aliases
+python -m constellation real-estate canonical resolve ALIAS
+python -m constellation real-estate canonical migration-plan
+python -m constellation real-estate canonical migrate --dry-run
+python -m constellation real-estate canonical migrate --apply
+python -m constellation real-estate canonical export
+python -m constellation real-estate assignments --include-aliases
+python -m constellation real-estate assignment show ALIAS
+```
+
+Canonical migration is non-destructive. Dry-run inspects existing alias directories and writes a plan; apply marks alias directories as migrated and preserves rollback metadata, but does not delete source artifacts or assignment directories. Assignment commands accept canonical IDs, order IDs, loan numbers, source-generated aliases, address aliases, and previous canonical IDs when they resolve unambiguously.
 
 ### Source Monitoring
 
@@ -747,6 +765,10 @@ Primary question answered:
 Extend Constellation's deterministic evidence-first operating model into valuation work while preserving a separate professional domain boundary.
 
 - v7.0.0 - Real Estate Assignment Intelligence
+- v7.1.0 - Assignment Auto-Ingestion
+- v7.1.1 - Assignment Consolidation
+- v7.1.2 - Assignment Identity Resolution
+- v7.2.0 - Canonical Assignment Model
 
 Primary question answered:
 

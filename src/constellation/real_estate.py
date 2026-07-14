@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import html
+import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from hashlib import sha256
@@ -603,6 +605,8 @@ def _facts(assignment: RealEstateAssignment, sources: list[RealEstateSourceRecor
         "scope.ownership_interest": assignment.scope.ownership_interest,
     }
     for field, value in fields.items():
+        if field in {"assignment_type", "property_type", "report_type"} and str(value).strip().lower() == "other":
+            continue
         if value:
             facts.append(_fact(assignment.assignment_id, "assignment_yaml", field, value, "client_provided", [], "medium", {"source": "assignment.yaml"}))
     for source in sources:
@@ -644,9 +648,13 @@ def _conflicts(assignment_id: str, facts: list[RealEstateFact]) -> list[RealEsta
             by_field.setdefault(fact.field_name, []).append(fact)
     conflicts = []
     for field, items in by_field.items():
-        values = sorted({item.value for item in items})
-        if len(values) <= 1:
+        by_normalized: dict[str, set[str]] = {}
+        for item in items:
+            by_normalized.setdefault(_conflict_compare_value(field, item.value), set()).add(item.value)
+        by_normalized = {key: values for key, values in by_normalized.items() if key}
+        if len(by_normalized) <= 1:
             continue
+        values = sorted({value for values in by_normalized.values() for value in values})
         source_ids = sorted({source for item in items for source in item.source_ids})
         conflicts.append(
             RealEstateFactConflict(
@@ -657,7 +665,7 @@ def _conflicts(assignment_id: str, facts: list[RealEstateFact]) -> list[RealEsta
                 source_ids=source_ids,
                 severity=_conflict_severity(field),
                 status="open",
-                provenance={"rule": "exact_structured_field_value_conflict"},
+                provenance={"rule": "normalized_structured_field_value_conflict", "normalized_values": sorted(by_normalized)},
             )
         )
     return sorted(conflicts, key=lambda item: (_severity_rank(item.severity), item.field_name, item.conflict_id))
@@ -749,7 +757,8 @@ def _timeline(assignment: RealEstateAssignment, sources: list[RealEstateSourceRe
 
 
 def _event(assignment_id: str, event_type: str, occurred_at: str, title: str, description: str, source_ids: list[str], provenance: JsonMap) -> RealEstateAssignmentTimelineEvent:
-    return RealEstateAssignmentTimelineEvent(f"event_{_digest('|'.join([assignment_id, event_type, occurred_at, title]))}", assignment_id, event_type, occurred_at, title, description, source_ids, provenance)
+    source_fingerprint = ",".join(source_ids) + str(provenance.get("source_path", ""))
+    return RealEstateAssignmentTimelineEvent(f"event_{_digest('|'.join([assignment_id, event_type, occurred_at, title, source_fingerprint]))}", assignment_id, event_type, occurred_at, title, description, source_ids, provenance)
 
 
 def _delta(previous: JsonMap, snapshot_id: str, assignment: RealEstateAssignment, sources: list[RealEstateSourceRecord], facts: list[RealEstateFact], conflicts: list[RealEstateFactConflict], missing: list[RealEstateMissingItem], risks: list[RealEstateAssignmentRisk]) -> RealEstateAssignmentDelta:
@@ -960,6 +969,43 @@ def _conflict_severity(field: str) -> str:
     if field in {"gross_living_area", "site_area", "bedroom_count", "bathroom_count", "year_built", "subject.assessor_parcel_number", "scope.ownership_interest"}:
         return "medium"
     return "low"
+
+
+def _conflict_compare_value(field: str, value: str) -> str:
+    text = html.unescape(str(value or "")).replace("\xa0", " ")
+    text = re.sub(r"\s+", " ", text).strip()
+    if field in {"subject.address", "address"}:
+        lower = text.lower()
+        lower = re.sub(r"#\s*([a-z0-9-]+)", r" unit \1", lower)
+        lower = re.sub(r"\b(apt|apartment|ste|suite)\s+([a-z0-9-]+)", r"unit \2", lower)
+        lower = re.sub(r"[^\w\s]", " ", lower)
+        replacements = {
+            "street": "st",
+            "avenue": "ave",
+            "boulevard": "blvd",
+            "drive": "dr",
+            "road": "rd",
+            "lane": "ln",
+            "court": "ct",
+            "place": "pl",
+            "circle": "cir",
+            "unit": "unit",
+        }
+        return " ".join(replacements.get(word, word) for word in lower.split())
+    if field in {"effective_date", "due_date"}:
+        iso = re.match(r"^(\d{4})-(\d{2})-(\d{2})(?:[tT ].*)?$", text)
+        if iso:
+            return f"{iso.group(1)}-{iso.group(2)}-{iso.group(3)}"
+        us = re.match(r"^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$", text)
+        if us:
+            month, day, year = int(us.group(1)), int(us.group(2)), int(us.group(3))
+            if 1 <= month <= 12 and 1 <= day <= 31:
+                return f"{year:04d}-{month:02d}-{day:02d}"
+    if field in {"subject.postal_code", "postal_code"}:
+        match = re.match(r"^(\d{5})(?:[-\s]?\d{4})?$", text)
+        if match:
+            return match.group(1)
+    return text
 
 
 def _risk_severity_from_missing(severity: str) -> str:

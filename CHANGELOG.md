@@ -2,6 +2,18 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.2.0 - Canonical Assignment Model
+
+- Added the Canonical Assignment Model as the Real Estate persistence and operational layer.
+- Added canonical assignments, aliases, sources, resolution records, snapshots, deltas, and non-destructive migration support.
+- Added `python -m constellation real-estate canonical ...` commands for status, assignments, aliases, resolution, migration planning, migration apply, and export.
+- Updated Real Estate intake so new artifacts resolve to canonical assignments before writing assignment directories.
+- Updated assignment commands to resolve canonical IDs, order IDs, loan numbers, source-generated aliases, address aliases, and previous IDs when unambiguous.
+- Updated assignment listing and dashboard summaries to count canonical assignments rather than alias directories.
+- Added normalization for HTML-noise addresses, equivalent date formats, unit markers, ZIP/ZIP+4 compatibility, and source paths.
+- Suppressed normalized-equivalent assignment conflicts while preserving true conflicts and original provenance.
+- Preserved deterministic local-only behavior with no providers, OpenAI, LLM inference, embeddings, semantic similarity, fuzzy matching, web retrieval, Gmail, calendar integration, valuation opinions, comparable selection, adjustments, permit interpretation, destructive migration, or USPAP conclusions.
+
 ## 7.1.2 - Assignment Identity Resolution
 
 - Refined Real Estate Assignment Consolidation identity resolution.
