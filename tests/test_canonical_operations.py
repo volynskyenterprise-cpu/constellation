@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from constellation.canonical_assignments import CanonicalAssignmentEngine
+from constellation.canonical_assignments import CanonicalAssignmentEngine, CanonicalAssignmentError
 from constellation.canonical_operations import CanonicalOperationsEngine, CanonicalOperationsStore
 from constellation.cli import main
 from constellation.dashboard import ExecutiveDashboardBuilder
@@ -172,6 +172,128 @@ class CanonicalOperationsTests(unittest.TestCase):
         for phrase in ["opinion of value", "price target", "recommended comparable", "adjustment amount", "uspap conclusion"]:
             self.assertNotIn(phrase, report)
         self.assertEqual(state.summary["canonical_assignment_count"], 1)
+
+    def make_scoped_migration_fixture(self) -> dict[str, Path]:
+        self.import_file("ready-a.json", {"order_id": "READY-1", "subject_address": "100 Ready Street"})
+        self.import_file("ready-b.json", {"order_id": "READY-2", "subject_address": "200 Ready Street"})
+        self.import_file("ready-c.json", {"order_id": "READY-3", "subject_address": "300 Ready Street"})
+        self.import_file("blocked-a.json", {"order_id": "BLOCKED-1", "subject_address": "400 Blocked Street"})
+        self.import_file("blocked-b.json", {"order_id": "BLOCKED-1", "subject_address": "401 Blocked Street"})
+        ready_one = self.create_alias_directory("100-ready-st", "100 Ready St", extra_file=False)
+        ready_two = self.create_alias_directory("200-ready-st", "200 Ready St", extra_file=False)
+        ready_three = self.create_alias_directory("300-ready-st", "300 Ready St", extra_file=False)
+        blocked = self.create_alias_directory("400-blocked-st", "400 Blocked St", extra_file=False)
+        orphan = self.create_alias_directory("orphan-assignment", "999 Orphan Road", extra_file=False)
+        migrated = self.create_alias_directory("100-ready-street", "100 Ready Street", extra_file=False)
+        write_json(migrated / "canonical-migration.json", {"status": "migrated_alias_directory"})
+        return {
+            "ready_one": ready_one,
+            "ready_two": ready_two,
+            "ready_three": ready_three,
+            "blocked": blocked,
+            "orphan": orphan,
+            "migrated": migrated,
+        }
+
+    def test_migrate_help_shows_scope_flags(self) -> None:
+        output = io.StringIO()
+        with self.assertRaises(SystemExit) as cm, contextlib.redirect_stdout(output):
+            main(["real-estate", "--root", str(self.root), "canonical", "migrate", "--help"])
+        self.assertEqual(cm.exception.code, 0)
+        text = output.getvalue()
+        for flag in ["--ready-only", "--category", "--assignment", "--source-assignment", "--list-selected"]:
+            self.assertIn(flag, text)
+
+    def test_ready_only_selection_excludes_blocked_orphan_and_already_migrated(self) -> None:
+        self.make_scoped_migration_fixture()
+        engine = CanonicalAssignmentEngine(self.root)
+        selection = engine.select_migration_entries(ready_only=True)
+
+        self.assertEqual(selection.counts["selected_count"], 3)
+        self.assertTrue(all(item["migration_category"] == "preserve_alias" for item in selection.selected_entries))
+        skipped_categories = {item["migration_category"] for item in selection.skipped_entries}
+        self.assertIn("blocked_by_conflict", skipped_categories)
+        self.assertIn("orphan", skipped_categories)
+        self.assertIn("already_migrated", skipped_categories)
+
+    def test_category_assignment_source_and_list_selected_scopes(self) -> None:
+        self.make_scoped_migration_fixture()
+        engine = CanonicalAssignmentEngine(self.root)
+
+        by_category = engine.select_migration_entries(category="preserve_alias")
+        self.assertEqual(by_category.counts["selected_count"], 3)
+
+        by_assignment = engine.select_migration_entries(canonical_assignment_id="100-ready-st")
+        self.assertGreaterEqual(by_assignment.counts["selected_count"], 1)
+        self.assertTrue(all(item["target_canonical_assignment_id"] == "ready-1" for item in by_assignment.selected_entries))
+
+        by_source = engine.select_migration_entries(source_assignment_id="200-ready-st")
+        self.assertEqual(by_source.counts["selected_count"], 1)
+        self.assertEqual(by_source.selected_entries[0]["source_assignment_id"], "200-ready-st")
+
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = main(["real-estate", "--root", str(self.root), "canonical", "migrate", "--ready-only", "--list-selected"])
+        self.assertEqual(code, 0, output.getvalue())
+        self.assertIn("100-ready-st -> ready-1", output.getvalue())
+        self.assertFalse((self.root / "real-estate" / "assignments" / "100-ready-st" / "canonical-migration.json").exists())
+
+    def test_invalid_category_and_ambiguous_assignment_scope_fail_safely(self) -> None:
+        self.import_file("amb-a.json", {"order_id": "AMB-1", "subject_address": "1 Ambiguous Street"})
+        self.import_file("amb-b.json", {"order_id": "AMB-2", "subject_address": "1 Ambiguous Street"})
+        with self.assertRaises(CanonicalAssignmentError):
+            CanonicalAssignmentEngine(self.root).select_migration_entries(category="not_a_category")
+        with self.assertRaises(CanonicalAssignmentError):
+            CanonicalAssignmentEngine(self.root).select_migration_entries(canonical_assignment_id="1-ambiguous-st")
+
+    def test_unscoped_mixed_apply_is_refused_and_dry_run_does_not_modify_files(self) -> None:
+        paths = self.make_scoped_migration_fixture()
+        engine = CanonicalAssignmentEngine(self.root)
+        dry_run = engine.migrate(apply=False, ready_only=True)
+        self.assertFalse(dry_run.applied)
+        self.assertFalse((paths["ready_one"] / "canonical-migration.json").exists())
+
+        result = engine.migrate(apply=True)
+        self.assertFalse(result.applied)
+        self.assertIn("refused", result.error.lower())
+        self.assertFalse((paths["ready_one"] / "canonical-migration.json").exists())
+        self.assertTrue((self.root / "outputs" / "real-estate" / "canonical" / "scoped-migration-selection.json").exists())
+        self.assertTrue((self.root / "outputs" / "real-estate" / "canonical" / "scoped-migration-result.md").exists())
+
+    def test_ready_only_apply_is_safe_idempotent_and_synchronizes_state(self) -> None:
+        paths = self.make_scoped_migration_fixture()
+        engine = CanonicalAssignmentEngine(self.root)
+
+        result = engine.migrate(apply=True, ready_only=True)
+        self.assertTrue(result.applied)
+        self.assertEqual(result.applied_count, 3)
+        self.assertEqual(result.remaining_blocked_count, 1)
+        self.assertEqual(result.remaining_orphan_count, 1)
+        self.assertTrue(Path(result.backup_manifest_path).exists())
+        self.assertTrue((paths["ready_one"] / "canonical-migration.json").exists())
+        self.assertTrue(paths["ready_one"].exists())
+        self.assertFalse((paths["blocked"] / "canonical-migration.json").exists())
+        self.assertFalse((paths["orphan"] / "canonical-migration.json").exists())
+
+        status = CanonicalOperationsEngine(self.root).status()
+        dashboard = ExecutiveDashboardBuilder(self.root).build().real_estate_assignment_summary
+        self.assertEqual(status["pending_migration_count"], dashboard["pending_migration_count"])
+        self.assertEqual(status["migration_ready_count"], dashboard["migration_ready_count"])
+
+        second = engine.migrate(apply=True, ready_only=True)
+        self.assertFalse(second.applied)
+        self.assertEqual(second.applied_count, 0)
+        self.assertEqual(second.already_migrated_count, 4)
+
+    def test_blocked_orphan_ambiguous_and_already_migrated_are_never_applied_by_category(self) -> None:
+        paths = self.make_scoped_migration_fixture()
+        engine = CanonicalAssignmentEngine(self.root)
+        for category, path_key in [("blocked_by_conflict", "blocked"), ("orphan", "orphan"), ("already_migrated", "migrated")]:
+            result = engine.migrate(apply=True, category=category)
+            self.assertFalse(result.applied)
+            self.assertEqual(result.applied_count, 0)
+            if category != "already_migrated":
+                self.assertFalse((paths[path_key] / "canonical-migration.json").exists())
 
 
 if __name__ == "__main__":

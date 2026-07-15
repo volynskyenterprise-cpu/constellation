@@ -186,6 +186,34 @@ review-queue.md
 
 This is a visibility layer only. It does not automatically migrate live assignment directories, resolve conflicts, infer identity semantically, or generate valuation conclusions.
 
+## v7.2.2 Implementation - Scoped Canonical Migration
+
+Scoped Canonical Migration completes the core v7.2 operational safety model.
+
+Operators can now scope migration by:
+
+- ready-only entries
+- migration category
+- canonical assignment
+- source assignment directory
+
+The recommended apply path is:
+
+```bash
+python -m constellation real-estate canonical migrate --apply --ready-only
+```
+
+This applies only `safe_merge` and `preserve_alias` entries.
+
+It never applies:
+
+- `blocked_by_conflict`
+- `ambiguous`
+- `orphan`
+- `already_migrated`
+
+Unsafe unscoped apply is refused when the plan contains mixed categories. Alias directories are preserved, source files are not deleted, and conflicts remain for human review.
+
 ## 5. Institutional Valuation Operating System
 
 Real Estate Intelligence should operate as an institutional layer around the appraisal workflow.

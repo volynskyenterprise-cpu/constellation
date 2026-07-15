@@ -8,7 +8,7 @@ from pathlib import Path
 from .artifacts import ArtifactError
 from .ai_markets import AIMarketsBriefStore, AIMarketsCatalystStore, AIMarketsDecisionJournalStore, AIMarketsError, AIMarketsPortfolioStore, AIMarketsStore, AIMarketsThemeLifecycleStore
 from .assignment_consolidation import AssignmentConsolidationEngine, AssignmentConsolidationError, AssignmentConsolidationStore
-from .canonical_assignments import CanonicalAssignmentEngine, CanonicalAssignmentError, CanonicalAssignmentResolver, CanonicalAssignmentStore
+from .canonical_assignments import MIGRATION_CATEGORIES, CanonicalAssignmentEngine, CanonicalAssignmentError, CanonicalAssignmentResolver, CanonicalAssignmentStore
 from .canonical_operations import CanonicalOperationsEngine, CanonicalOperationsError, CanonicalOperationsStore
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .daily import DailyPipelineError, DailyPipelineStore
@@ -395,6 +395,11 @@ def main(argv: list[str] | None = None) -> int:
     real_estate_canonical_migrate = real_estate_canonical_subparsers.add_parser("migrate", help="Run canonical migration dry-run or apply.")
     real_estate_canonical_migrate.add_argument("--dry-run", action="store_true", help="Inspect migration without modifying files.")
     real_estate_canonical_migrate.add_argument("--apply", action="store_true", help="Apply non-destructive alias migration markers.")
+    real_estate_canonical_migrate.add_argument("--ready-only", action="store_true", help="Select only safe_merge and preserve_alias entries.")
+    real_estate_canonical_migrate.add_argument("--category", choices=sorted(MIGRATION_CATEGORIES), help="Select one migration category.")
+    real_estate_canonical_migrate.add_argument("--assignment", help="Select entries targeting one canonical assignment or resolvable alias.")
+    real_estate_canonical_migrate.add_argument("--source-assignment", help="Select one source alias assignment directory.")
+    real_estate_canonical_migrate.add_argument("--list-selected", action="store_true", help="Print selected entries without applying.")
     real_estate_canonical_subparsers.add_parser("export", help="Print canonical assignment output paths.")
     real_estate_canonical_review = real_estate_canonical_subparsers.add_parser("review", help="Show canonical operations review queue.")
     real_estate_canonical_review.add_argument("--blocked", action="store_true", help="Show blocked assignments only.")
@@ -1578,13 +1583,45 @@ def main(argv: list[str] | None = None) -> int:
                     return 0
                 if args.real_estate_canonical_command == "migrate":
                     apply = bool(args.apply)
-                    result = canonical_engine.migrate(apply=apply)
+                    result = canonical_engine.migrate(
+                        apply=apply,
+                        ready_only=bool(args.ready_only),
+                        category=args.category or "",
+                        canonical_assignment_id=args.assignment or "",
+                        source_assignment_id=args.source_assignment or "",
+                        list_selected=bool(args.list_selected),
+                    )
                     print(f"migration_id: {result.migration_id}")
+                    print(f"scope: {_scope_text(result.scope)}")
+                    print(f"selected_count: {result.selected_count}")
+                    selected_report = read_json(canonical_store.scoped_selection_json) if canonical_store.scoped_selection_json.exists() else {}
+                    selected_entries = _map_list(selected_report.get("selected_entries", []))
+                    print(f"eligible_count: {sum(1 for item in selected_entries if item.get('apply_eligible'))}")
+                    print(f"refused_count: {result.refused_count}")
+                    print(f"blocked_count: {result.blocked_count}")
+                    print(f"orphan_count: {result.orphan_count}")
+                    print(f"ambiguous_count: {result.ambiguous_count}")
+                    print(f"already_migrated_count: {result.already_migrated_count}")
                     print(f"applied: {result.applied}")
-                    print(f"pending_migration_count: {result.counts.get('pending_migration_count', 0)}")
-                    print(f"migrated_alias_directory_count: {result.counts.get('migrated_alias_directory_count', 0)}")
+                    print(f"applied_count: {result.applied_count}")
+                    print(f"skipped_count: {result.skipped_count}")
+                    print(f"remaining_pending_count: {result.remaining_pending_count}")
+                    print(f"remaining_ready_count: {result.remaining_ready_count}")
+                    print(f"remaining_blocked_count: {result.remaining_blocked_count}")
+                    print(f"remaining_orphan_count: {result.remaining_orphan_count}")
+                    if result.error:
+                        print(f"error: {result.error}")
+                        print("guidance: use --ready-only, --category preserve_alias, --assignment, or --source-assignment to scope migration safely.")
+                    if args.list_selected:
+                        for entry in selected_entries:
+                            print(
+                                f"{entry.get('source_assignment_id')} -> {entry.get('target_canonical_assignment_id')} "
+                                f"category={entry.get('migration_category')} action={entry.get('action')} status={entry.get('status')} risk={entry.get('risk_level')}"
+                            )
                     if result.backup_manifest_path:
                         print(f"backup_manifest: {result.backup_manifest_path}")
+                    print(f"selection_report: {canonical_store.scoped_selection_md}")
+                    print(f"result_report: {canonical_store.scoped_result_md}")
                     return 0
                 if args.real_estate_canonical_command == "export":
                     operations_engine.build(save=True)
@@ -1938,6 +1975,16 @@ def _print_canonical_assignment_status(status) -> None:
         print(f"operations_report: {status.get('operations_report_path')}")
     if status.get("review_queue_path"):
         print(f"review_queue: {status.get('review_queue_path')}")
+
+
+def _scope_text(scope) -> str:
+    data = _map(scope)
+    parts = []
+    for key in ["ready_only", "category", "canonical_assignment_id", "source_assignment_id", "dry_run", "apply", "list_selected"]:
+        value = data.get(key)
+        if value not in {"", None, False}:
+            parts.append(f"{key}={value}")
+    return ",".join(parts) if parts else "all"
 
 
 def _resolve_real_estate_assignment(root: Path, assignment_id: str):

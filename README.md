@@ -404,6 +404,8 @@ v7.2.0 adds the Canonical Assignment Model. Assignment Consolidation remains the
 
 v7.2.1 hardens Canonical Operations. Canonical status, migration plan, review queue, operations report, and dashboard summaries now use the same migration state. Migration items are categorized as `safe_merge`, `preserve_alias`, `blocked_by_conflict`, `ambiguous`, `orphan`, or `already_migrated`, and review queues are written for human operator review.
 
+v7.2.2 adds scoped canonical migration controls. Use `--ready-only` to apply only migration-ready alias entries. Blocked, ambiguous, orphan, and already-migrated entries are never applied by `--ready-only`, and unsafe unscoped apply is refused when a plan contains mixed categories.
+
 ```bash
 python -m constellation real-estate canonical status
 python -m constellation real-estate canonical assignments
@@ -418,6 +420,12 @@ python -m constellation real-estate canonical operations
 python -m constellation real-estate canonical report
 python -m constellation real-estate canonical conflicts
 python -m constellation real-estate canonical migrate --dry-run
+python -m constellation real-estate canonical migrate --ready-only --list-selected
+python -m constellation real-estate canonical migrate --dry-run --ready-only
+python -m constellation real-estate canonical migrate --apply --ready-only
+python -m constellation real-estate canonical migrate --dry-run --category preserve_alias
+python -m constellation real-estate canonical migrate --apply --assignment CANONICAL_ASSIGNMENT_ID --ready-only
+python -m constellation real-estate canonical migrate --apply --source-assignment SOURCE_ASSIGNMENT_ID
 python -m constellation real-estate canonical migrate --apply
 python -m constellation real-estate canonical export
 python -m constellation real-estate assignments --include-aliases
@@ -425,6 +433,15 @@ python -m constellation real-estate assignment show ALIAS
 ```
 
 Canonical migration is non-destructive. Dry-run inspects existing alias directories and writes a plan; apply marks alias directories as migrated and preserves rollback metadata, but does not delete source artifacts or assignment directories. Assignment commands accept canonical IDs, order IDs, loan numbers, source-generated aliases, address aliases, and previous canonical IDs when they resolve unambiguously.
+
+Scoped migration is the recommended operator path:
+
+1. Review canonical state with `python -m constellation real-estate canonical review`.
+2. Inspect ready entries with `python -m constellation real-estate canonical migrate --ready-only --list-selected`.
+3. Dry-run with `python -m constellation real-estate canonical migrate --dry-run --ready-only`.
+4. Apply only ready entries with `python -m constellation real-estate canonical migrate --apply --ready-only`.
+
+Blocked, ambiguous, and orphan entries remain in the review queue for human review.
 
 ### Source Monitoring
 

@@ -2,6 +2,17 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.2.2 - Scoped Canonical Migration
+
+- Added explicit scoped migration controls for Canonical Assignment alias directories.
+- Added `--ready-only`, `--category`, `--assignment`, `--source-assignment`, and `--list-selected` to `python -m constellation real-estate canonical migrate`.
+- Added deterministic selection and apply summaries for scoped migration.
+- Added `scoped-migration-selection.json`, `scoped-migration-selection.md`, `scoped-migration-result.json`, and `scoped-migration-result.md`.
+- Refused unsafe unscoped apply when pending migration plans contain blocked, ambiguous, or orphan entries.
+- Ensured `--ready-only` applies only `safe_merge` and `preserve_alias` entries while skipping blocked, ambiguous, orphan, and already migrated entries.
+- Preserved alias directories, source files, conflicts, and review queues without deletion or automatic conflict resolution.
+- Preserved deterministic local-only behavior with no providers, OpenAI, LLM inference, embeddings, semantic or fuzzy matching, web retrieval, Gmail, calendar integration, valuation opinions, comparable selection, adjustments, permit interpretation, or USPAP conclusions.
+
 ## 7.2.1 - Canonical Operations Hardening
 
 - Added Canonical Operations as the Real Estate operator visibility layer.

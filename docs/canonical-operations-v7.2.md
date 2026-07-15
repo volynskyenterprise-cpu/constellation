@@ -110,6 +110,66 @@ python -m constellation real-estate canonical migration-plan
 
 `review --ambiguous` shows aliases that must not be resolved automatically.
 
+## Scoped Migration Workflow
+
+v7.2.2 adds scoped canonical migration so operators can apply only migration-ready entries.
+
+Recommended workflow:
+
+1. Review the queue.
+
+```bash
+python -m constellation real-estate canonical review
+```
+
+2. List ready entries.
+
+```bash
+python -m constellation real-estate canonical migrate --ready-only --list-selected
+```
+
+3. Dry-run ready entries.
+
+```bash
+python -m constellation real-estate canonical migrate --dry-run --ready-only
+```
+
+4. Apply ready entries.
+
+```bash
+python -m constellation real-estate canonical migrate --apply --ready-only
+```
+
+5. Verify state.
+
+```bash
+python -m constellation real-estate canonical status
+python -m constellation dashboard --overwrite
+```
+
+Apply-eligible categories:
+
+- `safe_merge`
+- `preserve_alias`
+
+Never applied:
+
+- `blocked_by_conflict`
+- `ambiguous`
+- `orphan`
+- `already_migrated`
+
+If an unscoped `--apply` sees a mixed-category plan, it is refused with guidance to use `--ready-only`, `--category`, `--assignment`, or `--source-assignment`.
+
+Scoped migration writes:
+
+```text
+outputs/real-estate/canonical/scoped-migration-selection.json
+outputs/real-estate/canonical/scoped-migration-selection.md
+outputs/real-estate/canonical/scoped-migration-result.json
+outputs/real-estate/canonical/scoped-migration-result.md
+```
+
 ## Dashboard Integration
 
 The Executive Dashboard now uses Canonical Operations state for:

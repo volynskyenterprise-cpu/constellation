@@ -11,6 +11,7 @@
 - Assignment Identity Resolution is complete; future consolidation work should add human-reviewed merge/split overrides and reviewer-facing identity queues.
 - Canonical Assignment Model is complete; future Real Estate work should build Comparable Intelligence, Adjustment Intelligence, Neighborhood Intelligence, Permit Intelligence, Reviewer Intelligence, Narrative Intelligence, and the Valuation Learning Loop on canonical assignments only.
 - Canonical Operations Hardening is complete; keep status, migration-plan, dashboard, and review queue counts synchronized as future Real Estate modules are added.
+- Scoped Canonical Migration is complete; use `--ready-only` for migration-ready alias entries and leave blocked, ambiguous, and orphan entries for human review.
 - Add human-reviewed canonical assignment split/merge override notes and reviewer-facing identity queues after v7.2 stabilizes.
 - Add operator notes to canonical review queue items after manual review decisions are recorded.
 - Add deterministic MLS export parsing for Real Estate Intelligence after schema examples are supplied.

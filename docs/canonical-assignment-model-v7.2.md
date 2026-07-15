@@ -172,6 +172,12 @@ python -m constellation real-estate canonical operations
 python -m constellation real-estate canonical report
 python -m constellation real-estate canonical conflicts
 python -m constellation real-estate canonical migrate --dry-run
+python -m constellation real-estate canonical migrate --ready-only --list-selected
+python -m constellation real-estate canonical migrate --dry-run --ready-only
+python -m constellation real-estate canonical migrate --apply --ready-only
+python -m constellation real-estate canonical migrate --dry-run --category preserve_alias
+python -m constellation real-estate canonical migrate --apply --assignment CANONICAL_ASSIGNMENT_ID --ready-only
+python -m constellation real-estate canonical migrate --apply --source-assignment SOURCE_ASSIGNMENT_ID
 python -m constellation real-estate canonical migrate --apply
 python -m constellation real-estate canonical export
 ```
@@ -205,6 +211,49 @@ outputs/real-estate/canonical/review-queue.md
 ```
 
 Canonical Operations does not migrate live assignment directories automatically and does not resolve conflicts automatically.
+
+## Scoped Migration Controls
+
+v7.2.2 adds explicit migration scoping.
+
+Apply-eligible categories:
+
+- `safe_merge`
+- `preserve_alias`
+
+Never applied:
+
+- `blocked_by_conflict`
+- `ambiguous`
+- `orphan`
+- `already_migrated`
+
+Recommended command:
+
+```bash
+python -m constellation real-estate canonical migrate --apply --ready-only
+```
+
+`--ready-only` selects only `safe_merge` and `preserve_alias` entries.
+
+`--category CATEGORY` selects one category for dry-run or review. Categories that are not apply eligible are refused in apply mode.
+
+`--assignment CANONICAL_ASSIGNMENT_ID` resolves aliases before selecting entries targeting the canonical assignment.
+
+`--source-assignment SOURCE_ASSIGNMENT_ID` selects one source alias directory.
+
+`--list-selected` prints selected entries without applying them.
+
+Unsafe unscoped `--apply` is refused when the migration plan contains blocked, ambiguous, or orphan entries. If the whole pending plan contains only ready categories, unscoped apply may proceed, but scoped apply is still preferred.
+
+Scoped migration writes:
+
+```text
+outputs/real-estate/canonical/scoped-migration-selection.json
+outputs/real-estate/canonical/scoped-migration-selection.md
+outputs/real-estate/canonical/scoped-migration-result.json
+outputs/real-estate/canonical/scoped-migration-result.md
+```
 
 Assignment commands resolve aliases before operating:
 

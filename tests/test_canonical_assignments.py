@@ -126,9 +126,11 @@ class CanonicalAssignmentTests(unittest.TestCase):
         plan = engine.migration_plan()
         self.assertGreaterEqual(plan.counts["pending_migration_count"], 1)
         self.assertTrue(alias_dir.exists())
-        result = engine.migrate(apply=True)
+        result = engine.migrate(apply=True, ready_only=True)
         self.assertTrue(result.applied)
+        self.assertEqual(result.applied_count, 1)
         self.assertTrue((alias_dir / "canonical-migration.json").exists())
+        self.assertTrue((self.root / "outputs" / "real-estate" / "canonical" / "scoped-migration-result.json").exists())
         self.assertTrue(alias_dir.exists())
 
     def test_assignment_cli_resolves_alias_and_open_is_non_fatal(self) -> None:

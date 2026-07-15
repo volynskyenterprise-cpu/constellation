@@ -18,6 +18,10 @@ class CanonicalAssignmentError(RuntimeError):
     pass
 
 
+MIGRATION_CATEGORIES = {"safe_merge", "preserve_alias", "blocked_by_conflict", "ambiguous", "orphan", "already_migrated"}
+APPLY_ELIGIBLE_MIGRATION_CATEGORIES = {"safe_merge", "preserve_alias"}
+
+
 @dataclass(frozen=True)
 class CanonicalAssignmentAlias:
     alias: str
@@ -125,6 +129,68 @@ class CanonicalAssignmentMigrationResult:
 
 
 @dataclass(frozen=True)
+class CanonicalMigrationScope:
+    ready_only: bool = False
+    category: str = ""
+    canonical_assignment_id: str = ""
+    source_assignment_id: str = ""
+    dry_run: bool = True
+    apply: bool = False
+    list_selected: bool = False
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class CanonicalMigrationSelection:
+    migration_id: str
+    created_at: str
+    selected_entries: list[JsonMap]
+    skipped_entries: list[JsonMap]
+    blocked_entries: list[JsonMap]
+    invalid_entries: list[JsonMap]
+    selection_reason: str
+    scope: JsonMap
+    counts: JsonMap
+    provenance: JsonMap
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class CanonicalMigrationApplySummary:
+    migration_id: str
+    selected_count: int
+    applied_count: int
+    skipped_count: int
+    refused_count: int
+    already_migrated_count: int
+    blocked_count: int
+    ambiguous_count: int
+    orphan_count: int
+    remaining_pending_count: int
+    remaining_ready_count: int
+    remaining_blocked_count: int
+    remaining_orphan_count: int
+    backup_manifest_path: str
+    applied_entries: list[JsonMap]
+    skipped_entries: list[JsonMap]
+    refused_entries: list[JsonMap]
+    failed_entries: list[JsonMap]
+    started_at: str
+    completed_at: str
+    applied: bool
+    error: str
+    scope: JsonMap
+    provenance: JsonMap
+
+    def to_dict(self) -> JsonMap:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
 class CanonicalAssignmentSnapshot:
     snapshot_id: str
     created_at: str
@@ -177,6 +243,10 @@ class CanonicalAssignmentStore:
         self.migration_plan_md = self.directory / "canonical-migration-plan.md"
         self.migration_history_json = self.directory / "canonical-migration-history.json"
         self.backup_manifest_json = self.directory / "canonical-migration-backup-manifest.json"
+        self.scoped_selection_json = self.directory / "scoped-migration-selection.json"
+        self.scoped_selection_md = self.directory / "scoped-migration-selection.md"
+        self.scoped_result_json = self.directory / "scoped-migration-result.json"
+        self.scoped_result_md = self.directory / "scoped-migration-result.md"
         self.delta_json = self.directory / "canonical-assignment-delta.json"
         self.report_md = self.directory / "canonical-assignment-report.md"
 
@@ -215,6 +285,22 @@ class CanonicalAssignmentStore:
         migrations = _map_list(history.get("migrations", []))
         if not migrations or migrations[-1].get("migration_id") != result.migration_id or result.applied:
             migrations.append(result.to_dict())
+        write_json(self.migration_history_json, {"migrations": migrations})
+
+    def save_scoped_selection(self, selection: CanonicalMigrationSelection) -> None:
+        write_json(self.scoped_selection_json, selection.to_dict())
+        self.scoped_selection_md.parent.mkdir(parents=True, exist_ok=True)
+        self.scoped_selection_md.write_text(render_scoped_selection_markdown(selection), encoding="utf-8")
+
+    def save_scoped_result(self, summary: CanonicalMigrationApplySummary) -> None:
+        write_json(self.scoped_result_json, summary.to_dict())
+        self.scoped_result_md.parent.mkdir(parents=True, exist_ok=True)
+        self.scoped_result_md.write_text(render_scoped_result_markdown(summary), encoding="utf-8")
+        history = {"migrations": []}
+        if self.migration_history_json.exists():
+            history = read_json(self.migration_history_json)
+        migrations = _map_list(history.get("migrations", []))
+        migrations.append(summary.to_dict())
         write_json(self.migration_history_json, {"migrations": migrations})
 
     def _write_assignment_sidecars(self, snapshot: CanonicalAssignmentSnapshot) -> None:
@@ -440,37 +526,208 @@ class CanonicalAssignmentEngine:
             self.store.save_migration_plan(plan)
         return plan
 
-    def migrate(self, *, apply: bool = False) -> CanonicalAssignmentMigrationResult:
+    def select_migration_entries(
+        self,
+        *,
+        ready_only: bool = False,
+        category: str = "",
+        canonical_assignment_id: str = "",
+        source_assignment_id: str = "",
+        apply: bool = False,
+        list_selected: bool = False,
+        save: bool = True,
+    ) -> CanonicalMigrationSelection:
         plan = self.migration_plan(save=True)
-        if not apply:
-            return CanonicalAssignmentMigrationResult(plan.migration_id, False, _now_iso(), plan.actions, plan.counts, "", {"mode": "dry_run"})
+        resolved_canonical = ""
+        invalid_entries: list[JsonMap] = []
+        if category and category not in MIGRATION_CATEGORIES:
+            raise CanonicalAssignmentError(f"invalid migration category: {category}")
+        if canonical_assignment_id:
+            resolution = CanonicalAssignmentResolver(self.root).resolve(canonical_assignment_id)
+            if resolution.ambiguous:
+                raise CanonicalAssignmentError(f"ambiguous assignment alias: {canonical_assignment_id}")
+            if not resolution.resolved:
+                raise CanonicalAssignmentError(f"assignment alias did not resolve: {canonical_assignment_id}")
+            resolved_canonical = resolution.canonical_assignment_id
+        scope = CanonicalMigrationScope(
+            ready_only=ready_only,
+            category=category,
+            canonical_assignment_id=resolved_canonical,
+            source_assignment_id=source_assignment_id,
+            dry_run=not apply,
+            apply=apply,
+            list_selected=list_selected,
+        )
+        selected: list[JsonMap] = []
+        skipped: list[JsonMap] = []
+        blocked: list[JsonMap] = []
+        for entry in plan.actions:
+            item = dict(entry)
+            item["apply_eligible"] = is_migration_entry_apply_eligible(item)
+            reason = _selection_skip_reason(item, scope)
+            if reason:
+                item["selection_status"] = "skipped"
+                item["selection_reason"] = reason
+                skipped.append(item)
+                continue
+            item["selection_status"] = "selected"
+            item["selection_reason"] = _selection_reason(scope)
+            selected.append(item)
+            if not item["apply_eligible"]:
+                blocked.append(item)
+        if apply and not ready_only and not category and not resolved_canonical and not source_assignment_id:
+            non_ready = [item for item in selected if item.get("migration_category") not in APPLY_ELIGIBLE_MIGRATION_CATEGORIES and item.get("migration_category") != "already_migrated"]
+            if non_ready:
+                invalid_entries.extend(_refusal(item, "unscoped apply refused because the plan contains blocked, ambiguous, or orphan entries.") for item in non_ready)
+        counts = _selection_counts(selected, skipped, blocked, invalid_entries)
+        selection = CanonicalMigrationSelection(
+            migration_id=plan.migration_id,
+            created_at=_now_iso(),
+            selected_entries=selected,
+            skipped_entries=skipped,
+            blocked_entries=blocked,
+            invalid_entries=invalid_entries,
+            selection_reason=_selection_reason(scope),
+            scope=scope.to_dict(),
+            counts=counts,
+            provenance={"migration_plan": str(self.store.migration_plan_json), "rule": "scoped_deterministic_selection"},
+        )
+        if save:
+            self.store.save_scoped_selection(selection)
+        return selection
+
+    def migrate(
+        self,
+        *,
+        apply: bool = False,
+        ready_only: bool = False,
+        category: str = "",
+        canonical_assignment_id: str = "",
+        source_assignment_id: str = "",
+        list_selected: bool = False,
+    ) -> CanonicalMigrationApplySummary:
+        started = _now_iso()
+        selection = self.select_migration_entries(
+            ready_only=ready_only,
+            category=category,
+            canonical_assignment_id=canonical_assignment_id,
+            source_assignment_id=source_assignment_id,
+            apply=apply,
+            list_selected=list_selected,
+            save=True,
+        )
+        if not apply or list_selected:
+            summary = _apply_summary_from_selection(selection, applied=False, started_at=started, completed_at=_now_iso(), backup_manifest_path="", error="")
+            self.store.save_scoped_result(summary)
+            return summary
+        refused = list(selection.invalid_entries)
+        if refused:
+            summary = _apply_summary_from_selection(selection, applied=False, started_at=started, completed_at=_now_iso(), backup_manifest_path="", error="Scoped migration refused for safety.")
+            self.store.save_scoped_result(summary)
+            return summary
         applied_actions = []
-        for action in plan.actions:
-            category = str(action.get("migration_category") or "")
-            if category not in {"safe_merge", "preserve_alias"} or action.get("status") != "planned":
-                applied_actions.append(action)
+        skipped_entries = list(selection.skipped_entries)
+        refused_entries = []
+        failed_entries = []
+        initial_backup_manifest = {
+            "migration_id": selection.migration_id,
+            "created_at": started,
+            "scope": selection.scope,
+            "selected_entries": selection.selected_entries,
+            "applied_entries": [],
+            "refused_entries": [],
+            "failed_entries": [],
+            "deletion": "not_supported",
+            "status": "started",
+        }
+        write_json(self.store.backup_manifest_json, initial_backup_manifest)
+        for action in selection.selected_entries:
+            if not is_migration_entry_apply_eligible(action):
+                refused_entries.append(_refusal(action, "selected entry is not apply eligible"))
                 continue
             source = Path(str(action.get("source_directory")))
             target = Path(str(action.get("target_directory")))
-            target.mkdir(parents=True, exist_ok=True)
-            marker = {
-                "source_assignment_id": action.get("source_assignment_id"),
-                "target_canonical_assignment_id": action.get("target_canonical_assignment_id"),
-                "migration_id": plan.migration_id,
-                "migrated_at": _now_iso(),
-                "status": "migrated_alias_directory",
-                "note": "Alias directory preserved; future writes should target canonical directory.",
-            }
-            write_json(source / "canonical-migration.json", marker)
-            updated = dict(action)
-            updated["status"] = "already_migrated"
-            updated["migration_category"] = "already_migrated"
-            updated["action"] = "preserve_as_alias"
-            applied_actions.append(updated)
-        counts = _migration_counts(applied_actions)
-        result = CanonicalAssignmentMigrationResult(plan.migration_id, True, _now_iso(), applied_actions, counts, str(self.store.backup_manifest_json), {"mode": "apply", "deletion": "not_supported_in_v7_2_0"})
-        self.store.save_migration_result(result)
-        return result
+            try:
+                target.mkdir(parents=True, exist_ok=True)
+                marker = {
+                    "source_assignment_id": action.get("source_assignment_id"),
+                    "target_canonical_assignment_id": action.get("target_canonical_assignment_id"),
+                    "migration_id": selection.migration_id,
+                    "migrated_at": _now_iso(),
+                    "status": "migrated_alias_directory",
+                    "migration_scope": selection.scope,
+                    "note": "Alias directory preserved; future writes should target canonical directory.",
+                }
+                write_json(source / "canonical-migration.json", marker)
+                updated = dict(action)
+                updated["status"] = "already_migrated"
+                updated["migration_category"] = "already_migrated"
+                updated["action"] = "preserve_as_alias"
+                applied_actions.append(updated)
+            except Exception as exc:
+                failed = dict(action)
+                failed["failure"] = str(exc)
+                failed_entries.append(failed)
+        backup_manifest = {
+            "migration_id": selection.migration_id,
+            "created_at": started,
+            "scope": selection.scope,
+            "selected_entries": selection.selected_entries,
+            "applied_entries": applied_actions,
+            "refused_entries": refused_entries,
+            "failed_entries": failed_entries,
+            "deletion": "not_supported",
+            "status": "completed",
+        }
+        write_json(self.store.backup_manifest_json, backup_manifest)
+        self.build()
+        remaining_plan = self.migration_plan(save=True)
+        remaining_counts = remaining_plan.counts
+        apply_error = ""
+        if failed_entries:
+            apply_error = "One or more selected entries failed during marker write."
+        elif refused_entries and not applied_actions:
+            apply_error = "Selected entries are not apply eligible."
+        summary = CanonicalMigrationApplySummary(
+            migration_id=selection.migration_id,
+            selected_count=len(selection.selected_entries),
+            applied_count=len(applied_actions),
+            skipped_count=len(skipped_entries),
+            refused_count=len(refused_entries),
+            already_migrated_count=remaining_counts.get("already_migrated_count", 0),
+            blocked_count=remaining_counts.get("blocked_by_conflict_count", 0),
+            ambiguous_count=remaining_counts.get("ambiguous_count", 0),
+            orphan_count=remaining_counts.get("orphan_count", 0),
+            remaining_pending_count=remaining_counts.get("pending_migration_count", 0),
+            remaining_ready_count=remaining_counts.get("migration_ready_count", 0),
+            remaining_blocked_count=remaining_counts.get("blocked_by_conflict_count", 0),
+            remaining_orphan_count=remaining_counts.get("orphan_count", 0),
+            backup_manifest_path=str(self.store.backup_manifest_json),
+            applied_entries=applied_actions,
+            skipped_entries=skipped_entries,
+            refused_entries=refused_entries,
+            failed_entries=failed_entries,
+            started_at=started,
+            completed_at=_now_iso(),
+            applied=bool(applied_actions) and not failed_entries,
+            error=apply_error,
+            scope=selection.scope,
+            provenance={"mode": "apply", "operator_triggered": True, "deletion": "not_supported"},
+        )
+        self.store.save_scoped_result(summary)
+        try:
+            from .canonical_operations import CanonicalOperationsEngine
+
+            CanonicalOperationsEngine(self.root).build(save=True)
+        except Exception:
+            pass
+        try:
+            from .dashboard import ExecutiveDashboardStore
+
+            ExecutiveDashboardStore(self.root).generate(overwrite=True)
+        except Exception:
+            pass
+        return summary
 
     def _clusters(self) -> list[JsonMap]:
         from .assignment_consolidation import AssignmentConsolidationEngine
@@ -718,6 +975,78 @@ def render_migration_plan_markdown(plan: CanonicalAssignmentMigrationPlan) -> st
     return "\n".join(lines)
 
 
+def render_scoped_selection_markdown(selection: CanonicalMigrationSelection) -> str:
+    lines = ["# Scoped Canonical Migration Selection", "", "## Scope", ""]
+    lines.extend(f"- {key}: `{value}`" for key, value in selection.scope.items())
+    lines.extend(["", "## Counts", ""])
+    lines.extend(f"- {key}: `{value}`" for key, value in selection.counts.items())
+    for title, entries in [
+        ("Selected Entries", selection.selected_entries),
+        ("Excluded Ready Entries", [item for item in selection.skipped_entries if item.get("migration_category") in APPLY_ELIGIBLE_MIGRATION_CATEGORIES]),
+        ("Blocked Entries", [item for item in selection.skipped_entries + selection.blocked_entries if item.get("migration_category") == "blocked_by_conflict"]),
+        ("Ambiguous Entries", [item for item in selection.skipped_entries + selection.blocked_entries if item.get("migration_category") == "ambiguous"]),
+        ("Orphan Entries", [item for item in selection.skipped_entries + selection.blocked_entries if item.get("migration_category") == "orphan"]),
+        ("Already Migrated Entries", [item for item in selection.skipped_entries if item.get("migration_category") == "already_migrated"]),
+    ]:
+        lines.extend(["", f"## {title}", ""])
+        if not entries:
+            lines.append("- None")
+        for item in entries:
+            lines.append(_migration_entry_line(item))
+    lines.extend(["", "## Safety Notes", "", "- Only `safe_merge` and `preserve_alias` entries are apply eligible.", "- Blocked, ambiguous, orphan, and already migrated entries are never applied.", "- Alias directories are preserved and never deleted.", "", "## Provenance", ""])
+    lines.extend(f"- {key}: `{value}`" for key, value in selection.provenance.items())
+    lines.append("")
+    return "\n".join(lines)
+
+
+def render_scoped_result_markdown(summary: CanonicalMigrationApplySummary) -> str:
+    lines = [
+        "# Scoped Canonical Migration Result",
+        "",
+        "## Executive Summary",
+        "",
+        f"- migration_id: `{summary.migration_id}`",
+        f"- applied: `{summary.applied}`",
+        f"- selected_count: `{summary.selected_count}`",
+        f"- applied_count: `{summary.applied_count}`",
+        f"- skipped_count: `{summary.skipped_count}`",
+        f"- refused_count: `{summary.refused_count}`",
+        f"- remaining_pending_count: `{summary.remaining_pending_count}`",
+        f"- remaining_ready_count: `{summary.remaining_ready_count}`",
+        f"- error: `{summary.error}`",
+        "",
+        "## Scope Applied",
+        "",
+    ]
+    lines.extend(f"- {key}: `{value}`" for key, value in summary.scope.items())
+    for title, entries in [
+        ("Applied Entries", summary.applied_entries),
+        ("Skipped Entries", summary.skipped_entries),
+        ("Refused Entries", summary.refused_entries),
+        ("Failures", summary.failed_entries),
+    ]:
+        lines.extend(["", f"## {title}", ""])
+        if not entries:
+            lines.append("- None")
+        for item in entries:
+            lines.append(_migration_entry_line(item))
+    lines.extend(["", "## Backup Manifest", "", f"- `{summary.backup_manifest_path or 'not created'}`", "", "## Remaining Migration State", ""])
+    for key in ["remaining_pending_count", "remaining_ready_count", "remaining_blocked_count", "remaining_orphan_count", "already_migrated_count"]:
+        lines.append(f"- {key}: `{getattr(summary, key)}`")
+    lines.extend(["", "## Safety Notes", "", "- No alias directories are deleted.", "- Blocked, ambiguous, orphan, and already migrated entries are not applied.", "- No conflicts are resolved automatically.", "", "## Provenance", ""])
+    lines.extend(f"- {key}: `{value}`" for key, value in summary.provenance.items())
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _migration_entry_line(item: JsonMap) -> str:
+    return (
+        f"- `{item.get('source_assignment_id')}` -> `{item.get('target_canonical_assignment_id')}` "
+        f"category={item.get('migration_category')} action={item.get('action')} status={item.get('status')} "
+        f"risk={item.get('risk_level')} reason={item.get('selection_reason') or item.get('reason', '')}"
+    )
+
+
 def _aliases_for_cluster(cluster: JsonMap) -> list[CanonicalAssignmentAlias]:
     canonical_id = str(cluster.get("canonical_assignment_id") or "")
     rows = []
@@ -767,6 +1096,105 @@ def _alias_keys(value: str) -> set[str]:
         keys.add(normalized_address)
         keys.add(_safe_id(normalized_address))
     return {item for item in keys if item}
+
+
+def is_migration_entry_apply_eligible(entry: JsonMap) -> bool:
+    return str(entry.get("migration_category") or "") in APPLY_ELIGIBLE_MIGRATION_CATEGORIES and str(entry.get("status") or "") == "planned"
+
+
+def _selection_skip_reason(entry: JsonMap, scope: CanonicalMigrationScope) -> str:
+    category = str(entry.get("migration_category") or "")
+    if scope.ready_only and category not in APPLY_ELIGIBLE_MIGRATION_CATEGORIES:
+        return "excluded by ready_only scope"
+    if scope.category and category != scope.category:
+        return f"excluded by category scope `{scope.category}`"
+    if scope.canonical_assignment_id and str(entry.get("target_canonical_assignment_id") or "") != scope.canonical_assignment_id:
+        return f"excluded by assignment scope `{scope.canonical_assignment_id}`"
+    if scope.source_assignment_id and str(entry.get("source_assignment_id") or "") != scope.source_assignment_id:
+        return f"excluded by source assignment scope `{scope.source_assignment_id}`"
+    if scope.apply and category == "already_migrated":
+        return "already migrated entries are never reapplied"
+    return ""
+
+
+def _selection_reason(scope: CanonicalMigrationScope) -> str:
+    parts = []
+    if scope.ready_only:
+        parts.append("ready_only")
+    if scope.category:
+        parts.append(f"category={scope.category}")
+    if scope.canonical_assignment_id:
+        parts.append(f"assignment={scope.canonical_assignment_id}")
+    if scope.source_assignment_id:
+        parts.append(f"source_assignment={scope.source_assignment_id}")
+    if not parts:
+        parts.append("all migration entries")
+    return ", ".join(parts)
+
+
+def _selection_counts(selected: list[JsonMap], skipped: list[JsonMap], blocked: list[JsonMap], invalid: list[JsonMap]) -> JsonMap:
+    all_entries = selected + skipped
+    counts = _migration_counts(all_entries)
+    counts.update(
+        {
+            "selected_count": len(selected),
+            "eligible_count": sum(1 for item in selected if item.get("apply_eligible")),
+            "skipped_count": len(skipped),
+            "refused_count": len(blocked) + len(invalid),
+            "blocked_count": sum(1 for item in all_entries if item.get("migration_category") == "blocked_by_conflict"),
+            "orphan_count": sum(1 for item in all_entries if item.get("migration_category") == "orphan"),
+            "ambiguous_count": sum(1 for item in all_entries if item.get("migration_category") == "ambiguous"),
+            "already_migrated_count": sum(1 for item in all_entries if item.get("migration_category") == "already_migrated"),
+        }
+    )
+    return counts
+
+
+def _refusal(entry: JsonMap, reason: str) -> JsonMap:
+    item = dict(entry)
+    item["refusal_reason"] = reason
+    item["selection_status"] = "refused"
+    return item
+
+
+def _apply_summary_from_selection(
+    selection: CanonicalMigrationSelection,
+    *,
+    applied: bool,
+    started_at: str,
+    completed_at: str,
+    backup_manifest_path: str,
+    error: str,
+    extra_refused: list[JsonMap] | None = None,
+) -> CanonicalMigrationApplySummary:
+    refused = list(selection.blocked_entries) + list(selection.invalid_entries) + list(extra_refused or [])
+    counts = selection.counts
+    return CanonicalMigrationApplySummary(
+        migration_id=selection.migration_id,
+        selected_count=len(selection.selected_entries),
+        applied_count=0,
+        skipped_count=len(selection.skipped_entries),
+        refused_count=len(refused),
+        already_migrated_count=counts.get("already_migrated_count", 0),
+        blocked_count=counts.get("blocked_count", 0),
+        ambiguous_count=counts.get("ambiguous_count", 0),
+        orphan_count=counts.get("orphan_count", 0),
+        remaining_pending_count=counts.get("pending_migration_count", 0),
+        remaining_ready_count=counts.get("migration_ready_count", 0),
+        remaining_blocked_count=counts.get("blocked_count", 0),
+        remaining_orphan_count=counts.get("orphan_count", 0),
+        backup_manifest_path=backup_manifest_path,
+        applied_entries=[],
+        skipped_entries=selection.skipped_entries,
+        refused_entries=refused,
+        failed_entries=[],
+        started_at=started_at,
+        completed_at=completed_at,
+        applied=applied,
+        error=error,
+        scope=selection.scope,
+        provenance={"mode": "dry_run" if not applied else "apply", "deletion": "not_supported"},
+    )
 
 
 def _migration_counts(actions: list[JsonMap]) -> JsonMap:
