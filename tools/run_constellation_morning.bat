@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal EnableDelayedExpansion
 
 for %%I in ("%~dp0..") do set "REPO=%%~fI"
 
@@ -28,8 +28,22 @@ if "%EXIT_CODE%"=="0" (
     if errorlevel 1 (
         echo Review launch warning: VS Code command not available.>> "%LOGFILE%"
     ) else (
-        start "" code -r "%REPO%\outputs\ai-markets\briefings\morning-brief.md" "%REPO%\outputs\performance\learning-loop.md"
-        echo Review files launched in VS Code.>> "%LOGFILE%"
+        set "REAL_ESTATE_DAILY=%REPO%\outputs\real-estate\daily\latest-real-estate-daily-run.json"
+        set "REAL_ESTATE_REPORT=%REPO%\outputs\real-estate\daily\real-estate-daily-report.md"
+        set "REAL_ESTATE_REVIEW=%REPO%\outputs\real-estate\canonical\review-queue.md"
+        set "OPEN_REAL_ESTATE="
+        if exist "!REAL_ESTATE_DAILY!" (
+            for /f "usebackq delims=" %%S in (`powershell -NoProfile -Command "$p='!REAL_ESTATE_DAILY!'; try { $j=Get-Content -LiteralPath $p -Raw | ConvertFrom-Json; if (($j.artifacts_imported + $j.artifacts_updated + $j.canonical_assignments_created + $j.canonical_assignments_updated + $j.assignments_built + $j.review_item_count + $j.warning_count + $j.error_count) -gt 0) { 'yes' } else { 'no' } } catch { 'no' }"`) do set "OPEN_REAL_ESTATE=%%S"
+        )
+        if /I "!OPEN_REAL_ESTATE!"=="yes" (
+            start "" code -r "%REPO%\outputs\ai-markets\briefings\morning-brief.md" "%REPO%\outputs\performance\learning-loop.md" "!REAL_ESTATE_REPORT!" "!REAL_ESTATE_REVIEW!"
+            echo Review files launched in VS Code.>> "%LOGFILE%"
+            echo Review files launched in VS Code including Real Estate daily outputs.>> "%LOGFILE%"
+        ) else (
+            start "" code -r "%REPO%\outputs\ai-markets\briefings\morning-brief.md" "%REPO%\outputs\performance\learning-loop.md"
+            echo Review files launched in VS Code.>> "%LOGFILE%"
+            echo Review files launched in VS Code; Real Estate daily outputs skipped because no review activity was detected.>> "%LOGFILE%"
+        )
     )
 ) else (
     echo Status: FAILED>> "%LOGFILE%"

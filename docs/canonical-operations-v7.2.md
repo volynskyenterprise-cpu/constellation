@@ -182,6 +182,23 @@ Migration planning still scans migrated aliases with an explicit inclusive mode 
 - blocked and orphan review queues
 - no alias directory deletion
 
+## Real Estate Daily Automation
+
+v7.2.4 adds Canonical Operations refresh to the Real Estate Daily Automation loop.
+
+`python -m constellation real-estate daily` runs intake, consolidation, canonical refresh, affected Assignment Intelligence builds, Canonical Operations refresh, and dashboard refresh.
+
+The daily loop reads Canonical Operations state to report:
+
+- migrated aliases detected
+- blocked migrations
+- orphan artifacts
+- true assignment conflicts
+- missing critical assignments
+- review queue count
+
+It never applies migration. Operators must still use scoped commands such as `real-estate canonical migrate --apply --ready-only` when they intentionally want to mark ready alias directories.
+
 ## Dashboard Integration
 
 The Executive Dashboard now uses Canonical Operations state for:

@@ -30,6 +30,7 @@ from .thesis_accuracy import ThesisAccuracyError, ThesisAccuracyStore
 from .prompts import PromptUnavailable
 from .real_estate_intake import RealEstateIntakeEngine, RealEstateIntakeError, RealEstateIntakeStore
 from .real_estate import RealEstateAssignmentStore, RealEstateError
+from .real_estate_daily import RealEstateDailyEngine, RealEstateDailyError, RealEstateDailyStore
 from .reports import InstitutionalResearchReportError, InstitutionalResearchReportStore, report_summary
 from .research import ResearchError, ResearchOrganization
 from .source_monitor import SourceMonitorError, SourceMonitorStore
@@ -343,6 +344,15 @@ def main(argv: list[str] | None = None) -> int:
     real_estate_parser = subparsers.add_parser("real-estate", help="Build and inspect deterministic Real Estate Intelligence.")
     real_estate_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
     real_estate_subparsers = real_estate_parser.add_subparsers(dest="real_estate_command", required=True)
+    real_estate_daily_parser = real_estate_subparsers.add_parser("daily", help="Run or inspect deterministic Real Estate Daily Automation.")
+    real_estate_daily_parser.add_argument("--overwrite", action="store_true", help="Overwrite latest Real Estate daily outputs.")
+    real_estate_daily_parser.add_argument("--open", action="store_true", dest="open_daily", help="Open review files in VS Code when activity or review items exist.")
+    real_estate_daily_parser.add_argument("--no-open", action="store_true", help="Do not open review files.")
+    real_estate_daily_parser.add_argument("--full-refresh", action="store_true", help="Rebuild Assignment Intelligence for all canonical assignments.")
+    real_estate_daily_subparsers = real_estate_daily_parser.add_subparsers(dest="real_estate_daily_command")
+    real_estate_daily_subparsers.add_parser("status", help="Show latest Real Estate daily status.")
+    real_estate_daily_subparsers.add_parser("history", help="List Real Estate daily run history.")
+    real_estate_daily_subparsers.add_parser("export", help="Print Real Estate daily output paths.")
     real_estate_assignments_parser = real_estate_subparsers.add_parser("assignments", help="List canonical Real Estate assignments.")
     real_estate_assignments_parser.add_argument("--include-aliases", action="store_true", help="Show aliases grouped under each canonical assignment.")
     real_estate_assignment_parser = real_estate_subparsers.add_parser("assignment", help="Build and inspect one Real Estate assignment.")
@@ -1445,6 +1455,43 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "real-estate":
         store = RealEstateAssignmentStore(args.root.resolve())
         try:
+            if args.real_estate_command == "daily":
+                daily_store = RealEstateDailyStore(args.root.resolve())
+                if args.real_estate_daily_command == "status":
+                    latest = daily_store.load()
+                    if not latest:
+                        print("available: False")
+                        print(f"latest_run: {daily_store.latest_json}")
+                        return 0
+                    print("available: True")
+                    _print_real_estate_daily_run(latest)
+                    return 0
+                if args.real_estate_daily_command == "history":
+                    history = daily_store.history()
+                    if not history:
+                        print("No Real Estate daily runs found.")
+                        return 0
+                    for run in history:
+                        print(
+                            f"{run.get('run_id')} status={run.get('status')} "
+                            f"imported={run.get('artifacts_imported', 0)} updated={run.get('artifacts_updated', 0)} "
+                            f"built={run.get('assignments_built', 0)} review_items={run.get('review_item_count', 0)} "
+                            f"completed_at={run.get('completed_at', '')}"
+                        )
+                    return 0
+                if args.real_estate_daily_command == "export":
+                    print(f"latest_run: {daily_store.latest_json}")
+                    print(f"daily_report: {daily_store.report_md}")
+                    print(f"history: {daily_store.history_json}")
+                    print(f"delta: {daily_store.delta_json}")
+                    return 0
+                run = RealEstateDailyEngine(args.root.resolve()).run(
+                    overwrite=bool(args.overwrite),
+                    open_review=bool(args.open_daily and not args.no_open),
+                    full_refresh=bool(args.full_refresh),
+                )
+                _print_real_estate_daily_run(run.to_dict())
+                return 0 if run.status in {"completed", "completed_with_warnings"} else 1
             if args.real_estate_command == "intake":
                 engine = RealEstateIntakeEngine(args.root.resolve())
                 intake_store = RealEstateIntakeStore(args.root.resolve())
@@ -1767,7 +1814,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"source_manifest: {store.output_dir(assignment_id) / 'source-manifest.md'}")
                 print(f"evidence_index: {store.output_dir(assignment_id) / 'evidence-index.md'}")
                 return 0
-        except (RealEstateError, RealEstateIntakeError, AssignmentConsolidationError, CanonicalAssignmentError, CanonicalOperationsError) as exc:
+        except (RealEstateError, RealEstateDailyError, RealEstateIntakeError, AssignmentConsolidationError, CanonicalAssignmentError, CanonicalOperationsError) as exc:
             print(f"error: {exc}")
             return 1
     return 2
@@ -1905,6 +1952,30 @@ def _print_real_estate_intake_status(status) -> None:
     print(f"skipped_duplicate_count: {status.get('skipped_duplicate_count', 0)}")
     print(f"error_count: {status.get('error_count', 0)}")
     print(f"manifest_path: {status.get('manifest_path')}")
+
+
+def _print_real_estate_daily_run(run) -> None:
+    output_paths = _map(run.get("output_paths"))
+    print(f"run_id: {run.get('run_id', '')}")
+    print(f"status: {run.get('status', 'unavailable')}")
+    print(f"intake_candidates: {run.get('intake_candidates', 0)}")
+    print(f"artifacts_imported: {run.get('artifacts_imported', 0)}")
+    print(f"artifacts_updated: {run.get('artifacts_updated', 0)}")
+    print(f"duplicates_skipped: {run.get('duplicate_artifacts_skipped', 0)}")
+    print(f"canonical_assignments_created: {run.get('canonical_assignments_created', 0)}")
+    print(f"canonical_assignments_updated: {run.get('canonical_assignments_updated', 0)}")
+    print(f"assignments_built: {run.get('assignments_built', 0)}")
+    print(f"aliases_resolved: {run.get('aliases_resolved', 0)}")
+    print(f"migrated_aliases_detected: {run.get('migrated_aliases_detected', 0)}")
+    print(f"blocked_migrations: {run.get('blocked_migrations', 0)}")
+    print(f"orphan_artifacts: {run.get('orphan_artifacts', 0)}")
+    print(f"true_conflicts: {run.get('true_conflicts', 0)}")
+    print(f"missing_critical_assignments: {run.get('missing_critical_assignments', 0)}")
+    print(f"review_item_count: {run.get('review_item_count', 0)}")
+    print(f"warnings: {run.get('warning_count', 0)}")
+    print(f"errors: {run.get('error_count', 0)}")
+    print(f"daily_report: {output_paths.get('daily_report', '')}")
+    print(f"review_queue: {output_paths.get('review_queue', '')}")
 
 
 def _print_real_estate_intake_manifest(manifest, dashboard_refreshed: bool) -> None:

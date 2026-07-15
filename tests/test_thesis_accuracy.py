@@ -102,7 +102,7 @@ class ThesisAccuracyTests(unittest.TestCase):
             self.assertTrue(dashboard.thesis_accuracy_summary["thesis_accuracy_available"])
             self.assertIn("average_accuracy_score", dashboard.thesis_accuracy_summary)
 
-    def test_workflow_integration_adds_nineteenth_morning_step(self) -> None:
+    def test_workflow_integration_adds_twentieth_morning_step(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             _create_minimal_tree(root)
@@ -112,7 +112,7 @@ class ThesisAccuracyTests(unittest.TestCase):
             run = WorkflowStore(root).run("Morning")
             commands = [step["command"] for step in run.executed_steps]
 
-            self.assertEqual(len(commands), 19)
+            self.assertEqual(len(commands), 20)
             self.assertEqual(commands[-1], "performance thesis")
             self.assertIn("Thesis Accuracy", (root / "outputs" / "workflows" / "workflow-report.md").read_text(encoding="utf-8"))
 

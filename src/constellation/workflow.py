@@ -21,6 +21,7 @@ from .memory import InstitutionalMemoryStore
 from .models import JsonMap
 from .morning import MorningExecutiveStore
 from .performance import PerformanceIntelligenceStore
+from .real_estate_daily import RealEstateDailyEngine
 from .thesis_accuracy import ThesisAccuracyStore
 from .research import ResearchError, ResearchOrganization, SUPPORTED_RESEARCH_INPUTS
 from .reports import InstitutionalResearchReportStore
@@ -164,6 +165,7 @@ class WorkflowEngine:
             "ai-markets brief": self._ai_markets_brief,
             "performance": self._performance,
             "performance thesis": self._performance_thesis,
+            "real-estate daily": self._real_estate_daily,
         }
 
     def run(self, definition: WorkflowDefinition) -> WorkflowRun:
@@ -323,6 +325,32 @@ class WorkflowEngine:
     def _dashboard(self, arguments: JsonMap) -> JsonMap:
         dashboard = ExecutiveDashboardStore(self.root).generate(overwrite=bool(arguments.get("overwrite", False)))
         return {"status": "completed", "dashboard_id": dashboard.dashboard_id}
+
+    def _real_estate_daily(self, arguments: JsonMap) -> JsonMap:
+        run = RealEstateDailyEngine(self.root).run(
+            overwrite=bool(arguments.get("overwrite", True)),
+            full_refresh=bool(arguments.get("full_refresh", False)),
+        )
+        return {
+            "status": run.status,
+            "real_estate_daily_run_id": run.run_id,
+            "intake_candidates": run.intake_candidates,
+            "artifacts_imported": run.artifacts_imported,
+            "artifacts_updated": run.artifacts_updated,
+            "canonical_assignments_created": run.canonical_assignments_created,
+            "canonical_assignments_updated": run.canonical_assignments_updated,
+            "assignments_built": run.assignments_built,
+            "aliases_resolved": run.aliases_resolved,
+            "migrated_aliases_detected": run.migrated_aliases_detected,
+            "blocked_migrations": run.blocked_migrations,
+            "orphan_artifacts": run.orphan_artifacts,
+            "true_conflicts": run.true_conflicts,
+            "review_item_count": run.review_item_count,
+            "warning_count": run.warning_count,
+            "error_count": run.error_count,
+            "daily_report_path": run.output_paths.get("daily_report", ""),
+            "review_queue_path": run.output_paths.get("review_queue", ""),
+        }
 
     def _report_latest(self, arguments: JsonMap) -> JsonMap:
         report = InstitutionalResearchReportStore(self.root).generate()
@@ -600,6 +628,35 @@ def render_workflow_report(run: WorkflowRun) -> str:
                 "",
             ]
         )
+    real_estate_steps = [step for step in run.executed_steps if step.get("command") == "real-estate daily"]
+    if real_estate_steps:
+        details = _map(real_estate_steps[-1].get("details"))
+        lines.extend(
+            [
+                "",
+                "## Real Estate Daily Automation",
+                "",
+                f"- Real Estate daily run ID: `{details.get('real_estate_daily_run_id', '')}`",
+                f"- Status: `{details.get('status', '')}`",
+                f"- Intake candidates: {details.get('intake_candidates', 0)}",
+                f"- Imported artifacts: {details.get('artifacts_imported', 0)}",
+                f"- Updated artifacts: {details.get('artifacts_updated', 0)}",
+                f"- Canonical assignments created: {details.get('canonical_assignments_created', 0)}",
+                f"- Canonical assignments updated: {details.get('canonical_assignments_updated', 0)}",
+                f"- Assignments built: {details.get('assignments_built', 0)}",
+                f"- Aliases resolved: {details.get('aliases_resolved', 0)}",
+                f"- Migrated aliases detected: {details.get('migrated_aliases_detected', 0)}",
+                f"- Blocked migrations: {details.get('blocked_migrations', 0)}",
+                f"- Orphan artifacts: {details.get('orphan_artifacts', 0)}",
+                f"- True conflicts: {details.get('true_conflicts', 0)}",
+                f"- Review items: {details.get('review_item_count', 0)}",
+                f"- Warnings: {details.get('warning_count', 0)}",
+                f"- Errors: {details.get('error_count', 0)}",
+                f"- Daily report: `{details.get('daily_report_path', '')}`",
+                f"- Review queue: `{details.get('review_queue_path', '')}`",
+                "",
+            ]
+        )
     report_steps = [step for step in run.executed_steps if step.get("command") == "report latest"]
     if report_steps:
         details = _map(report_steps[-1].get("details"))
@@ -746,6 +803,7 @@ def _built_in_workflows() -> list[WorkflowDefinition]:
                 _step("Google Drive Sync", "drive sync", {}, continue_on_failure=True),
                 _step("Intake Import", "intake import"),
                 _step("Research Auto Processing", "process research"),
+                _step("Real Estate Daily Automation", "real-estate daily", {"overwrite": True}),
                 _step("Cross Document Analysis", "graph analyze", {"overwrite": True}),
                 _step("Thesis Generation", "thesis generate", {"overwrite": True}),
                 _step("Thesis Intelligence Build", "thesis build"),

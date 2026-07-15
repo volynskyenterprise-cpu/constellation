@@ -350,6 +350,7 @@ _MORNING_COMMANDS = [
     "drive sync",
     "intake import",
     "process research",
+    "real-estate daily",
     "graph analyze",
     "thesis generate",
     "thesis build",

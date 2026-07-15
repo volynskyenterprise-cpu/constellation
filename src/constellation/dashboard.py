@@ -36,6 +36,7 @@ EXPECTED_ARTIFACTS = {
     "ai_markets": Path("outputs/ai-markets/ai-markets.json"),
     "performance": Path("outputs/performance/performance-intelligence.json"),
     "thesis_accuracy": Path("outputs/performance/thesis-accuracy.json"),
+    "real_estate_daily": Path("outputs/real-estate/daily/latest-real-estate-daily-run.json"),
 }
 
 
@@ -152,6 +153,7 @@ class ExecutiveDashboardBuilder:
         ai_markets = _map(artifacts.get("ai_markets"))
         performance = _map(artifacts.get("performance"))
         thesis_accuracy = _map(artifacts.get("thesis_accuracy"))
+        real_estate_daily = _map(artifacts.get("real_estate_daily"))
         theses = _map_list(thesis_store.get("theses", []))
         graph_nodes = _map_list(evidence_graph.get("nodes", []))
         graph_edges = _map_list(evidence_graph.get("edges", []))
@@ -174,6 +176,7 @@ class ExecutiveDashboardBuilder:
         real_estate_summary.update(_real_estate_intake_summary(_read_optional_json(self.root / "outputs" / "real-estate" / "intake" / "latest-intake.json")))
         real_estate_summary.update(_real_estate_consolidation_summary(_read_optional_json(self.root / "outputs" / "real-estate" / "consolidation" / "assignment-clusters.json")))
         real_estate_summary.update(_real_estate_canonical_summary(self.root))
+        real_estate_summary.update(_real_estate_daily_summary(real_estate_daily))
         connector_warning_summary = _connector_warning_summary(daily_run, workflow)
         risks_gaps = _risks_gaps(morning, theses)
         actions = _actions(morning, status, risks_gaps)
@@ -195,11 +198,12 @@ class ExecutiveDashboardBuilder:
             "theses_needing_review": thesis_accuracy_summary.get("needs_review_count"),
             "active_real_estate_assignments": real_estate_summary.get("active_assignment_count", 0),
             "real_estate_missing_items": real_estate_summary.get("total_missing_item_count", 0),
+            "real_estate_daily_status": real_estate_summary.get("daily_run_status", "unavailable"),
             "connector_warning_count": connector_warning_summary.get("connector_warning_count"),
             "next_files_to_inspect": [item["path"] for item in key_files[:5]],
         }
         dashboard = ExecutiveDashboard(
-            dashboard_id=_dashboard_id(daily_run, morning, snapshot, evidence_graph, thesis_store, intake, drive, monitor, workflow, evolution, report, ai_markets, performance, thesis_accuracy),
+            dashboard_id=_dashboard_id(daily_run, morning, snapshot, evidence_graph, thesis_store, intake, drive, monitor, workflow, evolution, report, ai_markets, performance, thesis_accuracy, real_estate_daily),
             created_at=created_at,
             version=__version__,
             executive_summary=executive_summary,
@@ -763,6 +767,27 @@ def _real_estate_canonical_summary(root: Path) -> JsonMap:
             for item in top
         ],
         "latest_assignment_brief_paths": [str(Path("outputs/real-estate/assignments") / str(item.get("canonical_assignment_id")) / "assignment-brief.md") for item in top],
+    }
+
+
+def _real_estate_daily_summary(data: JsonMap) -> JsonMap:
+    summary = _map(data.get("summary"))
+    return {
+        "daily_run_available": bool(data),
+        "daily_run_id": data.get("run_id", ""),
+        "daily_run_status": summary.get("status", data.get("status", "unavailable")),
+        "daily_run_started_at": data.get("started_at", ""),
+        "daily_run_completed_at": data.get("completed_at", ""),
+        "daily_intake_candidates": summary.get("intake_candidates", data.get("intake_candidates", 0)),
+        "daily_artifacts_imported": summary.get("artifacts_imported", data.get("artifacts_imported", 0)),
+        "daily_artifacts_updated": summary.get("artifacts_updated", data.get("artifacts_updated", 0)),
+        "daily_canonical_assignments_created": summary.get("canonical_assignments_created", data.get("canonical_assignments_created", 0)),
+        "daily_canonical_assignments_updated": summary.get("canonical_assignments_updated", data.get("canonical_assignments_updated", 0)),
+        "daily_assignments_built": summary.get("assignments_built", data.get("assignments_built", 0)),
+        "daily_review_item_count": summary.get("review_item_count", data.get("review_item_count", 0)),
+        "daily_warning_count": summary.get("warning_count", data.get("warning_count", 0)),
+        "daily_error_count": summary.get("error_count", data.get("error_count", 0)),
+        "daily_report_path": _map(data.get("output_paths")).get("daily_report", "outputs/real-estate/daily/real-estate-daily-report.md"),
     }
 
 

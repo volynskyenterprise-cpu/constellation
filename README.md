@@ -408,6 +408,17 @@ v7.2.2 adds scoped canonical migration controls. Use `--ready-only` to apply onl
 
 v7.2.3 fixes post-migration count integrity. A directory with a valid `canonical-migration.json` marker is treated as `migrated_alias`: preserved on disk and counted in migration audit state, but excluded from normal canonical assignment and source-artifact discovery. Repeated canonical refreshes must not inflate assignment, artifact, or alias counts.
 
+v7.2.4 adds Real Estate Daily Automation to the Morning workflow. The daily loop runs deterministic Real Estate intake, Assignment Consolidation, Canonical Assignment refresh, affected Assignment Intelligence builds, Canonical Operations, and dashboard refresh. It writes `outputs/real-estate/daily/latest-real-estate-daily-run.json` and `outputs/real-estate/daily/real-estate-daily-report.md`, and it does not apply migration, resolve conflicts, generate valuation opinions, select comparables, create adjustments, interpret permits, or make USPAP conclusions.
+
+```bash
+python -m constellation real-estate daily
+python -m constellation real-estate daily status
+python -m constellation real-estate daily history
+python -m constellation real-estate daily export
+```
+
+The scheduled Morning launcher opens Real Estate daily review files only when Real Estate activity, warnings, errors, or review queue items exist. VS Code launch failures are logged without failing the Morning workflow.
+
 ```bash
 python -m constellation real-estate canonical status
 python -m constellation real-estate canonical assignments

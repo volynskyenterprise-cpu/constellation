@@ -222,6 +222,23 @@ A migrated alias directory is classified as `migrated_alias`. It remains on disk
 
 This patch does not delete alias directories, remove markers, roll back migrations, resolve conflicts, or alter valuation logic.
 
+## v7.2.4 Implementation - Real Estate Daily Automation
+
+Real Estate Daily Automation adds the Real Estate operating loop to the scheduled Morning workflow.
+
+The daily loop runs deterministic Real Estate intake, Assignment Consolidation refresh, Canonical Assignment refresh, Assignment Intelligence builds for affected canonical assignments, Canonical Operations refresh, and dashboard refresh.
+
+It writes:
+
+```text
+outputs/real-estate/daily/latest-real-estate-daily-run.json
+outputs/real-estate/daily/real-estate-daily-report.md
+outputs/real-estate/daily/real-estate-daily-history.json
+outputs/real-estate/daily/real-estate-daily-delta.json
+```
+
+It does not apply migration, resolve conflicts automatically, delete alias directories, generate valuation opinions, select comparables, create adjustments, interpret permits, or make USPAP conclusions.
+
 ## 5. Institutional Valuation Operating System
 
 Real Estate Intelligence should operate as an institutional layer around the appraisal workflow.

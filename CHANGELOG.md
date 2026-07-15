@@ -2,6 +2,15 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.2.4 - Real Estate Daily Automation
+
+- Added deterministic Real Estate Daily Automation as a scheduled Morning workflow stage.
+- Added `python -m constellation real-estate daily`, `status`, `history`, and `export` commands.
+- Added Real Estate daily outputs under `outputs/real-estate/daily/` with latest run JSON, Markdown report, history, and delta artifacts.
+- Integrated Real Estate daily status and activity counts into the Executive Dashboard and Workflow Automation report.
+- Updated `tools/run_constellation_morning.bat` to conditionally open Real Estate daily review files when activity, warnings, errors, or review items exist.
+- Preserved deterministic local-only behavior with no providers, OpenAI, LLM inference, embeddings, semantic or fuzzy matching, web retrieval, Gmail, calendar integration, valuation opinions, comparable selection, adjustments, permit interpretation, live migration, or USPAP conclusions.
+
 ## 7.2.3 - Post-Migration Canonical Count Integrity
 
 - Fixed post-migration canonical refresh so migrated alias directories remain aliases and do not inflate canonical assignment, artifact, or alias counts.
