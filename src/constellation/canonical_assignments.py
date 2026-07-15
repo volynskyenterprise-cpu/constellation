@@ -11,7 +11,7 @@ from typing import Any
 
 from .io import read_json, write_json
 from .models import JsonMap
-from .real_estate import RealEstateAssignmentStore, assignment_directory
+from .real_estate import RealEstateAssignmentStore, assignment_directory, load_alias_migration_marker
 
 
 class CanonicalAssignmentError(RuntimeError):
@@ -356,6 +356,18 @@ class CanonicalAssignmentResolver:
         if len(by_canonical) > 1:
             return CanonicalAssignmentResolution(alias, False, "", "ambiguous", True, matches, [{"rule": "ambiguous_alias_index_match", "alias_keys": sorted(keys)}])
         assignment_dir = assignment_directory(self.root, _safe_id(alias))
+        marker = load_alias_migration_marker(assignment_dir)
+        marker_target = str(marker.get("target_canonical_assignment_id") or "")
+        if marker_target:
+            return CanonicalAssignmentResolution(
+                alias,
+                True,
+                marker_target,
+                "migrated_alias_directory",
+                False,
+                [],
+                [{"rule": "migrated_alias_marker", "directory_role": "migrated_alias", "marker": marker}],
+            )
         if allow_directory_fallback and assignment_dir.exists():
             return CanonicalAssignmentResolution(alias, True, assignment_dir.name, "canonical_assignment_id", False, [], [{"rule": "assignment_directory_exists"}])
         return CanonicalAssignmentResolution(alias, False, "", "", False, [], [{"rule": "no_deterministic_alias_match", "alias_keys": sorted(keys)}])
@@ -487,7 +499,7 @@ class CanonicalAssignmentEngine:
         assignments_by_id = {str(item.get("canonical_assignment_id") or ""): item for item in self.store.load_assignments()}
         store = RealEstateAssignmentStore(self.root)
         actions = []
-        for assignment_id in store.list_assignment_ids():
+        for assignment_id in store.list_assignment_ids(include_migrated_aliases=True):
             directory = store.assignment_root() / assignment_id
             if assignment_id in canonical_ids:
                 continue
@@ -502,9 +514,8 @@ class CanonicalAssignmentEngine:
                 continue
             if len(matches_by_canonical) == 1:
                 target, match = next(iter(matches_by_canonical.items()))
-                marker = directory / "canonical-migration.json"
                 target_assignment = _map(assignments_by_id.get(target))
-                if marker.exists():
+                if load_alias_migration_marker(directory):
                     category = "already_migrated"
                     action = "preserve_as_alias"
                     status = "already_migrated"

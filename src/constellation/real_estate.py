@@ -295,11 +295,18 @@ class RealEstateAssignmentStore:
         config = _read_assignment_config(self.root)
         return self.root / str(config.get("default_root") or "real-estate/assignments")
 
-    def list_assignment_ids(self) -> list[str]:
+    def list_assignment_ids(self, *, include_migrated_aliases: bool = False) -> list[str]:
         root = self.assignment_root()
         if not root.exists():
             return []
-        return sorted(path.name for path in root.iterdir() if path.is_dir() and (path / "assignment.yaml").exists())
+        ids = []
+        for path in root.iterdir():
+            if not path.is_dir() or not (path / "assignment.yaml").exists():
+                continue
+            if not include_migrated_aliases and is_migrated_alias_directory(path):
+                continue
+            ids.append(path.name)
+        return sorted(ids)
 
     def output_dir(self, assignment_id: str) -> Path:
         return self.root / "outputs" / "real-estate" / "assignments" / assignment_id
@@ -383,6 +390,31 @@ class RealEstateAssignmentStore:
 def assignment_directory(root: Path, assignment_id: str) -> Path:
     config = _read_assignment_config(root)
     return root / str(config.get("default_root") or "real-estate/assignments") / assignment_id
+
+
+def load_alias_migration_marker(directory: Path) -> JsonMap:
+    marker = directory / "canonical-migration.json"
+    if not marker.exists():
+        return {}
+    try:
+        data = read_json(marker)
+    except Exception:
+        return {}
+    if str(data.get("status") or "") != "migrated_alias_directory":
+        return {}
+    return data
+
+
+def is_migrated_alias_directory(directory: Path) -> bool:
+    return bool(load_alias_migration_marker(directory))
+
+
+def resolve_assignment_directory_role(directory: Path) -> str:
+    if is_migrated_alias_directory(directory):
+        return "migrated_alias"
+    if directory.is_dir() and (directory / "assignment.yaml").exists():
+        return "canonical_assignment"
+    return "not_assignment"
 
 
 def render_assignment_brief(snapshot: RealEstateAssignmentSnapshot) -> str:

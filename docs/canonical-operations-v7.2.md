@@ -170,6 +170,18 @@ outputs/real-estate/canonical/scoped-migration-result.json
 outputs/real-estate/canonical/scoped-migration-result.md
 ```
 
+## Post-Migration Refresh Integrity
+
+v7.2.3 hardens canonical refresh after scoped migration. A migrated alias directory is preserved on disk, but the assignment store classifies it as `migrated_alias` instead of a canonical assignment. Normal assignment scans, consolidation artifact scans, operations summaries, and dashboard summaries exclude migrated aliases from canonical assignment, artifact, and alias totals.
+
+Migration planning still scans migrated aliases with an explicit inclusive mode so `already_migrated` remains auditable. Repeated refreshes should preserve:
+
+- canonical assignment count
+- migration ready count of `0` after ready entries are applied
+- already migrated alias directory count
+- blocked and orphan review queues
+- no alias directory deletion
+
 ## Dashboard Integration
 
 The Executive Dashboard now uses Canonical Operations state for:

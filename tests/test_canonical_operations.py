@@ -12,6 +12,7 @@ from constellation.canonical_assignments import CanonicalAssignmentEngine, Canon
 from constellation.canonical_operations import CanonicalOperationsEngine, CanonicalOperationsStore
 from constellation.cli import main
 from constellation.dashboard import ExecutiveDashboardBuilder
+from constellation.real_estate import RealEstateAssignmentStore, resolve_assignment_directory_role
 from constellation.real_estate_intake import RealEstateIntakeEngine
 
 
@@ -284,6 +285,31 @@ class CanonicalOperationsTests(unittest.TestCase):
         self.assertFalse(second.applied)
         self.assertEqual(second.applied_count, 0)
         self.assertEqual(second.already_migrated_count, 4)
+
+    def test_post_migration_refresh_does_not_count_migrated_alias_directories(self) -> None:
+        paths = self.make_scoped_migration_fixture()
+        engine = CanonicalAssignmentEngine(self.root)
+
+        before = engine.build()
+        before_assignment_count = before.counts["canonical_assignment_count"]
+        result = engine.migrate(apply=True, ready_only=True)
+        self.assertEqual(result.applied_count, 3)
+
+        after = engine.build()
+        repeated = engine.build()
+        operations = CanonicalOperationsEngine(self.root).build()
+        dashboard = ExecutiveDashboardBuilder(self.root).build().real_estate_assignment_summary
+        store = RealEstateAssignmentStore(self.root)
+
+        self.assertEqual(after.counts["canonical_assignment_count"], before_assignment_count)
+        self.assertEqual(repeated.counts["canonical_assignment_count"], after.counts["canonical_assignment_count"])
+        self.assertEqual(after.counts["migration_ready_count"], 0)
+        self.assertEqual(after.counts["already_migrated_count"], 4)
+        self.assertNotIn("100-ready-st", store.list_assignment_ids())
+        self.assertIn("100-ready-st", store.list_assignment_ids(include_migrated_aliases=True))
+        self.assertEqual(resolve_assignment_directory_role(paths["ready_one"]), "migrated_alias")
+        self.assertEqual(operations.summary["canonical_assignment_count"], after.counts["canonical_assignment_count"])
+        self.assertEqual(dashboard["canonical_assignment_count"], after.counts["canonical_assignment_count"])
 
     def test_blocked_orphan_ambiguous_and_already_migrated_are_never_applied_by_category(self) -> None:
         paths = self.make_scoped_migration_fixture()

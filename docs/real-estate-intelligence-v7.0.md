@@ -214,6 +214,14 @@ It never applies:
 
 Unsafe unscoped apply is refused when the plan contains mixed categories. Alias directories are preserved, source files are not deleted, and conflicts remain for human review.
 
+## v7.2.3 Implementation - Post-Migration Canonical Count Integrity
+
+Post-Migration Canonical Count Integrity ensures non-destructive migration markers do not change assignment identity.
+
+A migrated alias directory is classified as `migrated_alias`. It remains on disk and remains visible in migration audit outputs as `already_migrated`, but canonical assignment refresh excludes it from canonical assignment discovery and source-artifact discovery. Dashboard and operations counts should remain stable across repeated refreshes after scoped migration.
+
+This patch does not delete alias directories, remove markers, roll back migrations, resolve conflicts, or alter valuation logic.
+
 ## 5. Institutional Valuation Operating System
 
 Real Estate Intelligence should operate as an institutional layer around the appraisal workflow.

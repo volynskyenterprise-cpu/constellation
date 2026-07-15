@@ -255,6 +255,26 @@ outputs/real-estate/canonical/scoped-migration-result.json
 outputs/real-estate/canonical/scoped-migration-result.md
 ```
 
+## Post-Migration Count Integrity
+
+v7.2.3 defines migrated alias directories as an explicit directory role.
+
+```text
+directory_role: migrated_alias
+```
+
+A migrated alias directory:
+
+- remains preserved on disk
+- remains visible in migration planning as `already_migrated`
+- routes future writes to the canonical assignment
+- is excluded from normal assignment discovery
+- is excluded from source-artifact discovery
+- must not create a new canonical assignment
+- must not inflate alias counts on repeated refresh
+
+Migration changes routing state, not assignment identity. Canonical refresh, operations status, and dashboard summaries must remain idempotent after markers are written.
+
 Assignment commands resolve aliases before operating:
 
 ```bash

@@ -406,6 +406,8 @@ v7.2.1 hardens Canonical Operations. Canonical status, migration plan, review qu
 
 v7.2.2 adds scoped canonical migration controls. Use `--ready-only` to apply only migration-ready alias entries. Blocked, ambiguous, orphan, and already-migrated entries are never applied by `--ready-only`, and unsafe unscoped apply is refused when a plan contains mixed categories.
 
+v7.2.3 fixes post-migration count integrity. A directory with a valid `canonical-migration.json` marker is treated as `migrated_alias`: preserved on disk and counted in migration audit state, but excluded from normal canonical assignment and source-artifact discovery. Repeated canonical refreshes must not inflate assignment, artifact, or alias counts.
+
 ```bash
 python -m constellation real-estate canonical status
 python -m constellation real-estate canonical assignments

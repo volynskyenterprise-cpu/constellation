@@ -2,6 +2,13 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.2.3 - Post-Migration Canonical Count Integrity
+
+- Fixed post-migration canonical refresh so migrated alias directories remain aliases and do not inflate canonical assignment, artifact, or alias counts.
+- Added deterministic assignment-directory role detection for `migrated_alias` directories marked by `canonical-migration.json`.
+- Kept migrated alias directories visible to migration planning so `already_migrated` counts remain auditable, while excluding them from normal assignment and artifact discovery.
+- Preserved non-destructive migration behavior: no alias directories are deleted, no migration markers are removed, and blocked/orphan/conflicting assignments remain unresolved for human review.
+
 ## 7.2.2 - Scoped Canonical Migration
 
 - Added explicit scoped migration controls for Canonical Assignment alias directories.
