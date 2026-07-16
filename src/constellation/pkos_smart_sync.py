@@ -45,9 +45,49 @@ SECRET_PATH_PATTERNS = [
 ]
 SECRET_CONTENT_PATTERNS = [
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
-    re.compile(r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret)\b\s*[:=]"),
     re.compile(r"\bsk-[A-Za-z0-9_-]{16,}\b"),
     re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b"),
+]
+SECRET_IDENTIFIERS = {
+    "api_key",
+    "apikey",
+    "access_token",
+    "refresh_token",
+    "client_secret",
+    "clientsecret",
+    "password",
+    "secret",
+    "private_key",
+}
+PLACEHOLDER_SECRET_VALUES = {
+    "",
+    "none",
+    "null",
+    "redacted",
+    "[redacted]",
+    "your_api_key",
+    "your-api-key",
+    "change_me",
+    "changeme",
+    "example",
+    "dummy",
+    "test-token",
+    "test_token",
+}
+SECRET_ASSIGNMENT_PATTERN = re.compile(
+    r"(?i)(?P<identifier>\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|private[_-]?key|secret)\b)\s*[:=]\s*(?P<value>.+)"
+)
+SECRET_MAPPING_VALUE_PATTERN = re.compile(
+    r"(?i)(?P<quote>['\"])(?P<identifier>api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|private[_-]?key|secret)(?P=quote)\s*:\s*(?P<value>.+)"
+)
+SECRET_ENV_FALLBACK_PATTERN = re.compile(
+    r"(?i)(?:os\.)?getenv\(\s*['\"][A-Z0-9_]*(?:API[_-]?KEY|ACCESS[_-]?TOKEN|REFRESH[_-]?TOKEN|CLIENT[_-]?SECRET|PASSWORD|SECRET|PRIVATE[_-]?KEY)['\"]\s*,\s*(?P<value>[^)]+)\)"
+)
+SAFE_SECRET_REFERENCE_PATTERNS = [
+    ("secret-reference:attribute-read", re.compile(r"(?i)\.\s*(refresh_token|client_secret|api_key|access_token|private_key)\b")),
+    ("secret-reference:config-lookup", re.compile(r"(?i)(?:get\(\s*|in\s+|[\[]\s*)['\"](?:refresh_token|client_secret|api_key|access_token|client_id|private_key)['\"]")),
+    ("secret-reference:credential-file-loader", re.compile(r"Credentials\.from_authorized_user_file|InstalledAppFlow\.from_client_secrets_file")),
+    ("secret-reference:parameter-or-field", re.compile(r"(?i)\b(?:def\s+\w+\([^)]*(?:refresh_token|client_secret|api_key)|(?:refresh_token|client_secret|api_key)\s*:\s*[^=])")),
 ]
 GENERATED_SEGMENTS = {"logs", "log", "cache", "caches", "exports", "output", "outputs", "build", "dist", "__pycache__"}
 RUNTIME_SEGMENTS = {"incoming", "transient", "locks", "lock", "tokens", "execution-state", "runtime"}
@@ -107,11 +147,145 @@ def _secret_rule_name(pattern: re.Pattern[str]) -> str:
     return "secret-pattern"
 
 
+def _normalize_secret_identifier(value: str) -> str:
+    return value.lower().replace("-", "_")
+
+
+def _strip_secret_literal(value: str) -> str:
+    cleaned = value.strip().rstrip(",)")
+    if cleaned.startswith(("'", '"')) and cleaned.endswith(("'", '"')) and len(cleaned) >= 2:
+        cleaned = cleaned[1:-1]
+    return cleaned.strip()
+
+
+def is_secret_identifier(identifier: str) -> bool:
+    return _normalize_secret_identifier(identifier) in SECRET_IDENTIFIERS
+
+
+def is_placeholder_secret_value(value: str) -> bool:
+    cleaned = _strip_secret_literal(value).lower()
+    return cleaned in PLACEHOLDER_SECRET_VALUES or cleaned.startswith("your_") or cleaned.startswith("example_")
+
+
+def _looks_like_real_secret_value(value: str) -> bool:
+    cleaned = _strip_secret_literal(value)
+    if is_placeholder_secret_value(cleaned):
+        return False
+    lowered = cleaned.lower()
+    if lowered in {"true", "false"}:
+        return False
+    if cleaned.startswith(("os.", "Path(", "str(", "None", "TOKEN", "CLIENT_CONFIG")):
+        return False
+    if not cleaned:
+        return False
+    if re.search(r"\b(sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{16,}|AIza[0-9A-Za-z_-]{20,}|AKIA[0-9A-Z]{16})\b", cleaned):
+        return True
+    if value.strip().startswith(("'", '"')) and len(cleaned) >= 4:
+        return True
+    if len(cleaned) >= 12 and re.search(r"[A-Za-z]", cleaned) and re.search(r"\d", cleaned):
+        return True
+    if len(cleaned) >= 20:
+        return True
+    return False
+
+
 def line_number_for_pattern(text: str, pattern: re.Pattern[str]) -> int:
     for index, line in enumerate(text.splitlines(), start=1):
         if pattern.search(line):
             return index
     return 0
+
+
+@dataclass(frozen=True)
+class SecretDetection:
+    matched: bool
+    blocked: bool
+    category: str
+    rule_id: str
+    line_number: int
+    identifier: str = ""
+    value_kind: str = ""
+    safe_reference: bool = False
+    reason: str = ""
+    redacted_evidence: str = ""
+
+    def diagnostic_rule(self) -> str:
+        suffix = f":line-{self.line_number}" if self.line_number else ""
+        return f"{self.rule_id}{suffix}"
+
+
+def _secret_detection_for_literal(line: str, line_number: int) -> SecretDetection | None:
+    for rule_id, pattern in [
+        ("secret-literal:environment-fallback", SECRET_ENV_FALLBACK_PATTERN),
+        ("secret-literal:mapping-value", SECRET_MAPPING_VALUE_PATTERN),
+        ("secret-literal:assignment", SECRET_ASSIGNMENT_PATTERN),
+    ]:
+        match = pattern.search(line)
+        if not match:
+            continue
+        identifier = _normalize_secret_identifier(match.groupdict().get("identifier", "secret"))
+        value = match.groupdict().get("value", "")
+        if not is_secret_identifier(identifier) or not _looks_like_real_secret_value(value):
+            return None
+        return SecretDetection(
+            matched=True,
+            blocked=True,
+            category="secret-like literal content",
+            rule_id=rule_id,
+            line_number=line_number,
+            identifier=identifier,
+            value_kind="literal",
+            reason="Secret-like identifier is assigned a non-placeholder literal value.",
+            redacted_evidence=f"{identifier}=<redacted>",
+        )
+    return None
+
+
+def detect_secret_risk(text: str) -> list[SecretDetection]:
+    detections: list[SecretDetection] = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        literal = _secret_detection_for_literal(stripped, line_number)
+        if literal:
+            detections.append(literal)
+            continue
+        for rule_id, pattern in SAFE_SECRET_REFERENCE_PATTERNS:
+            match = pattern.search(stripped)
+            if match:
+                identifier = _normalize_secret_identifier(match.group(1) if match.lastindex else "credential")
+                detections.append(
+                    SecretDetection(
+                        matched=True,
+                        blocked=False,
+                        category="credential-field-reference",
+                        rule_id=rule_id,
+                        line_number=line_number,
+                        identifier=identifier,
+                        value_kind="reference",
+                        safe_reference=True,
+                        reason="Secret-like identifier appears as a reference without a literal secret value.",
+                        redacted_evidence=f"{identifier}=<reference>",
+                    )
+                )
+    for pattern in SECRET_CONTENT_PATTERNS:
+        match = pattern.search(text)
+        if not match:
+            continue
+        detections.append(
+            SecretDetection(
+                matched=True,
+                blocked=True,
+                category="secret-like literal content",
+                rule_id=f"secret-content:{_secret_rule_name(pattern)}",
+                line_number=line_number_for_pattern(text, pattern),
+                value_kind="literal",
+                reason="Known token prefix or private key material detected.",
+                redacted_evidence="<redacted>",
+            )
+        )
+    return detections
 
 
 def major_subtree(relative_path: str) -> str:
@@ -673,19 +847,22 @@ class PkosSmartSyncEngine:
         abs_path = self.policy.repository_path / rel
         status = change["status"]
         size = abs_path.stat().st_size if abs_path.exists() and abs_path.is_file() else 0
-        secret_rules = self._secret_rules(rel, abs_path)
+        secret_detections = self._secret_detections(rel, abs_path)
+        blocked_secret_rules = [detection.diagnostic_rule() for detection in secret_detections if detection.blocked]
+        safe_secret_rules = [detection.diagnostic_rule() for detection in secret_detections if detection.safe_reference]
         precedence = ["1 secret block", "2 conflict block", "3 explicit exclude override", "4 runtime/generated exclusion", "5 temporary/private exclusion", "6 explicit review override", "7 approved staging rule", "8 unknown review"]
         classification, confidence, rules, reason = classify_path(rel)
+        rules.extend(safe_secret_rules)
         runtime_risk = classification == "runtime_artifact"
         generated_risk = classification == "generated_output"
         override_source = ""
         exclude_override = self._matching_override(rel, action="exclude")
         decision_override = self._matching_override(rel, actions={"review", "stage"})
-        if secret_rules:
+        if blocked_secret_rules:
             classification = "private_or_secret"
             action = "block"
             confidence = "high"
-            rules.extend(secret_rules)
+            rules.extend(blocked_secret_rules)
             reason = "Secret-risk path or content detected."
         elif _is_deletion(status):
             action = "review"
@@ -719,7 +896,7 @@ class PkosSmartSyncEngine:
             classification_rules=sorted(set(rules)),
             recommended_action=action,
             reason=reason,
-            contains_secret_risk=bool(secret_rules),
+            contains_secret_risk=bool(blocked_secret_rules),
             contains_runtime_risk=runtime_risk,
             contains_generated_content_risk=generated_risk,
             requires_manual_review=action == "review",
@@ -729,18 +906,29 @@ class PkosSmartSyncEngine:
             override_source=override_source,
         )
 
-    def _secret_rules(self, rel: str, abs_path: Path) -> list[str]:
+    def _secret_detections(self, rel: str, abs_path: Path) -> list[SecretDetection]:
         lower = rel.lower()
-        rules = [f"secret-path:{pattern}" for pattern in SECRET_PATH_PATTERNS if fnmatch.fnmatch(lower, pattern)]
+        detections = [
+            SecretDetection(
+                matched=True,
+                blocked=True,
+                category="secret-path risk",
+                rule_id=f"secret-path:{pattern}",
+                line_number=0,
+                value_kind="path",
+                reason="Path matches a configured secret-risk pattern.",
+                redacted_evidence="<path>",
+            )
+            for pattern in SECRET_PATH_PATTERNS
+            if fnmatch.fnmatch(lower, pattern)
+        ]
         if abs_path.exists() and abs_path.is_file() and abs_path.stat().st_size <= 1_000_000:
             try:
                 text = abs_path.read_text(encoding="utf-8", errors="ignore")
             except OSError:
                 text = ""
-            for pattern in SECRET_CONTENT_PATTERNS:
-                if pattern.search(text):
-                    rules.append(f"secret-content:{_secret_rule_name(pattern)}:line-{line_number_for_pattern(text, pattern)}")
-        return rules
+            detections.extend(detect_secret_risk(text))
+        return detections
 
     def _matching_override(self, rel: str, *, action: str | None = None, actions: set[str] | None = None) -> dict[str, Any] | None:
         normalized = _normalize_rel(rel)

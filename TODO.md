@@ -4,6 +4,7 @@
 
 - PKOS Smart Sync is complete; end-of-day PKOS sync is now preview-first, selective, approval-gated, and audited before commit or push.
 - PKOS Smart Sync Policy Refinement is complete; broad AOC rules no longer stage runtime intake noise ahead of specific exclusions.
+- Smart Sync Secret False-Positive Hardening is complete; harmless secret-field references are no longer blocked while literal credential material remains blocked.
 - Keep automatic evening Smart Sync preview scheduling as a future optional enhancement; commit and push remain approval-gated.
 - Add connector warning history retention and comparison across Morning runs.
 - Add connector-specific recovery documentation for Google Drive token refresh.

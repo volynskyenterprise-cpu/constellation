@@ -39,6 +39,8 @@ More specific runtime exclusions must win over broad include rules.
 | `07-tools/**` | `tooling` | `stage` | 7 | Governed scripts, tests, examples, and docs, subject to secret blocking. |
 | `08-research/**` | `draft_research` | `review` | 6 | Research remains draft unless explicitly approved. |
 | `**/*.log`, `**/*.lock`, `**/*.tmp`, `**/*.bak` | runtime/temp | `exclude` | 4/5 | Runtime or temporary material. |
+| Secret-field references without literal values | unchanged | unchanged | diagnostic only | Attribute reads, config lookups, credential-file loader calls, and placeholder fields are reported as safe references. |
+| Secret-like literal assignments or mapping values | `private_or_secret` | `block` | 1 | Hardcoded credential material remains blocked even inside governed tooling paths. |
 | Secret-risk path/content | `private_or_secret` | `block` | 1 | Secrets can never be staged by policy override. |
 
 Smart Sync reports subtree summaries, top review reasons, and top exclusion reasons so daily previews remain reviewable.

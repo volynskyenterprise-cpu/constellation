@@ -123,7 +123,13 @@ These outputs are local runtime artifacts and are ignored by Git.
 
 Smart Sync uses deterministic local checks for secret-risk paths and content patterns. It reports only the path, risk category, blocked status, and triggered rule. It does not print secret values and never stages secret-risk files.
 
-`preview --explain PATH` includes redacted secret-content diagnostics such as `secret-content:credential-field:line-45` so the operator can locate the risk without exposing private values.
+The v7.2.7 detector distinguishes secret-field references from secret values. Safe examples include `creds.refresh_token`, `config.get("client_secret")`, `settings["api_key"]`, `Credentials.from_authorized_user_file(...)`, and `InstalledAppFlow.from_client_secrets_file(...)` when no literal credential value is present.
+
+Blocked examples include hardcoded assignments such as `refresh_token = "actual-value"`, mapping values such as `{"client_secret": "actual-value"}`, environment fallbacks with literal values, private key material, credential blobs, known token prefixes, and secret-risk paths. Placeholders such as `REDACTED`, `YOUR_API_KEY`, `CHANGE_ME`, `example`, `dummy`, `test-token`, an empty string, or `None` are not treated as real credentials.
+
+The verified OAuth false positive was an attribute read: `creds.refresh_token`. Smart Sync now reports that as `secret-reference:attribute-read` rather than blocking it.
+
+`preview --explain PATH` reports the path, classification, action, matched rules, safe-reference rules, blocked secret rules if present, precedence order, reason, override source, and final decision without exposing file contents. Blocked diagnostics redact values and report only rule IDs such as `secret-literal:assignment:line-12` or `secret-content:private-key:line-1`.
 
 ## Staging Safety
 

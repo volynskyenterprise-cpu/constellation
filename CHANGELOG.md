@@ -2,6 +2,14 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.2.7 - Smart Sync Secret False-Positive Hardening
+
+- Refined PKOS Smart Sync secret detection to distinguish secret-like identifier references from literal secret values.
+- Fixed the verified OAuth false positive where `creds.refresh_token` attribute reads were blocked as secret content.
+- Preserved blocking for hardcoded secret literals, credential blobs, private key material, known token prefixes, and secret-risk paths.
+- Added redacted safe-reference diagnostics for `pkos sync preview --explain PATH`.
+- Added regression tests for safe OAuth credential access, config lookups, placeholders, mixed safe/unsafe content, and real secret material.
+
 ## 7.2.6 - PKOS Smart Sync Policy Refinement
 
 - Refined PKOS Smart Sync policy precedence so secret blocking, conflict blocking, explicit exclusions, and runtime/generated exclusions win before broad staging rules.

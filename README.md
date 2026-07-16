@@ -54,6 +54,7 @@ Preview is read-only. Staging uses explicit approved paths only. Commit verifies
 
 Secret-risk files are blocked, generated/runtime files are excluded, and draft or unknown files require review.
 Policy refinement in v7.2.6 keeps daily previews smaller by excluding AOC intake runtime noise before broad governed-operation rules can apply. Use `python -m constellation pkos sync preview --explain PATH` to inspect a single classification decision.
+Secret false-positive hardening in v7.2.7 distinguishes harmless credential-object references, such as `creds.refresh_token`, from literal secret values. Hardcoded keys, token prefixes, private key material, credential blobs, and secret-risk paths remain blocked.
 
 ---
 

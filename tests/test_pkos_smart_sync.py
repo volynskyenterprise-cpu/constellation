@@ -11,6 +11,7 @@ from constellation.pkos_smart_sync import (
     PkosSmartSyncError,
     PkosSyncPolicy,
     classify_path,
+    detect_secret_risk,
 )
 
 
@@ -170,9 +171,68 @@ class PkosSmartSyncTests(unittest.TestCase):
         preview = self._engine().preview()
         change = preview.changes[0]
         self.assertEqual(change.recommended_action, "block")
-        self.assertTrue(any("secret-content:credential-field:line-1" in rule for rule in change.classification_rules))
+        self.assertTrue(any("secret-literal:assignment:line-1" in rule for rule in change.classification_rules))
         report = (self.constellation / "outputs" / "pkos-smart-sync" / "latest-preview.md").read_text(encoding="utf-8")
         self.assertNotIn("do-not-print", report)
+
+    def test_safe_oauth_refresh_token_attribute_is_not_blocked(self) -> None:
+        self._write(
+            "07-tools/aoc_email/gmail_client.py",
+            """if TOKEN.exists():
+    creds = Credentials.from_authorized_user_file(str(TOKEN), scopes)
+if not creds or not creds.valid:
+    if creds and creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+    else:
+        flow = InstalledAppFlow.from_client_secrets_file(str(CLIENT_CONFIG), scopes)
+        creds = flow.run_local_server(port=0)
+    TOKEN.write_text(creds.to_json(), encoding="utf-8")
+""",
+        )
+        preview = self._engine().preview()
+        change = preview.changes[0]
+        self.assertEqual(change.classification, "tooling")
+        self.assertEqual(change.recommended_action, "stage")
+        self.assertFalse(change.contains_secret_risk)
+        self.assertTrue(any("secret-reference:attribute-read:line-4" in rule for rule in change.classification_rules))
+        self.assertTrue(any("secret-reference:credential-file-loader" in rule for rule in change.classification_rules))
+
+    def test_safe_secret_references_are_not_secret_risks(self) -> None:
+        samples = [
+            'if config.get("client_secret"):\n    pass\n',
+            'value = settings["api_key"]\n',
+            "def refresh_credentials(refresh_token):\n    return refresh_token\n",
+            '# refresh_token is loaded from local credentials\n',
+            'api_key = "REDACTED"\nclient_secret = "YOUR_API_KEY"\nrefresh_token = None\n',
+        ]
+        for sample in samples:
+            with self.subTest(sample=sample):
+                detections = detect_secret_risk(sample)
+                self.assertFalse(any(detection.blocked for detection in detections))
+
+    def test_secret_literals_and_private_material_are_blocked(self) -> None:
+        samples = [
+            'refresh_token = "actual-secret-like-value-12345"\n',
+            '{"client_secret": "actual-secret-like-value-12345"}\n',
+            'token = os.getenv("API_KEY", "actual-secret-like-value-12345")\n',
+            "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n",
+            "api_key = 'sk-abcdefghijklmnop1234567890'\n",
+        ]
+        for sample in samples:
+            with self.subTest(sample=sample):
+                detections = detect_secret_risk(sample)
+                self.assertTrue(any(detection.blocked for detection in detections))
+
+    def test_safe_reference_does_not_cancel_blocked_literal(self) -> None:
+        self._write(
+            "07-tools/aoc_email/gmail_client.py",
+            "if creds.refresh_token:\n    pass\nrefresh_token = 'actual-secret-like-value-12345'\n",
+        )
+        preview = self._engine().preview()
+        change = preview.changes[0]
+        self.assertEqual(change.recommended_action, "block")
+        self.assertTrue(any("secret-reference:attribute-read:line-1" in rule for rule in change.classification_rules))
+        self.assertTrue(any("secret-literal:assignment:line-3" in rule for rule in change.classification_rules))
 
     def test_stage_never_stages_blocked_secret(self) -> None:
         self._write("00-system/index.md", "production\n")
