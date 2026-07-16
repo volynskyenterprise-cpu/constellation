@@ -39,6 +39,23 @@ Everything remains deterministic, reproducible, and governed by humans.
 
 ---
 
+# PKOS Smart Sync
+
+PKOS Smart Sync replaces broad end-of-day PKOS staging with a governed preview-first workflow:
+
+```powershell
+python -m constellation pkos sync preview --export
+python -m constellation pkos sync stage --approved-only
+python -m constellation pkos sync commit
+python -m constellation pkos sync push
+```
+
+Preview is read-only. Staging uses explicit approved paths only. Commit verifies the staged manifest against the approval record. Push requires a Smart Sync commit and never force pushes.
+
+Secret-risk files are blocked, generated/runtime files are excluded, and draft or unknown files require review.
+
+---
+
 # Core Principles
 
 Constellation is built around six principles:
@@ -56,6 +73,7 @@ Constellation is built around six principles:
 
 Current institutional capabilities include:
 
+- PKOS Smart Sync
 - ✅ Research Organization
 - ✅ PKOS Knowledge Organization
 - ✅ Evidence Engine

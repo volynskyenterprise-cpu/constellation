@@ -2,6 +2,16 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.2.5 - PKOS Smart Sync
+
+- Added governed PKOS Smart Sync as a preview-first, selective-staging workflow for end-of-day PKOS synchronization.
+- Added `python -m constellation pkos sync status`, `preview`, `stage`, `commit`, `push`, `run`, `history`, and `show`.
+- Added deterministic file classification for production knowledge, governed operations, approved/draft research, generated output, runtime artifacts, temporary files, private or secret-risk files, configuration, tooling, and unknown files.
+- Added local preview, approval, staged, review, excluded, blocked, run, and history outputs under `outputs/pkos-smart-sync/`.
+- Added secret-risk blocking, lint gating, pre-existing staged-change detection, staged-manifest verification, no-change behavior, and local-only audit history.
+- Refactored the PKOS vault launcher so it opens a Smart Sync preview and asks before staging, committing, or pushing.
+- Preserved deterministic local-only behavior with no providers, OpenAI, LLM inference, embeddings, web retrieval, Gmail, calendar integration, destructive cleanup, automatic live commit, or automatic live push.
+
 ## 7.2.4 - Real Estate Daily Automation
 
 - Added deterministic Real Estate Daily Automation as a scheduled Morning workflow stage.

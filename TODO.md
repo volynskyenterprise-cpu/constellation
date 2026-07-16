@@ -2,6 +2,8 @@
 
 ## Next Engineering Milestones
 
+- PKOS Smart Sync is complete; end-of-day PKOS sync is now preview-first, selective, approval-gated, and audited before commit or push.
+- Keep automatic evening Smart Sync preview scheduling as a future optional enhancement; commit and push remain approval-gated.
 - Add connector warning history retention and comparison across Morning runs.
 - Add connector-specific recovery documentation for Google Drive token refresh.
 - Real Estate Assignment Intelligence MVP is complete; next Real Estate work should add Comparable Intelligence, Adjustment Intelligence, Neighborhood Intelligence, Permit Intelligence, and Reviewer Intelligence without generating unsupported valuation opinions.

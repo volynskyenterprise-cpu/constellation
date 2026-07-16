@@ -1,0 +1,864 @@
+from __future__ import annotations
+
+import fnmatch
+import hashlib
+import json
+import os
+import re
+import subprocess
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from .io import read_json, write_json
+from .simple_yaml import YamlError, load_yaml
+
+
+class PkosSmartSyncError(RuntimeError):
+    pass
+
+
+CLASSIFICATIONS = {
+    "production_knowledge",
+    "governed_operations",
+    "approved_research",
+    "draft_research",
+    "generated_output",
+    "runtime_artifact",
+    "temporary_file",
+    "private_or_secret",
+    "configuration",
+    "tooling",
+    "unknown",
+}
+
+ACTIONS = {"stage", "exclude", "review", "block"}
+SECRET_PATH_PATTERNS = [
+    "*secret*",
+    "*credential*",
+    "*token*",
+    ".env",
+    "*.pem",
+    "*oauth*",
+    "*client_secret*",
+]
+SECRET_CONTENT_PATTERNS = [
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+    re.compile(r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret)\b\s*[:=]"),
+    re.compile(r"\bsk-[A-Za-z0-9_-]{16,}\b"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b"),
+]
+GENERATED_SEGMENTS = {"logs", "log", "cache", "caches", "exports", "output", "outputs", "build", "dist", "__pycache__"}
+RUNTIME_SEGMENTS = {"incoming", "transient", "locks", "lock", "tokens", "execution-state", "runtime"}
+TEMP_EXTENSIONS = {".tmp", ".bak", ".swp", ".pyc", ".log"}
+READY_CLASSIFICATIONS = {"production_knowledge", "governed_operations", "tooling"}
+REVIEW_CLASSIFICATIONS = {"approved_research", "configuration", "draft_research", "unknown"}
+EXCLUDED_CLASSIFICATIONS = {"generated_output", "runtime_artifact", "temporary_file", "private_or_secret"}
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _stable_id(prefix: str, parts: list[str]) -> str:
+    digest = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:12]
+    return f"{prefix}-{digest}"
+
+
+def _normalize_rel(path: str | Path) -> str:
+    return str(path).replace("\\", "/").strip("/")
+
+
+def _split_path(path: str) -> list[str]:
+    return [part.lower() for part in _normalize_rel(path).split("/") if part]
+
+
+def _sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _hash_manifest(paths: list[str]) -> str:
+    return _sha256_text("\n".join(sorted(_normalize_rel(path) for path in paths)))
+
+
+def _run_git(repo: Path, args: list[str], *, check: bool = False) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        text=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if check and result.returncode != 0:
+        raise PkosSmartSyncError((result.stderr or result.stdout or "git command failed").strip())
+    return result
+
+
+def _as_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return []
+
+
+@dataclass(frozen=True)
+class PkosSyncPolicy:
+    repository_path: Path
+    lint_command: list[str] = field(default_factory=list)
+    auto_stage_classifications: list[str] = field(default_factory=lambda: sorted(READY_CLASSIFICATIONS))
+    review_classifications: list[str] = field(default_factory=lambda: sorted(REVIEW_CLASSIFICATIONS))
+    excluded_classifications: list[str] = field(default_factory=lambda: sorted(EXCLUDED_CLASSIFICATIONS))
+    require_confirmation: bool = True
+    allow_commit: bool = True
+    allow_push: bool = True
+    push_requires_confirmation: bool = True
+    remote: str = "origin"
+    branch: str = "main"
+    include_rules: list[str] = field(default_factory=list)
+    exclude_rules: list[str] = field(default_factory=list)
+    overrides: list[dict[str, Any]] = field(default_factory=list)
+
+    @classmethod
+    def default(cls) -> "PkosSyncPolicy":
+        return cls(
+            repository_path=Path.home() / "OneDrive" / "Documents" / "Obsidian Vault",
+            lint_command=["python", "07-tools/lint_wiki.py"],
+        )
+
+    @classmethod
+    def load(cls, constellation_root: Path, config_path: Path | None = None) -> "PkosSyncPolicy":
+        candidates: list[Path] = []
+        if config_path:
+            candidates.append(config_path if config_path.is_absolute() else constellation_root / config_path)
+        candidates.extend(
+            [
+                constellation_root / "config" / "pkos-smart-sync.local.yaml",
+                constellation_root / "config" / "pkos-smart-sync.example.yaml",
+            ]
+        )
+        raw: dict[str, Any] | None = None
+        for path in candidates:
+            if path.exists():
+                try:
+                    raw = load_yaml(path)
+                except YamlError as exc:
+                    raise PkosSmartSyncError(f"Invalid Smart Sync policy: {path}: {exc}") from exc
+                break
+        if raw is None:
+            return cls.default()
+        data = raw.get("pkos_smart_sync", raw.get("\ufeffpkos_smart_sync", raw))
+        if not isinstance(data, dict):
+            raise PkosSmartSyncError("Smart Sync policy must be a mapping.")
+        base = cls.default()
+        repo_value = data.get("repository_path", str(base.repository_path))
+        return cls(
+            repository_path=Path(str(repo_value)),
+            lint_command=_as_string_list(data.get("lint_command", base.lint_command)),
+            auto_stage_classifications=_as_string_list(data.get("auto_stage_classifications", base.auto_stage_classifications)),
+            review_classifications=_as_string_list(data.get("review_classifications", base.review_classifications)),
+            excluded_classifications=_as_string_list(data.get("excluded_classifications", base.excluded_classifications)),
+            require_confirmation=bool(data.get("require_confirmation", base.require_confirmation)),
+            allow_commit=bool(data.get("allow_commit", base.allow_commit)),
+            allow_push=bool(data.get("allow_push", base.allow_push)),
+            push_requires_confirmation=bool(data.get("push_requires_confirmation", base.push_requires_confirmation)),
+            remote=str(data.get("remote", base.remote)),
+            branch=str(data.get("branch", base.branch)),
+            include_rules=_as_string_list(data.get("include_rules", [])),
+            exclude_rules=_as_string_list(data.get("exclude_rules", [])),
+            overrides=[item for item in data.get("overrides", []) or [] if isinstance(item, dict)],
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "repository_path": str(self.repository_path),
+            "lint_command": self.lint_command,
+            "auto_stage_classifications": self.auto_stage_classifications,
+            "review_classifications": self.review_classifications,
+            "excluded_classifications": self.excluded_classifications,
+            "require_confirmation": self.require_confirmation,
+            "allow_commit": self.allow_commit,
+            "allow_push": self.allow_push,
+            "push_requires_confirmation": self.push_requires_confirmation,
+            "remote": self.remote,
+            "branch": self.branch,
+            "include_rules": self.include_rules,
+            "exclude_rules": self.exclude_rules,
+            "overrides": self.overrides,
+        }
+
+
+@dataclass(frozen=True)
+class PkosFileClassification:
+    classification: str
+    confidence: str
+    rules: list[str]
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class PkosSyncDecision:
+    relative_path: str
+    recommended_action: str
+    reason: str
+    selected_for_staging: bool
+    requires_manual_review: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class PkosFileChange:
+    relative_path: str
+    absolute_path: str
+    git_status: str
+    change_type: str
+    file_extension: str
+    size_bytes: int
+    classification: str
+    confidence: str
+    classification_rules: list[str]
+    recommended_action: str
+    reason: str
+    contains_secret_risk: bool
+    contains_runtime_risk: bool
+    contains_generated_content_risk: bool
+    requires_manual_review: bool
+    selected_for_staging: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.__dict__.copy()
+
+
+@dataclass(frozen=True)
+class PkosSyncPreview:
+    preview_id: str
+    created_at: str
+    repository_path: str
+    branch: str
+    remote: str
+    remote_url_available: bool
+    lint_result: dict[str, Any]
+    safety_checks: dict[str, Any]
+    changes: list[PkosFileChange]
+    existing_staged_changes: list[str]
+    proposed_commit_message: str
+    ready_count: int
+    review_count: int
+    excluded_count: int
+    blocked_count: int
+    warnings: list[str]
+    errors: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        data = self.__dict__.copy()
+        data["changes"] = [change.to_dict() for change in self.changes]
+        return data
+
+
+@dataclass(frozen=True)
+class PkosSyncRun:
+    run_id: str
+    run_type: str
+    status: str
+    started_at: str
+    completed_at: str
+    preview_id: str | None
+    staged_files: list[str]
+    commit_hash: str | None
+    pushed: bool
+    warnings: list[str]
+    errors: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.__dict__.copy()
+
+
+class PkosSyncStore:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.output_dir = root / "outputs" / "pkos-smart-sync"
+
+    @property
+    def latest_preview_path(self) -> Path:
+        return self.output_dir / "latest-preview.json"
+
+    @property
+    def latest_run_path(self) -> Path:
+        return self.output_dir / "latest-run.json"
+
+    @property
+    def approval_path(self) -> Path:
+        return self.output_dir / "approval-record.json"
+
+    def save_preview(self, preview: PkosSyncPreview) -> None:
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        data = preview.to_dict()
+        write_json(self.latest_preview_path, data)
+        (self.output_dir / "latest-preview.md").write_text(render_preview_markdown(preview), encoding="utf-8")
+        self._write_manifest("staged-manifest.json", [c for c in preview.changes if c.recommended_action == "stage"])
+        self._write_manifest("review-manifest.json", [c for c in preview.changes if c.recommended_action == "review"])
+        self._write_manifest("excluded-manifest.json", [c for c in preview.changes if c.recommended_action == "exclude"])
+        self._write_manifest("blocked-manifest.json", [c for c in preview.changes if c.recommended_action == "block"])
+
+    def load_preview(self) -> PkosSyncPreview:
+        if not self.latest_preview_path.exists():
+            raise PkosSmartSyncError("No Smart Sync preview exists. Run `pkos sync preview` first.")
+        return preview_from_dict(read_json(self.latest_preview_path))
+
+    def save_run(self, run: PkosSyncRun) -> None:
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        data = run.to_dict()
+        write_json(self.latest_run_path, data)
+        history_path = self.output_dir / "smart-sync-history.json"
+        history: list[dict[str, Any]] = []
+        if history_path.exists():
+            existing = json.loads(history_path.read_text(encoding="utf-8"))
+            if isinstance(existing, list):
+                history = existing
+        history.append(data)
+        history.sort(key=lambda item: str(item.get("started_at", "")))
+        history_path.write_text(json.dumps(history, indent=2, sort_keys=True), encoding="utf-8")
+        (self.output_dir / "smart-sync-report.md").write_text(render_run_markdown(run), encoding="utf-8")
+
+    def save_approval(self, preview: PkosSyncPreview, *, commit_allowed: bool, push_allowed: bool) -> dict[str, Any]:
+        approved_files = [change.relative_path for change in preview.changes if change.recommended_action == "stage"]
+        record = {
+            "preview_id": preview.preview_id,
+            "approved_file_manifest_checksum": _hash_manifest(approved_files),
+            "approved_files": sorted(approved_files),
+            "approved_at": _now_iso(),
+            "approved_by": "local_operator",
+            "approved_categories": sorted({change.classification for change in preview.changes if change.recommended_action == "stage"}),
+            "excluded_categories": sorted({change.classification for change in preview.changes if change.recommended_action != "stage"}),
+            "commit_allowed": commit_allowed,
+            "push_allowed": push_allowed,
+        }
+        write_json(self.approval_path, record)
+        return record
+
+    def load_approval(self) -> dict[str, Any]:
+        if not self.approval_path.exists():
+            raise PkosSmartSyncError("No Smart Sync approval record exists.")
+        return read_json(self.approval_path)
+
+    def load_history(self) -> list[dict[str, Any]]:
+        path = self.output_dir / "smart-sync-history.json"
+        if not path.exists():
+            return []
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+
+    def _write_manifest(self, name: str, changes: list[PkosFileChange]) -> None:
+        write_json(self.output_dir / name, {"files": [change.to_dict() for change in changes], "count": len(changes)})
+
+
+class PkosSmartSyncEngine:
+    def __init__(self, root: Path, policy: PkosSyncPolicy | None = None) -> None:
+        self.root = root
+        self.policy = policy or PkosSyncPolicy.load(root)
+        self.store = PkosSyncStore(root)
+
+    def status(self) -> dict[str, Any]:
+        repo = self.policy.repository_path
+        checks = self._repository_safety()
+        return {
+            "repository_path": str(repo),
+            "repository_exists": repo.exists(),
+            "is_git_repository": (repo / ".git").exists(),
+            "branch": checks.get("branch", ""),
+            "expected_branch": self.policy.branch,
+            "remote": self.policy.remote,
+            "remote_url_available": checks.get("remote_url_available", False),
+            "has_conflicts": checks.get("has_conflicts", False),
+            "has_preexisting_staged_changes": bool(checks.get("existing_staged_changes", [])),
+            "health": "blocked" if checks.get("blocking_errors") else "ok",
+            "errors": checks.get("blocking_errors", []),
+            "warnings": checks.get("warnings", []),
+        }
+
+    def preview(self, *, export: bool = True) -> PkosSyncPreview:
+        repo = self.policy.repository_path
+        checks = self._repository_safety()
+        lint = self._run_lint()
+        changes = [self._classify_change(change) for change in self._git_changes()]
+        changes.sort(key=lambda item: item.relative_path)
+        warnings = list(checks.get("warnings", []))
+        errors = list(checks.get("blocking_errors", []))
+        if lint["status"] == "failed":
+            errors.append("PKOS lint failed.")
+        if any(change.contains_secret_risk for change in changes):
+            errors.append("Secret-risk files detected.")
+        preview = PkosSyncPreview(
+            preview_id=_stable_id("pkos-preview", [str(repo), *[c.relative_path + c.git_status + c.classification + c.recommended_action for c in changes]]),
+            created_at=_now_iso(),
+            repository_path=str(repo),
+            branch=str(checks.get("branch", "")),
+            remote=self.policy.remote,
+            remote_url_available=bool(checks.get("remote_url_available", False)),
+            lint_result=lint,
+            safety_checks=checks,
+            changes=changes,
+            existing_staged_changes=list(checks.get("existing_staged_changes", [])),
+            proposed_commit_message=self._commit_message(changes),
+            ready_count=sum(1 for item in changes if item.recommended_action == "stage"),
+            review_count=sum(1 for item in changes if item.recommended_action == "review"),
+            excluded_count=sum(1 for item in changes if item.recommended_action == "exclude"),
+            blocked_count=sum(1 for item in changes if item.recommended_action == "block"),
+            warnings=warnings,
+            errors=errors,
+        )
+        if export:
+            self.store.save_preview(preview)
+        return preview
+
+    def stage(self, *, approved_only: bool = True) -> PkosSyncRun:
+        preview = self.store.load_preview()
+        self._ensure_stage_allowed(preview)
+        approved = self.store.save_approval(preview, commit_allowed=True, push_allowed=self.policy.allow_push)
+        approved_files = list(approved["approved_files"])
+        started_at = _now_iso()
+        errors: list[str] = []
+        if approved_files:
+            self._stage_paths(approved_files)
+        staged = self._staged_paths()
+        selected_staged = [path for path in staged if _normalize_rel(path) in set(approved_files)]
+        run = PkosSyncRun(
+            run_id=_stable_id("pkos-stage", [preview.preview_id, started_at]),
+            run_type="stage",
+            status="succeeded" if not errors else "failed",
+            started_at=started_at,
+            completed_at=_now_iso(),
+            preview_id=preview.preview_id,
+            staged_files=sorted(selected_staged),
+            commit_hash=None,
+            pushed=False,
+            warnings=[],
+            errors=errors,
+        )
+        self.store.save_run(run)
+        return run
+
+    def commit(self, *, message: str | None = None) -> PkosSyncRun:
+        preview = self.store.load_preview()
+        approval = self.store.load_approval()
+        self._ensure_commit_allowed(preview, approval)
+        staged = sorted(_normalize_rel(path) for path in self._staged_paths())
+        approved = sorted(_normalize_rel(path) for path in approval.get("approved_files", []))
+        if staged != approved:
+            raise PkosSmartSyncError("Staged files differ from the approved Smart Sync preview.")
+        started_at = _now_iso()
+        if not staged:
+            run = PkosSyncRun(_stable_id("pkos-commit", [preview.preview_id, started_at]), "commit", "no_changes", started_at, _now_iso(), preview.preview_id, [], None, False, ["No approved staged files to commit."], [])
+            self.store.save_run(run)
+            return run
+        commit_message = message or preview.proposed_commit_message
+        result = _run_git(self.policy.repository_path, ["commit", "-m", commit_message])
+        if result.returncode != 0:
+            raise PkosSmartSyncError((result.stderr or result.stdout or "git commit failed").strip())
+        commit_hash = _run_git(self.policy.repository_path, ["rev-parse", "HEAD"], check=True).stdout.strip()
+        run = PkosSyncRun(_stable_id("pkos-commit", [preview.preview_id, commit_hash]), "commit", "succeeded", started_at, _now_iso(), preview.preview_id, staged, commit_hash, False, [], [])
+        self.store.save_run(run)
+        return run
+
+    def push(self) -> PkosSyncRun:
+        latest = self._latest_run()
+        if latest.get("run_type") != "commit" or latest.get("status") not in {"succeeded", "no_changes"}:
+            raise PkosSmartSyncError("No Smart Sync commit is available to push.")
+        checks = self._repository_safety()
+        if checks.get("branch") != self.policy.branch:
+            raise PkosSmartSyncError("Current branch does not match the approved Smart Sync branch.")
+        started_at = _now_iso()
+        if latest.get("status") == "no_changes":
+            run = PkosSyncRun(_stable_id("pkos-push", [started_at, "no_changes"]), "push", "no_changes", started_at, _now_iso(), latest.get("preview_id"), [], None, False, ["No Smart Sync commit to push."], [])
+            self.store.save_run(run)
+            return run
+        result = _run_git(self.policy.repository_path, ["push", self.policy.remote, self.policy.branch])
+        if result.returncode != 0:
+            raise PkosSmartSyncError((result.stderr or result.stdout or "git push failed").strip())
+        run = PkosSyncRun(_stable_id("pkos-push", [str(latest.get("commit_hash")), started_at]), "push", "succeeded", started_at, _now_iso(), latest.get("preview_id"), [], str(latest.get("commit_hash")), True, [], [])
+        self.store.save_run(run)
+        return run
+
+    def run(self, *, yes: bool = False, no_push: bool = False, commit_message: str | None = None) -> PkosSyncRun:
+        preview = self.preview(export=True)
+        if preview.blocked_count or preview.review_count:
+            raise PkosSmartSyncError("Smart Sync run requires manual review before staging.")
+        if not yes and self.policy.require_confirmation:
+            raise PkosSmartSyncError("Smart Sync run requires explicit operator confirmation.")
+        self.stage(approved_only=True)
+        committed = self.commit(message=commit_message)
+        if no_push or not self.policy.allow_push:
+            return committed
+        if not yes and self.policy.push_requires_confirmation:
+            raise PkosSmartSyncError("Smart Sync push requires explicit operator confirmation.")
+        return self.push()
+
+    def show(self, run_id: str) -> dict[str, Any]:
+        for run in self.store.load_history():
+            if run.get("run_id") == run_id:
+                return run
+        raise PkosSmartSyncError(f"Smart Sync run not found: {run_id}")
+
+    def _repository_safety(self) -> dict[str, Any]:
+        repo = self.policy.repository_path
+        warnings: list[str] = []
+        errors: list[str] = []
+        if not repo.exists():
+            return {"blocking_errors": [f"Repository path does not exist: {repo}"], "warnings": [], "branch": "", "remote_url_available": False, "existing_staged_changes": []}
+        if not (repo / ".git").exists():
+            return {"blocking_errors": [f"Path is not a Git repository: {repo}"], "warnings": [], "branch": "", "remote_url_available": False, "existing_staged_changes": []}
+        git_dir = repo / ".git"
+        branch = _run_git(repo, ["branch", "--show-current"]).stdout.strip()
+        if not branch:
+            errors.append("Repository is in detached HEAD state.")
+        elif branch != self.policy.branch:
+            warnings.append(f"Current branch `{branch}` differs from configured branch `{self.policy.branch}`.")
+        for marker in ["MERGE_HEAD", "REBASE_HEAD", "CHERRY_PICK_HEAD"]:
+            if (git_dir / marker).exists():
+                errors.append(f"Repository has active {marker} state.")
+        if (git_dir / "rebase-merge").exists() or (git_dir / "rebase-apply").exists():
+            errors.append("Repository has an active rebase state.")
+        status_lines = _run_git(repo, ["status", "--porcelain=v1", "--untracked-files=all"]).stdout.splitlines()
+        has_conflicts = any(_is_conflict_status(line[:2]) for line in status_lines if len(line) >= 2)
+        if has_conflicts:
+            errors.append("Repository has unresolved conflicts.")
+        staged = [line[3:] for line in status_lines if len(line) >= 3 and line[:2] != "??" and line[0] != " "]
+        if staged:
+            warnings.append("Repository has pre-existing staged changes.")
+        remote = _run_git(repo, ["remote", "get-url", self.policy.remote])
+        remote_available = remote.returncode == 0
+        if not remote_available:
+            warnings.append(f"Configured remote `{self.policy.remote}` is unavailable.")
+        return {
+            "branch": branch,
+            "expected_branch": self.policy.branch,
+            "remote": self.policy.remote,
+            "remote_url_available": remote_available,
+            "has_conflicts": has_conflicts,
+            "existing_staged_changes": sorted(staged),
+            "warnings": warnings,
+            "blocking_errors": errors,
+        }
+
+    def _run_lint(self) -> dict[str, Any]:
+        if not self.policy.lint_command:
+            return {"status": "skipped", "command": [], "returncode": 0, "summary": "No lint command configured."}
+        result = subprocess.run(self.policy.lint_command, cwd=self.policy.repository_path, text=True, capture_output=True, encoding="utf-8", errors="replace")
+        summary = (result.stdout or result.stderr or "").strip().splitlines()
+        return {
+            "status": "passed" if result.returncode == 0 else "failed",
+            "command": self.policy.lint_command,
+            "returncode": result.returncode,
+            "summary": summary[-5:],
+        }
+
+    def _git_changes(self) -> list[dict[str, Any]]:
+        lines = _run_git(self.policy.repository_path, ["status", "--porcelain=v1", "--untracked-files=all"]).stdout.splitlines()
+        changes: list[dict[str, Any]] = []
+        for line in lines:
+            if len(line) < 4:
+                continue
+            status = line[:2]
+            path = line[3:]
+            if " -> " in path:
+                path = path.split(" -> ", 1)[1]
+            changes.append({"status": status, "path": _normalize_rel(path)})
+        return changes
+
+    def _classify_change(self, change: dict[str, Any]) -> PkosFileChange:
+        rel = change["path"]
+        abs_path = self.policy.repository_path / rel
+        status = change["status"]
+        size = abs_path.stat().st_size if abs_path.exists() and abs_path.is_file() else 0
+        secret_rules = self._secret_rules(rel, abs_path)
+        classification, confidence, rules, reason = classify_path(rel)
+        runtime_risk = classification == "runtime_artifact"
+        generated_risk = classification == "generated_output"
+        override = self._matching_override(rel)
+        if override and not secret_rules and not _is_deletion(status):
+            override_classification = str(override.get("classification", classification))
+            override_action = str(override.get("action", ""))
+            if override_classification in CLASSIFICATIONS and (not override_action or override_action in ACTIONS):
+                classification = override_classification
+                rules.append(f"override:{override.get('pattern')}")
+                reason = f"Local override matched `{override.get('pattern')}`."
+        if secret_rules:
+            classification = "private_or_secret"
+            action = "block"
+            confidence = "high"
+            rules.extend(secret_rules)
+            reason = "Secret-risk path or content detected."
+        elif _is_deletion(status):
+            action = "review"
+            rules.append("deleted-file-review")
+            reason = "Deleted files require manual review before staging."
+        elif override and str(override.get("action", "")) in ACTIONS:
+            action = str(override["action"])
+        elif classification in self.policy.auto_stage_classifications:
+            action = "stage"
+        elif classification in self.policy.review_classifications:
+            action = "review"
+        elif classification in self.policy.excluded_classifications:
+            action = "exclude"
+        else:
+            action = "review"
+        return PkosFileChange(
+            relative_path=rel,
+            absolute_path=str(abs_path),
+            git_status=status,
+            change_type=change_type(status),
+            file_extension=abs_path.suffix.lower(),
+            size_bytes=size,
+            classification=classification,
+            confidence=confidence,
+            classification_rules=sorted(set(rules)),
+            recommended_action=action,
+            reason=reason,
+            contains_secret_risk=bool(secret_rules),
+            contains_runtime_risk=runtime_risk,
+            contains_generated_content_risk=generated_risk,
+            requires_manual_review=action == "review",
+            selected_for_staging=action == "stage",
+        )
+
+    def _secret_rules(self, rel: str, abs_path: Path) -> list[str]:
+        lower = rel.lower()
+        rules = [f"secret-path:{pattern}" for pattern in SECRET_PATH_PATTERNS if fnmatch.fnmatch(lower, pattern)]
+        if abs_path.exists() and abs_path.is_file() and abs_path.stat().st_size <= 1_000_000:
+            try:
+                text = abs_path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                text = ""
+            for pattern in SECRET_CONTENT_PATTERNS:
+                if pattern.search(text):
+                    rules.append(f"secret-content:{pattern.pattern[:32]}")
+        return rules
+
+    def _matching_override(self, rel: str) -> dict[str, Any] | None:
+        normalized = _normalize_rel(rel)
+        for override in self.policy.overrides:
+            pattern = str(override.get("pattern", ""))
+            if pattern and fnmatch.fnmatch(normalized, _normalize_rel(pattern)):
+                return override
+        return None
+
+    def _commit_message(self, changes: list[PkosFileChange]) -> str:
+        date = datetime.now().strftime("%Y-%m-%d")
+        staged = [change for change in changes if change.recommended_action == "stage"]
+        if not staged:
+            return f"PKOS Smart Sync - {date}"
+        categories = sorted({change.classification for change in staged})
+        lines = [f"PKOS Smart Sync - {date}", ""]
+        for category in categories:
+            count = sum(1 for change in staged if change.classification == category)
+            lines.append(f"* {category}: {count}")
+        return "\n".join(lines)
+
+    def _ensure_stage_allowed(self, preview: PkosSyncPreview) -> None:
+        checks = self._repository_safety()
+        if checks.get("blocking_errors"):
+            raise PkosSmartSyncError("; ".join(checks["blocking_errors"]))
+        if preview.lint_result.get("status") == "failed":
+            raise PkosSmartSyncError("PKOS lint failed; staging refused.")
+        if preview.existing_staged_changes:
+            raise PkosSmartSyncError("Pre-existing staged changes require explicit operator review.")
+
+    def _ensure_commit_allowed(self, preview: PkosSyncPreview, approval: dict[str, Any]) -> None:
+        if not approval.get("commit_allowed"):
+            raise PkosSmartSyncError("Approval record does not allow commit.")
+        approved_files = [str(path) for path in approval.get("approved_files", [])]
+        expected = _hash_manifest(approved_files)
+        if approval.get("approved_file_manifest_checksum") != expected:
+            raise PkosSmartSyncError("Approval record checksum is invalid.")
+
+    def _stage_paths(self, paths: list[str]) -> None:
+        existing: list[str] = []
+        deleted: list[str] = []
+        for rel in paths:
+            if (self.policy.repository_path / rel).exists():
+                existing.append(rel)
+            else:
+                deleted.append(rel)
+        if existing:
+            _run_git(self.policy.repository_path, ["add", "--", *existing], check=True)
+        if deleted:
+            _run_git(self.policy.repository_path, ["rm", "--cached", "--", *deleted], check=True)
+
+    def _staged_paths(self) -> list[str]:
+        lines = _run_git(self.policy.repository_path, ["diff", "--cached", "--name-only"]).stdout.splitlines()
+        return [_normalize_rel(line) for line in lines if line.strip()]
+
+    def _latest_run(self) -> dict[str, Any]:
+        if not self.store.latest_run_path.exists():
+            raise PkosSmartSyncError("No Smart Sync run exists.")
+        return read_json(self.store.latest_run_path)
+
+
+def classify_path(relative_path: str) -> tuple[str, str, list[str], str]:
+    rel = _normalize_rel(relative_path)
+    lower = rel.lower()
+    parts = _split_path(rel)
+    suffix = Path(rel).suffix.lower()
+    if suffix in TEMP_EXTENSIONS or any(part in {"tmp", "temp"} for part in parts):
+        return "temporary_file", "high", ["temporary-file"], "Temporary files are excluded."
+    if any(part in GENERATED_SEGMENTS for part in parts):
+        return "generated_output", "medium", ["generated-segment"], "Generated output is excluded by default."
+    if any(part in RUNTIME_SEGMENTS for part in parts):
+        return "runtime_artifact", "high", ["runtime-segment"], "Runtime artifacts are excluded."
+    if "draft" in lower or "experimental" in lower or "working" in lower or "proposed" in lower or "review-required" in lower:
+        return "draft_research", "medium", ["draft-marker"], "Draft or review-required material needs review."
+    if parts[:1] == ["00-system"] or "governance" in parts or "registry" in lower or "procedure" in lower:
+        return "production_knowledge", "high", ["production-knowledge-path"], "Governed system knowledge can be staged."
+    if parts[:2] == ["03-operations", "aoc"] or "dashboard" in lower or "knowledge-pack" in lower:
+        return "governed_operations", "medium", ["governed-operations-path"], "Operational knowledge can be staged when safe."
+    if parts[:1] == ["06-templates"] or (parts[:1] == ["07-tools"] and suffix in {".ps1", ".py", ".md", ".json"}):
+        return "tooling", "medium", ["tooling-path"], "Governed tooling can be staged when safe."
+    if suffix in {".json", ".yaml", ".yml", ".toml"}:
+        return "configuration", "low", ["configuration-extension"], "Configuration requires review unless overridden."
+    if parts[:1] == ["08-research"]:
+        return "draft_research", "medium", ["research-path"], "Research defaults to draft unless approved."
+    return "unknown", "low", ["no-governed-rule"], "No governed staging rule matched."
+
+
+def change_type(status: str) -> str:
+    if status == "??":
+        return "untracked"
+    if "D" in status:
+        return "deleted"
+    if "R" in status:
+        return "renamed"
+    if "A" in status:
+        return "added"
+    if "M" in status:
+        return "modified"
+    return "changed"
+
+
+def _is_deletion(status: str) -> bool:
+    return "D" in status
+
+
+def _is_conflict_status(status: str) -> bool:
+    return status in {"DD", "AU", "UD", "UA", "DU", "AA", "UU"}
+
+
+def preview_from_dict(data: dict[str, Any]) -> PkosSyncPreview:
+    changes = [PkosFileChange(**item) for item in data.get("changes", [])]
+    return PkosSyncPreview(
+        preview_id=str(data.get("preview_id", "")),
+        created_at=str(data.get("created_at", "")),
+        repository_path=str(data.get("repository_path", "")),
+        branch=str(data.get("branch", "")),
+        remote=str(data.get("remote", "")),
+        remote_url_available=bool(data.get("remote_url_available", False)),
+        lint_result=dict(data.get("lint_result", {})),
+        safety_checks=dict(data.get("safety_checks", {})),
+        changes=changes,
+        existing_staged_changes=[str(item) for item in data.get("existing_staged_changes", [])],
+        proposed_commit_message=str(data.get("proposed_commit_message", "")),
+        ready_count=int(data.get("ready_count", 0)),
+        review_count=int(data.get("review_count", 0)),
+        excluded_count=int(data.get("excluded_count", 0)),
+        blocked_count=int(data.get("blocked_count", 0)),
+        warnings=[str(item) for item in data.get("warnings", [])],
+        errors=[str(item) for item in data.get("errors", [])],
+    )
+
+
+def render_preview_markdown(preview: PkosSyncPreview) -> str:
+    def section(title: str, changes: list[PkosFileChange]) -> list[str]:
+        lines = [f"## {title}", ""]
+        if not changes:
+            return lines + ["None.", ""]
+        for change in changes:
+            lines.append(f"- `{change.relative_path}` - {change.classification} / {change.recommended_action} ({change.reason})")
+        return lines + [""]
+
+    lines = [
+        "# PKOS Smart Sync Preview",
+        "",
+        "## Executive Summary",
+        "",
+        f"- Production knowledge: {sum(1 for c in preview.changes if c.classification == 'production_knowledge')}",
+        f"- Governed operations: {sum(1 for c in preview.changes if c.classification == 'governed_operations')}",
+        f"- Approved research: {sum(1 for c in preview.changes if c.classification == 'approved_research')}",
+        f"- Needs review: {preview.review_count}",
+        f"- Excluded generated/runtime: {sum(1 for c in preview.changes if c.classification in {'generated_output', 'runtime_artifact'})}",
+        f"- Blocked secret-risk files: {preview.blocked_count}",
+        f"- Ready to stage: {preview.ready_count}",
+        "",
+        "## Repository Status",
+        "",
+        f"- Repository: `{preview.repository_path}`",
+        f"- Branch: `{preview.branch}`",
+        f"- Remote: `{preview.remote}`",
+        f"- Remote available: `{preview.remote_url_available}`",
+        "",
+        "## Lint Result",
+        "",
+        f"- Status: `{preview.lint_result.get('status', 'unknown')}`",
+        "",
+    ]
+    lines.extend(section("Files Recommended for Staging", [c for c in preview.changes if c.recommended_action == "stage"]))
+    lines.extend(section("Files Requiring Review", [c for c in preview.changes if c.recommended_action == "review"]))
+    lines.extend(section("Files Excluded", [c for c in preview.changes if c.recommended_action == "exclude"]))
+    lines.extend(section("Blocked Files", [c for c in preview.changes if c.recommended_action == "block"]))
+    lines.extend(["## Existing Staged Changes", ""])
+    lines.extend([f"- `{path}`" for path in preview.existing_staged_changes] or ["None."])
+    lines.extend(
+        [
+            "",
+            "## Proposed Commit Message",
+            "",
+            "```text",
+            preview.proposed_commit_message,
+            "```",
+            "",
+            "## Proposed Push Target",
+            "",
+            f"- `{preview.remote}` / `{preview.branch}`",
+            "",
+            "## Safety Checks",
+            "",
+        ]
+    )
+    for warning in preview.warnings:
+        lines.append(f"- Warning: {warning}")
+    for error in preview.errors:
+        lines.append(f"- Error: {error}")
+    if not preview.warnings and not preview.errors:
+        lines.append("- No safety warnings or errors.")
+    lines.extend(["", "## Provenance", "", f"- Preview ID: `{preview.preview_id}`", f"- Created at: `{preview.created_at}`", ""])
+    return "\n".join(lines)
+
+
+def render_run_markdown(run: PkosSyncRun) -> str:
+    lines = [
+        "# PKOS Smart Sync Report",
+        "",
+        f"- Run ID: `{run.run_id}`",
+        f"- Type: `{run.run_type}`",
+        f"- Status: `{run.status}`",
+        f"- Preview ID: `{run.preview_id or 'none'}`",
+        f"- Commit hash: `{run.commit_hash or 'none'}`",
+        f"- Pushed: `{run.pushed}`",
+        "",
+        "## Staged Files",
+        "",
+    ]
+    lines.extend([f"- `{path}`" for path in run.staged_files] or ["None."])
+    if run.warnings:
+        lines.extend(["", "## Warnings", ""])
+        lines.extend([f"- {warning}" for warning in run.warnings])
+    if run.errors:
+        lines.extend(["", "## Errors", ""])
+        lines.extend([f"- {error}" for error in run.errors])
+    lines.append("")
+    return "\n".join(lines)

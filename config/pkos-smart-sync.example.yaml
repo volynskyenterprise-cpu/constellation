@@ -1,0 +1,38 @@
+pkos_smart_sync:
+  enabled: true
+  repository_path: C:/Users/stanv/OneDrive/Documents/Obsidian Vault
+  lint_command:
+    - python
+    - 07-tools/lint_wiki.py
+  auto_stage_classifications:
+    - production_knowledge
+    - governed_operations
+    - tooling
+  review_classifications:
+    - approved_research
+    - draft_research
+    - configuration
+    - unknown
+  excluded_classifications:
+    - generated_output
+    - runtime_artifact
+    - temporary_file
+    - private_or_secret
+  require_confirmation: true
+  allow_commit: true
+  allow_push: true
+  push_requires_confirmation: true
+  remote: origin
+  branch: main
+  include_rules: []
+  exclude_rules: []
+  overrides:
+    - pattern: "03-operations/aoc/**"
+      classification: governed_operations
+      action: stage
+    - pattern: "08-research/**"
+      classification: draft_research
+      action: review
+    - pattern: "**/intake/incoming/**"
+      classification: runtime_artifact
+      action: exclude

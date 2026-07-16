@@ -26,6 +26,7 @@ from .memory import InstitutionalMemoryError, InstitutionalMemoryStore
 from .morning import MorningExecutiveError, MorningExecutiveStore
 from .pkos import PKOSError, PKOSKnowledgeOrganization
 from .performance import PerformanceIntelligenceError, PerformanceIntelligenceStore
+from .pkos_smart_sync import PkosSmartSyncEngine, PkosSmartSyncError, PkosSyncPolicy
 from .thesis_accuracy import ThesisAccuracyError, ThesisAccuracyStore
 from .prompts import PromptUnavailable
 from .real_estate_intake import RealEstateIntakeEngine, RealEstateIntakeError, RealEstateIntakeStore
@@ -38,6 +39,36 @@ from .state import WorkflowStateError
 from .thesis import ThesisError, ThesisStore
 from .thesis_intelligence import ThesisIntelligenceError, ThesisStore as ThesisIntelligenceStore
 from .workflow import WorkflowAutomationError, WorkflowStore
+
+
+def _filter_pkos_sync_changes(changes: list[dict], args: argparse.Namespace) -> list[dict]:
+    selected = list(changes)
+    classification = getattr(args, "classification", None)
+    if classification:
+        selected = [item for item in selected if item.get("classification") == classification]
+    include_patterns = [str(item).replace("\\", "/") for item in getattr(args, "include", []) or []]
+    exclude_patterns = [str(item).replace("\\", "/") for item in getattr(args, "exclude", []) or []]
+    file_filters = {str(item).replace("\\", "/").strip("/") for item in getattr(args, "files", []) or []}
+    if include_patterns:
+        selected = [item for item in selected if any(_path_matches(str(item.get("relative_path", "")), pattern) for pattern in include_patterns)]
+    if exclude_patterns:
+        selected = [item for item in selected if not any(_path_matches(str(item.get("relative_path", "")), pattern) for pattern in exclude_patterns)]
+    if file_filters:
+        selected = [item for item in selected if str(item.get("relative_path", "")).replace("\\", "/").strip("/") in file_filters]
+    return selected
+
+
+def _path_matches(path: str, pattern: str) -> bool:
+    import fnmatch
+
+    return fnmatch.fnmatch(path.replace("\\", "/").strip("/"), pattern.strip("/"))
+
+
+def _open_if_available(path: Path) -> None:
+    try:
+        subprocess.run(["code", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    except OSError:
+        return
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -130,6 +161,29 @@ def main(argv: list[str] | None = None) -> int:
     pkos_package_parser = pkos_subparsers.add_parser("package", help="Export a PKOS review package for a run.")
     pkos_package_parser.add_argument("workflow_run_id", help="Actual workflow run ID.")
     pkos_package_parser.add_argument("--overwrite", action="store_true", help="Overwrite existing package files.")
+    pkos_sync_parser = pkos_subparsers.add_parser("sync", help="Preview, selectively stage, commit, and push governed PKOS changes.")
+    pkos_sync_parser.add_argument("--config", type=Path, help="Optional Smart Sync policy YAML.")
+    pkos_sync_subparsers = pkos_sync_parser.add_subparsers(dest="pkos_sync_command", required=True)
+    pkos_sync_subparsers.add_parser("status", help="Show PKOS Smart Sync repository status.")
+    pkos_sync_preview_parser = pkos_sync_subparsers.add_parser("preview", help="Generate a read-only Smart Sync preview.")
+    pkos_sync_preview_parser.add_argument("--export", action="store_true", help="Write preview reports under outputs/pkos-smart-sync/.")
+    pkos_sync_preview_parser.add_argument("--classification", help="Only display files with this classification.")
+    pkos_sync_preview_parser.add_argument("--include", action="append", default=[], help="Display path include filter.")
+    pkos_sync_preview_parser.add_argument("--exclude", action="append", default=[], help="Display path exclude filter.")
+    pkos_sync_preview_parser.add_argument("--file", action="append", default=[], dest="files", help="Display one path.")
+    pkos_sync_preview_parser.add_argument("--open", action="store_true", help="Open the generated preview Markdown in VS Code when available.")
+    pkos_sync_stage_parser = pkos_sync_subparsers.add_parser("stage", help="Stage only files approved by the latest Smart Sync preview.")
+    pkos_sync_stage_parser.add_argument("--approved-only", action="store_true", help="Stage only preview-approved files.")
+    pkos_sync_commit_parser = pkos_sync_subparsers.add_parser("commit", help="Commit the exact approved staged manifest.")
+    pkos_sync_commit_parser.add_argument("--commit-message", help="Override the deterministic Smart Sync commit message.")
+    pkos_sync_subparsers.add_parser("push", help="Push the latest Smart Sync commit to the configured remote/branch.")
+    pkos_sync_run_parser = pkos_sync_subparsers.add_parser("run", help="Run lint, preview, selective stage, commit, and optional push.")
+    pkos_sync_run_parser.add_argument("--yes", action="store_true", help="Confirm safe non-blocked Smart Sync actions.")
+    pkos_sync_run_parser.add_argument("--no-push", action="store_true", help="Do not push after commit.")
+    pkos_sync_run_parser.add_argument("--commit-message", help="Override the deterministic Smart Sync commit message.")
+    pkos_sync_subparsers.add_parser("history", help="List Smart Sync run history.")
+    pkos_sync_show_parser = pkos_sync_subparsers.add_parser("show", help="Show one Smart Sync run.")
+    pkos_sync_show_parser.add_argument("run_id", help="Smart Sync run ID.")
 
     evidence_parser = subparsers.add_parser("evidence", help="Inspect and export evidence records.")
     evidence_parser.add_argument("--root", type=Path, default=Path.cwd(), help="Constellation repository root.")
@@ -612,6 +666,48 @@ def main(argv: list[str] | None = None) -> int:
             print(f"report: {output_path}")
             return 0
     if args.command == "pkos":
+        if args.pkos_command == "sync":
+            try:
+                policy = PkosSyncPolicy.load(args.root.resolve(), getattr(args, "config", None))
+                engine = PkosSmartSyncEngine(args.root.resolve(), policy)
+                sync_command = args.pkos_sync_command
+                if sync_command == "status":
+                    print(json.dumps(engine.status(), indent=2, sort_keys=True))
+                    return 0
+                if sync_command == "preview":
+                    preview = engine.preview(export=bool(args.export or args.open))
+                    changes = _filter_pkos_sync_changes(preview.to_dict()["changes"], args)
+                    payload = preview.to_dict()
+                    payload["changes"] = changes
+                    if args.open:
+                        _open_if_available(args.root.resolve() / "outputs" / "pkos-smart-sync" / "latest-preview.md")
+                    print(json.dumps(payload, indent=2, sort_keys=True))
+                    return 0 if not preview.errors else 1
+                if sync_command == "stage":
+                    run = engine.stage(approved_only=True)
+                    print(json.dumps(run.to_dict(), indent=2, sort_keys=True))
+                    return 0 if run.status == "succeeded" else 1
+                if sync_command == "commit":
+                    run = engine.commit(message=args.commit_message)
+                    print(json.dumps(run.to_dict(), indent=2, sort_keys=True))
+                    return 0 if run.status in {"succeeded", "no_changes"} else 1
+                if sync_command == "push":
+                    run = engine.push()
+                    print(json.dumps(run.to_dict(), indent=2, sort_keys=True))
+                    return 0 if run.status in {"succeeded", "no_changes"} else 1
+                if sync_command == "run":
+                    run = engine.run(yes=args.yes, no_push=args.no_push, commit_message=args.commit_message)
+                    print(json.dumps(run.to_dict(), indent=2, sort_keys=True))
+                    return 0 if run.status in {"succeeded", "no_changes"} else 1
+                if sync_command == "history":
+                    print(json.dumps(engine.store.load_history(), indent=2, sort_keys=True))
+                    return 0
+                if sync_command == "show":
+                    print(json.dumps(engine.show(args.run_id), indent=2, sort_keys=True))
+                    return 0
+            except PkosSmartSyncError as exc:
+                print(f"error: {exc}")
+                return 1
         organization = PKOSKnowledgeOrganization(args.root.resolve())
         if args.pkos_command == "ingest":
             try:
