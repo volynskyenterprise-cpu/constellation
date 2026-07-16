@@ -49,6 +49,19 @@ Default behavior:
 - Generated output, runtime artifacts, and temporary files are excluded.
 - Private or secret-risk files are blocked and can never be staged by overrides.
 
+Policy precedence in v7.2.6 is deterministic:
+
+1. secret-risk and unresolved conflict blocking
+2. explicit exclude overrides
+3. runtime and generated artifact exclusions
+4. highest-priority review or stage override
+5. built-in path and content rules
+6. unknown-file review fallback
+
+More-specific overrides win ties at the same priority. Broad override patterns that affect many files are reported as broad override warnings in the preview diagnostics.
+
+The detailed classification matrix is documented in `pkos-smart-sync-policy-matrix-v7.2.md`.
+
 ## Approval Workflow
 
 1. Run preview.
@@ -64,6 +77,7 @@ Default behavior:
 ```powershell
 python -m constellation pkos sync status
 python -m constellation pkos sync preview --export
+python -m constellation pkos sync preview --explain 07-tools/aoc_email/gmail_client.py
 python -m constellation pkos sync stage --approved-only
 python -m constellation pkos sync commit
 python -m constellation pkos sync push
@@ -108,6 +122,8 @@ These outputs are local runtime artifacts and are ignored by Git.
 ## Secret Handling
 
 Smart Sync uses deterministic local checks for secret-risk paths and content patterns. It reports only the path, risk category, blocked status, and triggered rule. It does not print secret values and never stages secret-risk files.
+
+`preview --explain PATH` includes redacted secret-content diagnostics such as `secret-content:credential-field:line-45` so the operator can locate the risk without exposing private values.
 
 ## Staging Safety
 

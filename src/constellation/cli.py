@@ -167,6 +167,7 @@ def main(argv: list[str] | None = None) -> int:
     pkos_sync_subparsers.add_parser("status", help="Show PKOS Smart Sync repository status.")
     pkos_sync_preview_parser = pkos_sync_subparsers.add_parser("preview", help="Generate a read-only Smart Sync preview.")
     pkos_sync_preview_parser.add_argument("--export", action="store_true", help="Write preview reports under outputs/pkos-smart-sync/.")
+    pkos_sync_preview_parser.add_argument("--explain", help="Explain the classification decision for one path.")
     pkos_sync_preview_parser.add_argument("--classification", help="Only display files with this classification.")
     pkos_sync_preview_parser.add_argument("--include", action="append", default=[], help="Display path include filter.")
     pkos_sync_preview_parser.add_argument("--exclude", action="append", default=[], help="Display path exclude filter.")
@@ -676,6 +677,14 @@ def main(argv: list[str] | None = None) -> int:
                     return 0
                 if sync_command == "preview":
                     preview = engine.preview(export=bool(args.export or args.open))
+                    if getattr(args, "explain", None):
+                        requested = str(args.explain).replace("\\", "/").strip("/")
+                        for change in preview.changes:
+                            if change.relative_path == requested:
+                                print(json.dumps(change.to_dict(), indent=2, sort_keys=True))
+                                return 0 if change.recommended_action != "block" else 1
+                        print(f"error: path not found in preview: {args.explain}")
+                        return 1
                     changes = _filter_pkos_sync_changes(preview.to_dict()["changes"], args)
                     payload = preview.to_dict()
                     payload["changes"] = changes

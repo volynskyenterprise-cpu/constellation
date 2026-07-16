@@ -55,6 +55,7 @@ TEMP_EXTENSIONS = {".tmp", ".bak", ".swp", ".pyc", ".log"}
 READY_CLASSIFICATIONS = {"production_knowledge", "governed_operations", "tooling"}
 REVIEW_CLASSIFICATIONS = {"approved_research", "configuration", "draft_research", "unknown"}
 EXCLUDED_CLASSIFICATIONS = {"generated_output", "runtime_artifact", "temporary_file", "private_or_secret"}
+BROAD_OVERRIDE_WARNING_THRESHOLD = 20
 
 
 def _now_iso() -> str:
@@ -80,6 +81,91 @@ def _sha256_text(value: str) -> str:
 
 def _hash_manifest(paths: list[str]) -> str:
     return _sha256_text("\n".join(sorted(_normalize_rel(path) for path in paths)))
+
+
+def _apply_override_decision(override: dict[str, Any], current_classification: str, fallback_action: str) -> tuple[str, str, str, str, str]:
+    classification = str(override.get("classification", current_classification))
+    if classification not in CLASSIFICATIONS:
+        classification = current_classification
+    action = str(override.get("action", fallback_action))
+    if action not in ACTIONS:
+        action = fallback_action
+    pattern = str(override.get("pattern", ""))
+    return classification, action, "high", f"Policy override matched `{pattern}`.", pattern
+
+
+def _secret_rule_name(pattern: re.Pattern[str]) -> str:
+    raw = pattern.pattern.lower()
+    if "private key" in raw:
+        return "private-key"
+    if "api" in raw or "token" in raw or "secret" in raw:
+        return "credential-field"
+    if "sk-" in raw:
+        return "openai-token-prefix"
+    if "gh[" in raw:
+        return "github-token-prefix"
+    return "secret-pattern"
+
+
+def line_number_for_pattern(text: str, pattern: re.Pattern[str]) -> int:
+    for index, line in enumerate(text.splitlines(), start=1):
+        if pattern.search(line):
+            return index
+    return 0
+
+
+def major_subtree(relative_path: str) -> str:
+    parts = _split_path(relative_path)
+    if not parts:
+        return "Other"
+    if parts[0] == "03-operations" and len(parts) > 1:
+        if parts[1] == "aoc":
+            return "AOC"
+        if parts[1] == "lodestar":
+            return "Lodestar"
+        return "Operations"
+    if parts[0] in {"00-system", "01-system", "02-commands"}:
+        return "System"
+    if parts[0] in {"07-tools", "06-templates"}:
+        return "Tooling"
+    if parts[0] == "08-research":
+        return "Research"
+    if parts[0] == ".obsidian":
+        return "Obsidian"
+    return parts[0]
+
+
+def _summary_by_subtree(changes: list["PkosFileChange"]) -> dict[str, dict[str, int]]:
+    summary: dict[str, dict[str, int]] = {}
+    for change in changes:
+        bucket = summary.setdefault(change.subtree, {"stage": 0, "review": 0, "exclude": 0, "block": 0})
+        bucket[change.recommended_action] = bucket.get(change.recommended_action, 0) + 1
+    return dict(sorted(summary.items()))
+
+
+def _top_reasons(changes: list["PkosFileChange"], action: str) -> list[dict[str, Any]]:
+    counts: dict[str, int] = {}
+    for change in changes:
+        if change.recommended_action == action:
+            counts[change.reason] = counts.get(change.reason, 0) + 1
+    return [{"reason": reason, "count": count} for reason, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:5]]
+
+
+def _broad_override_warnings(changes: list["PkosFileChange"]) -> list[str]:
+    counts: dict[str, int] = {}
+    for change in changes:
+        if change.recommended_action == "stage" and change.override_source:
+            counts[change.override_source] = counts.get(change.override_source, 0) + 1
+    warnings = []
+    for pattern, count in sorted(counts.items(), key=lambda item: (-item[1], item[0])):
+        if count > BROAD_OVERRIDE_WARNING_THRESHOLD and _is_broad_pattern(pattern):
+            warnings.append(f"Local override `{pattern}` selected {count} files. More-specific runtime exclusions should be configured.")
+    return warnings
+
+
+def _is_broad_pattern(pattern: str) -> bool:
+    cleaned = _normalize_rel(pattern)
+    return cleaned.endswith("/**") and cleaned.count("/") <= 2
 
 
 def _run_git(repo: Path, args: list[str], *, check: bool = False) -> subprocess.CompletedProcess[str]:
@@ -231,6 +317,9 @@ class PkosFileChange:
     contains_generated_content_risk: bool
     requires_manual_review: bool
     selected_for_staging: bool
+    subtree: str = "Other"
+    precedence: list[str] = field(default_factory=list)
+    override_source: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return self.__dict__.copy()
@@ -253,6 +342,9 @@ class PkosSyncPreview:
     review_count: int
     excluded_count: int
     blocked_count: int
+    summary_by_subtree: dict[str, dict[str, int]]
+    top_exclusion_reasons: list[dict[str, Any]]
+    top_review_reasons: list[dict[str, Any]]
     warnings: list[str]
     errors: list[str]
 
@@ -395,6 +487,7 @@ class PkosSmartSyncEngine:
             errors.append("PKOS lint failed.")
         if any(change.contains_secret_risk for change in changes):
             errors.append("Secret-risk files detected.")
+        warnings.extend(_broad_override_warnings(changes))
         preview = PkosSyncPreview(
             preview_id=_stable_id("pkos-preview", [str(repo), *[c.relative_path + c.git_status + c.classification + c.recommended_action for c in changes]]),
             created_at=_now_iso(),
@@ -411,6 +504,9 @@ class PkosSmartSyncEngine:
             review_count=sum(1 for item in changes if item.recommended_action == "review"),
             excluded_count=sum(1 for item in changes if item.recommended_action == "exclude"),
             blocked_count=sum(1 for item in changes if item.recommended_action == "block"),
+            summary_by_subtree=_summary_by_subtree(changes),
+            top_exclusion_reasons=_top_reasons(changes, "exclude"),
+            top_review_reasons=_top_reasons(changes, "review"),
             warnings=warnings,
             errors=errors,
         )
@@ -578,17 +674,13 @@ class PkosSmartSyncEngine:
         status = change["status"]
         size = abs_path.stat().st_size if abs_path.exists() and abs_path.is_file() else 0
         secret_rules = self._secret_rules(rel, abs_path)
+        precedence = ["1 secret block", "2 conflict block", "3 explicit exclude override", "4 runtime/generated exclusion", "5 temporary/private exclusion", "6 explicit review override", "7 approved staging rule", "8 unknown review"]
         classification, confidence, rules, reason = classify_path(rel)
         runtime_risk = classification == "runtime_artifact"
         generated_risk = classification == "generated_output"
-        override = self._matching_override(rel)
-        if override and not secret_rules and not _is_deletion(status):
-            override_classification = str(override.get("classification", classification))
-            override_action = str(override.get("action", ""))
-            if override_classification in CLASSIFICATIONS and (not override_action or override_action in ACTIONS):
-                classification = override_classification
-                rules.append(f"override:{override.get('pattern')}")
-                reason = f"Local override matched `{override.get('pattern')}`."
+        override_source = ""
+        exclude_override = self._matching_override(rel, action="exclude")
+        decision_override = self._matching_override(rel, actions={"review", "stage"})
         if secret_rules:
             classification = "private_or_secret"
             action = "block"
@@ -599,8 +691,14 @@ class PkosSmartSyncEngine:
             action = "review"
             rules.append("deleted-file-review")
             reason = "Deleted files require manual review before staging."
-        elif override and str(override.get("action", "")) in ACTIONS:
-            action = str(override["action"])
+        elif exclude_override:
+            classification, action, confidence, reason, override_source = _apply_override_decision(exclude_override, classification, "exclude")
+            rules.append(f"override:{override_source}")
+        elif classification in {"runtime_artifact", "generated_output", "temporary_file", "private_or_secret"}:
+            action = "exclude" if classification != "private_or_secret" else "block"
+        elif decision_override:
+            classification, action, confidence, reason, override_source = _apply_override_decision(decision_override, classification, str(decision_override.get("action", "review")))
+            rules.append(f"override:{override_source}")
         elif classification in self.policy.auto_stage_classifications:
             action = "stage"
         elif classification in self.policy.review_classifications:
@@ -626,6 +724,9 @@ class PkosSmartSyncEngine:
             contains_generated_content_risk=generated_risk,
             requires_manual_review=action == "review",
             selected_for_staging=action == "stage",
+            subtree=major_subtree(rel),
+            precedence=precedence,
+            override_source=override_source,
         )
 
     def _secret_rules(self, rel: str, abs_path: Path) -> list[str]:
@@ -638,16 +739,24 @@ class PkosSmartSyncEngine:
                 text = ""
             for pattern in SECRET_CONTENT_PATTERNS:
                 if pattern.search(text):
-                    rules.append(f"secret-content:{pattern.pattern[:32]}")
+                    rules.append(f"secret-content:{_secret_rule_name(pattern)}:line-{line_number_for_pattern(text, pattern)}")
         return rules
 
-    def _matching_override(self, rel: str) -> dict[str, Any] | None:
+    def _matching_override(self, rel: str, *, action: str | None = None, actions: set[str] | None = None) -> dict[str, Any] | None:
         normalized = _normalize_rel(rel)
+        matches: list[dict[str, Any]] = []
         for override in self.policy.overrides:
             pattern = str(override.get("pattern", ""))
+            override_action = str(override.get("action", ""))
+            if action is not None and override_action != action:
+                continue
+            if actions is not None and override_action not in actions:
+                continue
             if pattern and fnmatch.fnmatch(normalized, _normalize_rel(pattern)):
-                return override
-        return None
+                matches.append(override)
+        if not matches:
+            return None
+        return sorted(matches, key=lambda item: (int(item.get("priority", 0) or 0), len(str(item.get("pattern", "")))), reverse=True)[0]
 
     def _commit_message(self, changes: list[PkosFileChange]) -> str:
         date = datetime.now().strftime("%Y-%m-%d")
@@ -706,18 +815,43 @@ def classify_path(relative_path: str) -> tuple[str, str, list[str], str]:
     lower = rel.lower()
     parts = _split_path(rel)
     suffix = Path(rel).suffix.lower()
+    name = parts[-1] if parts else ""
+    if parts[:1] == [".obsidian"]:
+        return "configuration", "high", ["obsidian-configuration"], "Obsidian configuration requires review."
+    if len(parts) == 1 and re.match(r"^\d{4}-\d{2}-\d{2}\.md$", name):
+        return "unknown", "medium", ["root-daily-note"], "Root daily notes require review."
     if suffix in TEMP_EXTENSIONS or any(part in {"tmp", "temp"} for part in parts):
         return "temporary_file", "high", ["temporary-file"], "Temporary files are excluded."
+    if name.endswith(".lock"):
+        return "runtime_artifact", "high", ["lock-file"], "Lock files are runtime artifacts."
     if any(part in GENERATED_SEGMENTS for part in parts):
         return "generated_output", "medium", ["generated-segment"], "Generated output is excluded by default."
     if any(part in RUNTIME_SEGMENTS for part in parts):
         return "runtime_artifact", "high", ["runtime-segment"], "Runtime artifacts are excluded."
+    if parts[:5] == ["03-operations", "aoc", "07-automation", "intake", "approved"]:
+        return "governed_operations", "medium", ["aoc-approved-intake"], "Approved AOC intake is governed operations."
+    if _contains_sequence(parts, ["intake", "incoming"]) or _contains_sequence(parts, ["intake", "review"]):
+        return "runtime_artifact", "high", ["intake-runtime-path"], "Intake incoming/review files are transient runtime artifacts."
+    if _contains_sequence(parts, ["automation", "tmp"]) or _contains_sequence(parts, ["automation", "temp"]) or _contains_sequence(parts, ["automation", "cache"]) or _contains_sequence(parts, ["automation", "locks"]):
+        return "runtime_artifact", "high", ["automation-runtime-path"], "Automation temp/cache/lock files are runtime artifacts."
+    if name.endswith("-run.json"):
+        return "runtime_artifact", "medium", ["operational-run-json"], "Operational run JSON is a runtime artifact."
+    if name.startswith("latest-") and name.endswith("-scan.md"):
+        return "runtime_artifact", "medium", ["transient-scan-status"], "Latest scan outputs are transient unless explicitly approved."
     if "draft" in lower or "experimental" in lower or "working" in lower or "proposed" in lower or "review-required" in lower:
         return "draft_research", "medium", ["draft-marker"], "Draft or review-required material needs review."
-    if parts[:1] == ["00-system"] or "governance" in parts or "registry" in lower or "procedure" in lower:
+    if name == "morning executive brief.md":
+        return "unknown", "medium", ["generated-morning-brief-review"], "Generated Morning Executive Brief requires review unless designated durable."
+    if parts[:1] == ["00-system"] or parts[:1] == ["01-system"] or parts[:1] == ["02-commands"] or "governance" in parts or "registry" in lower or "procedure" in lower:
         return "production_knowledge", "high", ["production-knowledge-path"], "Governed system knowledge can be staged."
-    if parts[:2] == ["03-operations", "aoc"] or "dashboard" in lower or "knowledge-pack" in lower:
+    if _is_aoc_stage_path(parts, name):
         return "governed_operations", "medium", ["governed-operations-path"], "Operational knowledge can be staged when safe."
+    if _is_aoc_review_path(parts, name):
+        return "unknown", "medium", ["aoc-review-path"], "AOC review/status material requires operator review."
+    if parts[:3] == ["03-operations", "lodestar", "eoc"]:
+        return "governed_operations", "medium", ["lodestar-eoc-path"], "Lodestar EOC records are governed operations."
+    if parts[:4] == ["03-operations", "lodestar", "growth", "content-intelligence"]:
+        return "unknown", "medium", ["lodestar-content-intelligence-review"], "Lodestar content-intelligence material requires review unless final/approved."
     if parts[:1] == ["06-templates"] or (parts[:1] == ["07-tools"] and suffix in {".ps1", ".py", ".md", ".json"}):
         return "tooling", "medium", ["tooling-path"], "Governed tooling can be staged when safe."
     if suffix in {".json", ".yaml", ".yml", ".toml"}:
@@ -725,6 +859,42 @@ def classify_path(relative_path: str) -> tuple[str, str, list[str], str]:
     if parts[:1] == ["08-research"]:
         return "draft_research", "medium", ["research-path"], "Research defaults to draft unless approved."
     return "unknown", "low", ["no-governed-rule"], "No governed staging rule matched."
+
+
+def _contains_sequence(parts: list[str], sequence: list[str]) -> bool:
+    size = len(sequence)
+    return any(parts[index : index + size] == sequence for index in range(0, max(len(parts) - size + 1, 0)))
+
+
+def _is_aoc_stage_path(parts: list[str], name: str) -> bool:
+    if parts[:3] in (
+        ["03-operations", "aoc", "00-system"],
+        ["03-operations", "aoc", "01-dashboard"],
+        ["03-operations", "aoc", "02-assignments"],
+        ["03-operations", "aoc", "08-analytics"],
+    ):
+        return True
+    if parts[:4] == ["03-operations", "aoc", "05-knowledge", "packs"]:
+        return True
+    if parts[:5] == ["03-operations", "aoc", "07-automation", "intake", "approved"]:
+        return True
+    return name in {
+        "opportunity-index.md",
+        "latest-opportunity-review.md",
+        "appraisal-operations-context.md",
+        "aoc-automation-notes.md",
+        "latest-automation-status.md",
+        "scheduler-config.example.json",
+        "gmail-intake-config.example.json",
+    }
+
+
+def _is_aoc_review_path(parts: list[str], name: str) -> bool:
+    if parts[:5] == ["03-operations", "aoc", "07-automation", "opportunities", "review"]:
+        return True
+    if "reconciliation" in name or "review" in name or name.startswith("latest-"):
+        return parts[:3] == ["03-operations", "aoc", "07-automation"]
+    return parts[:2] == ["03-operations", "aoc"]
 
 
 def change_type(status: str) -> str:
@@ -767,6 +937,9 @@ def preview_from_dict(data: dict[str, Any]) -> PkosSyncPreview:
         review_count=int(data.get("review_count", 0)),
         excluded_count=int(data.get("excluded_count", 0)),
         blocked_count=int(data.get("blocked_count", 0)),
+        summary_by_subtree=dict(data.get("summary_by_subtree", {})),
+        top_exclusion_reasons=list(data.get("top_exclusion_reasons", [])),
+        top_review_reasons=list(data.get("top_review_reasons", [])),
         warnings=[str(item) for item in data.get("warnings", [])],
         errors=[str(item) for item in data.get("errors", [])],
     )
@@ -794,6 +967,28 @@ def render_preview_markdown(preview: PkosSyncPreview) -> str:
         f"- Blocked secret-risk files: {preview.blocked_count}",
         f"- Ready to stage: {preview.ready_count}",
         "",
+        "## Summary By Major Subtree",
+        "",
+    ]
+    if preview.summary_by_subtree:
+        for subtree, counts in preview.summary_by_subtree.items():
+            if isinstance(counts, dict):
+                lines.append(f"- {subtree}: stage `{counts.get('stage', 0)}`, review `{counts.get('review', 0)}`, exclude `{counts.get('exclude', 0)}`, block `{counts.get('block', 0)}`")
+    else:
+        lines.append("None.")
+    lines.extend(
+        [
+            "",
+            "## Top Review Reasons",
+            "",
+        ]
+    )
+    lines.extend([f"- {item.get('reason')}: `{item.get('count')}`" for item in preview.top_review_reasons] or ["None."])
+    lines.extend(["", "## Top Exclusion Reasons", ""])
+    lines.extend([f"- {item.get('reason')}: `{item.get('count')}`" for item in preview.top_exclusion_reasons] or ["None."])
+    lines.extend(
+        [
+            "",
         "## Repository Status",
         "",
         f"- Repository: `{preview.repository_path}`",
@@ -805,7 +1000,8 @@ def render_preview_markdown(preview: PkosSyncPreview) -> str:
         "",
         f"- Status: `{preview.lint_result.get('status', 'unknown')}`",
         "",
-    ]
+        ]
+    )
     lines.extend(section("Files Recommended for Staging", [c for c in preview.changes if c.recommended_action == "stage"]))
     lines.extend(section("Files Requiring Review", [c for c in preview.changes if c.recommended_action == "review"]))
     lines.extend(section("Files Excluded", [c for c in preview.changes if c.recommended_action == "exclude"]))

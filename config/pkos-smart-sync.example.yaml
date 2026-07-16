@@ -27,12 +27,71 @@ pkos_smart_sync:
   include_rules: []
   exclude_rules: []
   overrides:
-    - pattern: "03-operations/aoc/**"
+    - pattern: "03-operations/aoc/07-automation/intake/incoming/**"
+      classification: runtime_artifact
+      action: exclude
+      priority: 100
+    - pattern: "03-operations/aoc/07-automation/intake/review/**"
+      classification: runtime_artifact
+      action: exclude
+      priority: 100
+    - pattern: "03-operations/aoc/07-automation/tmp/**"
+      classification: runtime_artifact
+      action: exclude
+      priority: 100
+    - pattern: "03-operations/aoc/07-automation/temp/**"
+      classification: runtime_artifact
+      action: exclude
+      priority: 100
+    - pattern: "03-operations/aoc/07-automation/cache/**"
+      classification: runtime_artifact
+      action: exclude
+      priority: 100
+    - pattern: "03-operations/aoc/07-automation/locks/**"
+      classification: runtime_artifact
+      action: exclude
+      priority: 100
+    - pattern: "03-operations/aoc/07-automation/intake/approved/**"
       classification: governed_operations
       action: stage
+      priority: 90
+    - pattern: "03-operations/aoc/00-system/**"
+      classification: governed_operations
+      action: stage
+      priority: 80
+    - pattern: "03-operations/aoc/01-dashboard/**"
+      classification: governed_operations
+      action: stage
+      priority: 80
+    - pattern: "03-operations/aoc/02-assignments/**"
+      classification: governed_operations
+      action: stage
+      priority: 80
+    - pattern: "03-operations/aoc/05-knowledge/packs/**"
+      classification: governed_operations
+      action: stage
+      priority: 80
+    - pattern: "03-operations/aoc/08-analytics/friction/**"
+      classification: governed_operations
+      action: stage
+      priority: 80
+    - pattern: "03-operations/aoc/07-automation/opportunities/review/**"
+      classification: unknown
+      action: review
+      priority: 70
+    - pattern: "03-operations/aoc/**"
+      classification: unknown
+      action: review
+      priority: 10
     - pattern: "08-research/**"
       classification: draft_research
       action: review
+      priority: 90
+    - pattern: ".obsidian/**"
+      classification: configuration
+      action: review
+      priority: 90
     - pattern: "**/intake/incoming/**"
       classification: runtime_artifact
       action: exclude
+      priority: 100

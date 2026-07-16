@@ -53,6 +53,7 @@ python -m constellation pkos sync push
 Preview is read-only. Staging uses explicit approved paths only. Commit verifies the staged manifest against the approval record. Push requires a Smart Sync commit and never force pushes.
 
 Secret-risk files are blocked, generated/runtime files are excluded, and draft or unknown files require review.
+Policy refinement in v7.2.6 keeps daily previews smaller by excluding AOC intake runtime noise before broad governed-operation rules can apply. Use `python -m constellation pkos sync preview --explain PATH` to inspect a single classification decision.
 
 ---
 

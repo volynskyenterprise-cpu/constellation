@@ -67,7 +67,13 @@ class PkosSmartSyncTests(unittest.TestCase):
 
     def test_path_classification(self) -> None:
         self.assertEqual(classify_path("00-system/index.md")[0], "production_knowledge")
-        self.assertEqual(classify_path("03-operations/aoc/brief.md")[0], "governed_operations")
+        self.assertEqual(classify_path("03-operations/aoc/01-dashboard/brief.md")[0], "governed_operations")
+        self.assertEqual(classify_path("03-operations/aoc/brief.md")[0], "unknown")
+        self.assertEqual(classify_path("03-operations/aoc/07-automation/intake/incoming/item.json")[0], "runtime_artifact")
+        self.assertEqual(classify_path("03-operations/aoc/07-automation/intake/review/item.md")[0], "runtime_artifact")
+        self.assertEqual(classify_path("03-operations/aoc/07-automation/intake/approved/item.md")[0], "governed_operations")
+        self.assertEqual(classify_path(".obsidian/graph.json")[0], "configuration")
+        self.assertEqual(classify_path("2026-07-15.md")[0], "unknown")
         self.assertEqual(classify_path("08-research/draft.md")[0], "draft_research")
         self.assertEqual(classify_path("logs/run.log")[0], "temporary_file")
         self.assertEqual(classify_path("misc/file.md")[0], "unknown")
@@ -93,7 +99,7 @@ class PkosSmartSyncTests(unittest.TestCase):
 
     def test_stage_only_approved_paths(self) -> None:
         self._write("00-system/index.md", "production\n")
-        self._write("03-operations/aoc/brief.md", "ops\n")
+        self._write("03-operations/aoc/01-dashboard/brief.md", "ops\n")
         self._write("08-research/draft-note.md", "draft\n")
         engine = self._engine()
         preview = engine.preview()
@@ -102,8 +108,71 @@ class PkosSmartSyncTests(unittest.TestCase):
         staged = run(["git", "diff", "--cached", "--name-only"], self.pkos).stdout.splitlines()
         self.assertEqual(sorted(staged), sorted(run_result.staged_files))
         self.assertIn("00-system/index.md", staged)
-        self.assertIn("03-operations/aoc/brief.md", staged)
+        self.assertIn("03-operations/aoc/01-dashboard/brief.md", staged)
         self.assertNotIn("08-research/draft-note.md", staged)
+
+    def test_specific_runtime_exclusion_wins_over_broad_aoc_stage_override(self) -> None:
+        self._write("03-operations/aoc/07-automation/intake/incoming/item.json", "{}\n")
+        policy = PkosSyncPolicy(
+            repository_path=self.pkos,
+            lint_command=["python", "07-tools/lint_wiki.py"],
+            remote="origin",
+            branch="main",
+            overrides=[
+                {"pattern": "03-operations/aoc/**", "classification": "governed_operations", "action": "stage", "priority": 10},
+                {"pattern": "03-operations/aoc/07-automation/intake/incoming/**", "classification": "runtime_artifact", "action": "exclude", "priority": 100},
+            ],
+        )
+        preview = PkosSmartSyncEngine(self.constellation, policy).preview()
+        change = preview.changes[0]
+        self.assertEqual(change.classification, "runtime_artifact")
+        self.assertEqual(change.recommended_action, "exclude")
+
+    def test_specific_stage_override_wins_over_broad_review_fallback(self) -> None:
+        self._write("03-operations/aoc/05-knowledge/packs/final-pack.md", "knowledge\n")
+        policy = PkosSyncPolicy(
+            repository_path=self.pkos,
+            lint_command=["python", "07-tools/lint_wiki.py"],
+            remote="origin",
+            branch="main",
+            overrides=[
+                {"pattern": "03-operations/aoc/05-knowledge/packs/**", "classification": "governed_operations", "action": "stage", "priority": 80},
+                {"pattern": "03-operations/aoc/**", "classification": "unknown", "action": "review", "priority": 10},
+            ],
+        )
+        preview = PkosSmartSyncEngine(self.constellation, policy).preview()
+        change = preview.changes[0]
+        self.assertEqual(change.classification, "governed_operations")
+        self.assertEqual(change.recommended_action, "stage")
+
+    def test_broad_aoc_override_warning(self) -> None:
+        for index in range(21):
+            self._write(f"03-operations/aoc/99-broad/file-{index}.md", "ops\n")
+        policy = PkosSyncPolicy(
+            repository_path=self.pkos,
+            lint_command=["python", "07-tools/lint_wiki.py"],
+            remote="origin",
+            branch="main",
+            overrides=[{"pattern": "03-operations/aoc/**", "classification": "governed_operations", "action": "stage", "priority": 10}],
+        )
+        preview = PkosSmartSyncEngine(self.constellation, policy).preview()
+        self.assertTrue(any("03-operations/aoc/**" in warning for warning in preview.warnings))
+
+    def test_preview_contains_subtree_and_reason_summaries(self) -> None:
+        self._smoke_changes()
+        preview = self._engine().preview()
+        self.assertIn("AOC", preview.summary_by_subtree)
+        self.assertTrue(preview.top_review_reasons)
+        self.assertTrue(preview.top_exclusion_reasons)
+
+    def test_secret_diagnostics_are_redacted_with_line_number(self) -> None:
+        self._write("07-tools/aoc_email/gmail_client.py", "client_secret = 'do-not-print'\n")
+        preview = self._engine().preview()
+        change = preview.changes[0]
+        self.assertEqual(change.recommended_action, "block")
+        self.assertTrue(any("secret-content:credential-field:line-1" in rule for rule in change.classification_rules))
+        report = (self.constellation / "outputs" / "pkos-smart-sync" / "latest-preview.md").read_text(encoding="utf-8")
+        self.assertNotIn("do-not-print", report)
 
     def test_stage_never_stages_blocked_secret(self) -> None:
         self._write("00-system/index.md", "production\n")

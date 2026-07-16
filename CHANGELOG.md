@@ -2,6 +2,14 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.2.6 - PKOS Smart Sync Policy Refinement
+
+- Refined PKOS Smart Sync policy precedence so secret blocking, conflict blocking, explicit exclusions, and runtime/generated exclusions win before broad staging rules.
+- Replaced broad AOC auto-stage behavior with narrower governed AOC rules for system records, dashboards, assignments, knowledge packs, approved intake, and durable friction records.
+- Routed AOC incoming/review intake, opportunity review material, Lodestar content-intelligence work, Obsidian config, daily notes, and unknown records to exclude or review instead of automatic staging.
+- Added preview diagnostics including subtree summaries, top review/exclusion reasons, broad override warnings, and `pkos sync preview --explain PATH`.
+- Added the PKOS Smart Sync policy matrix documentation and regression tests for rule precedence and runtime false-positive handling.
+
 ## 7.2.5 - PKOS Smart Sync
 
 - Added governed PKOS Smart Sync as a preview-first, selective-staging workflow for end-of-day PKOS synchronization.
