@@ -1,0 +1,28 @@
+assignment_id: example-assignment
+subject:
+  address: 524 Laurel Avenue
+  property_type: single_family_residential
+  gross_living_area: 2450
+  lot_size: 7200
+  condition: C3
+  quality: Q3
+  bedrooms: 4
+  bathrooms: 3
+  sale_or_effective_date: 2026-07-15
+
+comparables:
+  - comparable_id: comp-001
+    source_type: appraiser_entry
+    address: 500 Example Avenue
+    status: closed_sale
+    sale_date: 2026-05-01
+    sale_price: 1850000
+    gross_living_area: 2350
+    lot_size: 7000
+    condition: C3
+    quality: Q3
+    bedrooms: 4
+    bathrooms: 3
+    distance_miles: 0.4
+    source_paths:
+      - sources/mls-comp-001.pdf

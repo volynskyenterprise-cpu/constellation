@@ -6,6 +6,7 @@ Start with:
 
 - `operating-manual.md`
 - `real-estate-daily-automation-v7.2.md`
+- `comparable-intelligence-v7.3.md`
 - `agent-authoring-guide.md`
 - `workflow-authoring-guide.md`
 - `pkos-smart-sync-v7.2.md`

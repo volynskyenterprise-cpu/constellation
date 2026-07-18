@@ -9,6 +9,7 @@ from typing import Any
 from . import __version__
 from .canonical_assignments import CanonicalAssignmentStore
 from .canonical_operations import CanonicalOperationsEngine
+from .comparable_intelligence import ComparableStore
 from .io import read_json, write_json
 from .models import JsonMap
 from .real_estate import RealEstateAssignmentStore
@@ -177,6 +178,7 @@ class ExecutiveDashboardBuilder:
         real_estate_summary.update(_real_estate_consolidation_summary(_read_optional_json(self.root / "outputs" / "real-estate" / "consolidation" / "assignment-clusters.json")))
         real_estate_summary.update(_real_estate_canonical_summary(self.root))
         real_estate_summary.update(_real_estate_daily_summary(real_estate_daily))
+        real_estate_summary.update(ComparableStore(self.root).summary())
         connector_warning_summary = _connector_warning_summary(daily_run, workflow)
         risks_gaps = _risks_gaps(morning, theses)
         actions = _actions(morning, status, risks_gaps)

@@ -1,0 +1,28 @@
+comparable_intelligence:
+  recency:
+    strong_days: 180
+    acceptable_days: 365
+    review_days: 730
+
+  gross_living_area:
+    strong_percent: 10
+    acceptable_percent: 20
+    major_percent: 35
+
+  lot_size:
+    strong_percent: 15
+    acceptable_percent: 30
+    major_percent: 50
+
+  distance:
+    strong_miles: 1
+    acceptable_miles: 3
+    review_miles: 10
+
+  source_priority:
+    - appraiser_verified
+    - signed_engagement
+    - mls_export
+    - public_record
+    - client_provided
+    - derived

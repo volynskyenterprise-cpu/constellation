@@ -58,6 +58,25 @@ Secret false-positive hardening in v7.2.7 distinguishes harmless credential-obje
 
 ---
 
+---
+
+# Comparable Intelligence
+
+Comparable Intelligence organizes locally supplied comparable-sale evidence for a canonical Real Estate assignment.
+
+```bash
+python -m constellation real-estate comparables build ASSIGNMENT_ID --overwrite
+python -m constellation real-estate comparables list ASSIGNMENT_ID
+python -m constellation real-estate comparables coverage ASSIGNMENT_ID
+python -m constellation real-estate comparables conflicts ASSIGNMENT_ID
+python -m constellation real-estate comparables select ASSIGNMENT_ID COMPARABLE_ID --confirm
+python -m constellation real-estate comparables exclude ASSIGNMENT_ID COMPARABLE_ID --reason "Reviewed by appraiser." --confirm
+```
+
+The engine normalizes local YAML, JSON, and CSV records, detects deterministic duplicates and conflicts, classifies factual similarity components, reports bracketing and coverage, and organizes evidence into primary, secondary, contextual, insufficient-data, and review-required tiers.
+
+Comparable Intelligence does not select final comparables, generate a value opinion, create appraisal adjustments, or replace professional judgment. Appraiser selection and exclusion are explicit local review-state actions.
+
 # Core Principles
 
 Constellation is built around six principles:

@@ -10,6 +10,7 @@ from .ai_markets import AIMarketsBriefStore, AIMarketsCatalystStore, AIMarketsDe
 from .assignment_consolidation import AssignmentConsolidationEngine, AssignmentConsolidationError, AssignmentConsolidationStore
 from .canonical_assignments import MIGRATION_CATEGORIES, CanonicalAssignmentEngine, CanonicalAssignmentError, CanonicalAssignmentResolver, CanonicalAssignmentStore
 from .canonical_operations import CanonicalOperationsEngine, CanonicalOperationsError, CanonicalOperationsStore
+from .comparable_intelligence import ComparableIntelligenceEngine, ComparableIntelligenceError, ComparableStore
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .daily import DailyPipelineError, DailyPipelineStore
 from .dashboard import ExecutiveDashboardError, ExecutiveDashboardStore
@@ -427,6 +428,40 @@ def main(argv: list[str] | None = None) -> int:
         command_parser.add_argument("assignment_id", help="Assignment ID.")
         if command_name == "show":
             command_parser.add_argument("--open", action="store_true", help="Open the canonical assignment brief in VS Code if available.")
+    real_estate_comparables_parser = real_estate_subparsers.add_parser("comparables", help="Build and inspect Comparable Intelligence.")
+    real_estate_comparables_subparsers = real_estate_comparables_parser.add_subparsers(dest="real_estate_comparables_command", required=True)
+    for command_name, help_text in [
+        ("build", "Build Comparable Intelligence for an assignment."),
+        ("status", "Show Comparable Intelligence status."),
+        ("list", "List comparable records."),
+        ("coverage", "Show comparable coverage."),
+        ("conflicts", "Show comparable conflicts."),
+        ("review-queue", "Show comparable review queue."),
+        ("export", "Print comparable report paths."),
+        ("review", "Show comparable review state."),
+        ("create-template", "Create a private comparable input template."),
+    ]:
+        parser_for_command = real_estate_comparables_subparsers.add_parser(command_name, help=help_text)
+        parser_for_command.add_argument("assignment_id", help="Assignment ID or alias.")
+        if command_name == "build":
+            parser_for_command.add_argument("--overwrite", action="store_true", help="Overwrite Comparable Intelligence outputs.")
+    show_parser = real_estate_comparables_subparsers.add_parser("show", help="Show one comparable record.")
+    show_parser.add_argument("assignment_id", help="Assignment ID or alias.")
+    show_parser.add_argument("comparable_id", help="Comparable ID.")
+    select_parser = real_estate_comparables_subparsers.add_parser("select", help="Record appraiser selection review state.")
+    select_parser.add_argument("assignment_id", help="Assignment ID or alias.")
+    select_parser.add_argument("comparable_id", help="Comparable ID.")
+    select_parser.add_argument("--reviewer", default="appraiser", help="Reviewer identity.")
+    select_parser.add_argument("--confirm", action="store_true", help="Confirm appraiser-controlled review state change.")
+    exclude_parser = real_estate_comparables_subparsers.add_parser("exclude", help="Record appraiser exclusion review state.")
+    exclude_parser.add_argument("assignment_id", help="Assignment ID or alias.")
+    exclude_parser.add_argument("comparable_id", help="Comparable ID.")
+    exclude_parser.add_argument("--reason", required=True, help="Appraiser exclusion reason.")
+    exclude_parser.add_argument("--reviewer", default="appraiser", help="Reviewer identity.")
+    exclude_parser.add_argument("--confirm", action="store_true", help="Confirm appraiser-controlled review state change.")
+    reset_parser = real_estate_comparables_subparsers.add_parser("reset-review", help="Reset appraiser review state for a comparable.")
+    reset_parser.add_argument("assignment_id", help="Assignment ID or alias.")
+    reset_parser.add_argument("comparable_id", help="Comparable ID.")
     real_estate_intake_parser = real_estate_subparsers.add_parser("intake", help="Auto-ingest Real Estate assignments from structured local intake.")
     real_estate_intake_subparsers = real_estate_intake_parser.add_subparsers(dest="real_estate_intake_command", required=True)
     real_estate_intake_subparsers.add_parser("status", help="Show Real Estate intake status.")
@@ -1833,6 +1868,86 @@ def main(argv: list[str] | None = None) -> int:
                     if not state.conflicts:
                         print("No canonical identity conflicts.")
                     return 0
+            if args.real_estate_command == "comparables":
+                resolution = _resolve_real_estate_assignment(args.root.resolve(), args.assignment_id)
+                if resolution.ambiguous:
+                    print(f"requested_alias: {args.assignment_id}")
+                    print("resolved: False")
+                    print("ambiguous: True")
+                    for match in resolution.matches:
+                        print(f"- {match.get('canonical_assignment_id')} alias={match.get('alias')} type={match.get('alias_type')}")
+                    return 1
+                assignment_id = resolution.canonical_assignment_id if resolution.resolved else args.assignment_id
+                if resolution.resolved:
+                    print(f"requested_alias: {resolution.requested_alias}")
+                    print(f"canonical_assignment_id: {resolution.canonical_assignment_id}")
+                    print(f"alias_type: {resolution.alias_type}")
+                    print("resolved: True")
+                comparable_engine = ComparableIntelligenceEngine(args.root.resolve())
+                comparable_store = ComparableStore(args.root.resolve())
+                command = args.real_estate_comparables_command
+                if command == "create-template":
+                    path = comparable_store.create_template(assignment_id)
+                    print(f"comparable_template: {path}")
+                    print("warning: Private local comparable data. Do not commit.")
+                    return 0
+                if command == "build":
+                    universe = comparable_engine.build(assignment_id, overwrite=bool(args.overwrite))
+                    _print_comparable_status(universe.to_dict(), comparable_store.output_dir(assignment_id))
+                    return 0
+                if command == "status":
+                    _print_comparable_status(comparable_engine.status(assignment_id), comparable_store.output_dir(assignment_id))
+                    return 0
+                data = comparable_store.load(assignment_id)
+                if not data:
+                    data = comparable_engine.build(assignment_id).to_dict()
+                if command == "list":
+                    for record in _map_list(data.get("comparables", [])):
+                        print(f"{record.get('comparable_id')} status={record.get('candidate_status')} property_status={record.get('property_status')} address={record.get('property_address')} sale_date={record.get('sale_date')} price={record.get('sale_price')}")
+                    return 0
+                if command == "show":
+                    for record in _map_list(data.get("comparables", [])):
+                        if record.get("comparable_id") == args.comparable_id:
+                            print(json.dumps(record, indent=2, sort_keys=True))
+                            return 0
+                    print(f"error: unknown comparable ID: {args.comparable_id}")
+                    return 1
+                if command == "coverage":
+                    print(json.dumps(_map(data.get("coverage")), indent=2, sort_keys=True))
+                    return 0
+                if command == "conflicts":
+                    for conflict in _map_list(data.get("conflicts", [])):
+                        print(f"{conflict.get('severity')}: {conflict.get('field_name')} comparable={conflict.get('comparable_id')} values={conflict.get('values')} status={conflict.get('status')}")
+                    return 0
+                if command == "review-queue":
+                    for item in _map_list(data.get("review_queue", [])):
+                        print(f"{item.get('severity')}: {item.get('item_type')} comparable={item.get('comparable_id')} field={item.get('field')} reason={item.get('reason')}")
+                    return 0
+                if command == "review":
+                    print(json.dumps(comparable_store.load_review_state(assignment_id), indent=2, sort_keys=True))
+                    return 0
+                if command == "select":
+                    comparable_engine.select(assignment_id, args.comparable_id, reviewer=args.reviewer, confirm=bool(args.confirm))
+                    comparable_engine.build(assignment_id, overwrite=True)
+                    print(f"selected: {args.comparable_id}")
+                    return 0
+                if command == "exclude":
+                    comparable_engine.exclude(assignment_id, args.comparable_id, reason=args.reason, reviewer=args.reviewer, confirm=bool(args.confirm))
+                    comparable_engine.build(assignment_id, overwrite=True)
+                    print(f"excluded: {args.comparable_id}")
+                    return 0
+                if command == "reset-review":
+                    comparable_engine.reset_review(assignment_id, args.comparable_id)
+                    comparable_engine.build(assignment_id, overwrite=True)
+                    print(f"review_reset: {args.comparable_id}")
+                    return 0
+                if command == "export":
+                    comparable_engine.build(assignment_id)
+                    out = comparable_store.output_dir(assignment_id)
+                    print(f"comparable_universe: {out / 'comparable-universe.md'}")
+                    print(f"comparable_coverage: {out / 'comparable-coverage.md'}")
+                    print(f"comparable_review_queue: {out / 'comparable-review-queue.md'}")
+                    return 0
             if args.real_estate_command == "assignments":
                 canonical_engine = CanonicalAssignmentEngine(args.root.resolve())
                 canonical_store = CanonicalAssignmentStore(args.root.resolve())
@@ -1919,7 +2034,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"source_manifest: {store.output_dir(assignment_id) / 'source-manifest.md'}")
                 print(f"evidence_index: {store.output_dir(assignment_id) / 'evidence-index.md'}")
                 return 0
-        except (RealEstateError, RealEstateDailyError, RealEstateIntakeError, AssignmentConsolidationError, CanonicalAssignmentError, CanonicalOperationsError) as exc:
+        except (RealEstateError, RealEstateDailyError, RealEstateIntakeError, AssignmentConsolidationError, CanonicalAssignmentError, CanonicalOperationsError, ComparableIntelligenceError) as exc:
             print(f"error: {exc}")
             return 1
     return 2
@@ -2045,6 +2160,21 @@ def _print_real_estate_assignment_status(data, report_path: Path) -> None:
     print(f"conflict_count: {data.get('conflict_count', 0)}")
     print(f"risk_count: {data.get('risk_count', 0)}")
     print(f"report_path: {report_path}")
+
+
+def _print_comparable_status(data, output_dir: Path) -> None:
+    counts = _map(data.get("counts", data))
+    print(f"available: {bool(data)}")
+    print(f"assignment_id: {data.get('assignment_id') or data.get('canonical_assignment_id') or ''}")
+    print(f"comparable_count: {counts.get('comparable_count', 0)}")
+    print(f"primary_candidates: {counts.get('primary_candidate', 0)}")
+    print(f"secondary_candidates: {counts.get('secondary_candidate', 0)}")
+    print(f"contextual_candidates: {counts.get('contextual_candidate', 0)}")
+    print(f"review_required: {counts.get('review_required', 0)}")
+    print(f"insufficient_data: {counts.get('insufficient_data', 0)}")
+    print(f"open_conflicts: {counts.get('open_conflict_count', 0)}")
+    print(f"review_items: {counts.get('review_item_count', 0)}")
+    print(f"report_path: {output_dir / 'comparable-universe.md'}")
 
 
 def _print_real_estate_intake_status(status) -> None:

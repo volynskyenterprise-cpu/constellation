@@ -343,7 +343,12 @@ class RealEstateAssignmentStore:
             history.append(data)
         write_json(directory / "assignment-history.json", {"snapshots": history})
         directory.mkdir(parents=True, exist_ok=True)
-        (directory / "assignment-brief.md").write_text(render_assignment_brief(snapshot) + _render_consolidation_section(self.root, snapshot.assignment.assignment_id), encoding="utf-8")
+        (directory / "assignment-brief.md").write_text(
+            render_assignment_brief(snapshot)
+            + _render_consolidation_section(self.root, snapshot.assignment.assignment_id)
+            + _render_comparable_section(self.root, snapshot.assignment.assignment_id),
+            encoding="utf-8",
+        )
         (directory / "source-manifest.md").write_text(render_source_manifest(snapshot), encoding="utf-8")
         (directory / "evidence-index.md").write_text(render_evidence_index(snapshot), encoding="utf-8")
         (directory / "missing-information.md").write_text(render_missing_information(snapshot), encoding="utf-8")
@@ -511,6 +516,37 @@ def _render_consolidation_section(root: Path, assignment_id: str) -> str:
         lines.append("")
         return "\n".join(lines)
     return ""
+
+
+def _render_comparable_section(root: Path, assignment_id: str) -> str:
+    path = root / "outputs" / "real-estate" / "assignments" / assignment_id / "comparables" / "comparable-universe.json"
+    if not path.exists():
+        return "\n\n## Comparable Intelligence\n\n- Comparable Intelligence: unavailable\n- Report path: \n"
+    try:
+        data = read_json(path)
+    except Exception:
+        return "\n\n## Comparable Intelligence\n\n- Comparable Intelligence: unavailable\n- Report path: \n"
+    counts = _map(data.get("counts"))
+    coverage = _map(_map(data.get("coverage")).get("levels"))
+    limited = [key for key, value in coverage.items() if value in {"limited", "absent"}]
+    report = path.with_suffix(".md")
+    return "\n".join(
+        [
+            "",
+            "## Comparable Intelligence",
+            "",
+            f"- Comparable candidate count: `{counts.get('comparable_count', 0)}`",
+            f"- Primary candidates: `{counts.get('primary_candidate', 0)}`",
+            f"- Secondary candidates: `{counts.get('secondary_candidate', 0)}`",
+            f"- Contextual candidates: `{counts.get('contextual_candidate', 0)}`",
+            f"- Review-required candidates: `{counts.get('review_required', 0)}`",
+            f"- Open conflicts: `{counts.get('open_conflict_count', 0)}`",
+            f"- Limited or absent coverage: `{', '.join(limited) if limited else 'none'}`",
+            f"- Report path: `{report}`",
+            "- Appraiser selection, adjustment development, reconciliation, and value conclusion remain outside automation.",
+            "",
+        ]
+    )
 
 
 def render_source_manifest(snapshot: RealEstateAssignmentSnapshot) -> str:

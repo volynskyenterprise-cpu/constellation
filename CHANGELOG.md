@@ -2,6 +2,14 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.3.0 - Comparable Intelligence
+
+- Added deterministic Comparable Intelligence for canonical Real Estate assignments.
+- Added local YAML, JSON, and CSV comparable input support with normalization, source checksums, duplicate detection, conflicts, coverage, bracketing, and review queues.
+- Added transparent component assessments and evidence-navigation tiers without final comparable selection, valuation opinions, or appraisal adjustments.
+- Added appraiser-controlled select, exclude, and reset-review commands that update private local review state only.
+- Integrated comparable summaries into Assignment Intelligence, Dashboard, and Real Estate Daily Automation.
+
 ## 7.2.7 - Smart Sync Secret False-Positive Hardening
 
 - Refined PKOS Smart Sync secret detection to distinguish secret-like identifier references from literal secret values.

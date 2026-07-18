@@ -239,6 +239,14 @@ outputs/real-estate/daily/real-estate-daily-delta.json
 
 It does not apply migration, resolve conflicts automatically, delete alias directories, generate valuation opinions, select comparables, create adjustments, interpret permits, or make USPAP conclusions.
 
+## v7.3.0 Implementation - Comparable Intelligence
+
+Comparable Intelligence marks the transition from assignment infrastructure to valuation evidence intelligence.
+
+It organizes locally supplied comparable-sale evidence for a canonical assignment, normalizes structured YAML, JSON, and CSV records, detects deterministic duplicates and conflicts, classifies factual similarity components, reports coverage and bracketing, and preserves appraiser-controlled review state.
+
+It does not select final comparables, generate appraisal adjustments, reconcile value indicators, produce value conclusions, retrieve live MLS data, use semantic matching, or replace professional judgment.
+
 ## 5. Institutional Valuation Operating System
 
 Real Estate Intelligence should operate as an institutional layer around the appraisal workflow.
