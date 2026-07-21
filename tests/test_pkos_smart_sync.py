@@ -10,6 +10,7 @@ from constellation.pkos_smart_sync import (
     PkosSmartSyncEngine,
     PkosSmartSyncError,
     PkosSyncPolicy,
+    _parse_porcelain_z,
     classify_path,
     detect_secret_risk,
 )
@@ -78,6 +79,35 @@ class PkosSmartSyncTests(unittest.TestCase):
         self.assertEqual(classify_path("08-research/draft.md")[0], "draft_research")
         self.assertEqual(classify_path("logs/run.log")[0], "temporary_file")
         self.assertEqual(classify_path("misc/file.md")[0], "unknown")
+
+    def test_porcelain_z_preserves_valid_unicode_paths(self) -> None:
+        paths = [
+            "normal-ascii.md",
+            "Known Issue — Neon Preview Branch Limit.md",
+            "café.md",
+            "日本語.md",
+        ]
+        output = "".join(f"?? {path}\0" for path in paths)
+        self.assertEqual([change["path"] for change in _parse_porcelain_z(output)], paths)
+
+    def test_unicode_policy_matching_is_normalization_aware(self) -> None:
+        decomposed = "misc/cafe\u0301.md"
+        self._write(decomposed, "normalized match\n")
+        policy = PkosSyncPolicy(
+            repository_path=self.pkos,
+            lint_command=["python", "07-tools/lint_wiki.py"],
+            remote="origin",
+            branch="main",
+            overrides=[{"pattern": "misc/café.md", "classification": "production_knowledge", "action": "stage"}],
+        )
+        preview = PkosSmartSyncEngine(self.constellation, policy).preview()
+        self.assertEqual(preview.changes[0].relative_path, decomposed)
+        self.assertEqual(preview.changes[0].recommended_action, "stage")
+
+    def test_porcelain_z_rejects_control_and_malformed_paths(self) -> None:
+        for path in ["unsafe\nname.md", "hidden\u200bname.md", "replacement\ufffdname.md"]:
+            with self.subTest(path=path), self.assertRaises(PkosSmartSyncError):
+                _parse_porcelain_z(f"?? {path}\0")
 
     def test_preview_counts_and_manifests(self) -> None:
         self._smoke_changes()

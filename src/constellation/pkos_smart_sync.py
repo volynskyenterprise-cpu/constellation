@@ -6,6 +6,7 @@ import json
 import os
 import re
 import subprocess
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -111,8 +112,12 @@ def _normalize_rel(path: str | Path) -> str:
     return str(path).replace("\\", "/").strip("/")
 
 
+def _normalize_match_path(path: str | Path) -> str:
+    return unicodedata.normalize("NFC", _normalize_rel(path))
+
+
 def _split_path(path: str) -> list[str]:
-    return [part.lower() for part in _normalize_rel(path).split("/") if part]
+    return [part.lower() for part in _normalize_match_path(path).split("/") if part]
 
 
 def _sha256_text(value: str) -> str:
@@ -354,6 +359,38 @@ def _run_git(repo: Path, args: list[str], *, check: bool = False) -> subprocess.
     if check and result.returncode != 0:
         raise PkosSmartSyncError((result.stderr or result.stdout or "git command failed").strip())
     return result
+
+
+def _validate_git_path(path: str) -> str:
+    if not path or "\ufffd" in path:
+        raise PkosSmartSyncError("Git reported an empty or malformed repository path.")
+    if Path(path).is_absolute() or any(part in {"", ".", ".."} for part in path.replace("\\", "/").split("/")):
+        raise PkosSmartSyncError("Git reported an unsafe repository-relative path.")
+    if any(unicodedata.category(character) in {"Cc", "Cf", "Cs"} for character in path):
+        raise PkosSmartSyncError("Git reported a repository path containing control or malformed Unicode characters.")
+    return path
+
+
+def _parse_porcelain_z(output: str) -> list[dict[str, str]]:
+    records = output.split("\0")
+    if records and records[-1] == "":
+        records.pop()
+    changes: list[dict[str, str]] = []
+    index = 0
+    while index < len(records):
+        record = records[index]
+        if len(record) < 4 or record[2] != " ":
+            raise PkosSmartSyncError("Git returned malformed porcelain status output.")
+        status = record[:2]
+        path = _validate_git_path(record[3:])
+        if "R" in status or "C" in status:
+            index += 1
+            if index >= len(records):
+                raise PkosSmartSyncError("Git returned an incomplete rename or copy status record.")
+            _validate_git_path(records[index])
+        changes.append({"status": status, "path": _normalize_rel(path)})
+        index += 1
+    return changes
 
 
 def _as_string_list(value: Any) -> list[str]:
@@ -795,11 +832,11 @@ class PkosSmartSyncEngine:
                 errors.append(f"Repository has active {marker} state.")
         if (git_dir / "rebase-merge").exists() or (git_dir / "rebase-apply").exists():
             errors.append("Repository has an active rebase state.")
-        status_lines = _run_git(repo, ["status", "--porcelain=v1", "--untracked-files=all"]).stdout.splitlines()
-        has_conflicts = any(_is_conflict_status(line[:2]) for line in status_lines if len(line) >= 2)
+        status_changes = _parse_porcelain_z(_run_git(repo, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).stdout)
+        has_conflicts = any(_is_conflict_status(change["status"]) for change in status_changes)
         if has_conflicts:
             errors.append("Repository has unresolved conflicts.")
-        staged = [line[3:] for line in status_lines if len(line) >= 3 and line[:2] != "??" and line[0] != " "]
+        staged = [change["path"] for change in status_changes if change["status"] != "??" and change["status"][0] != " "]
         if staged:
             warnings.append("Repository has pre-existing staged changes.")
         remote = _run_git(repo, ["remote", "get-url", self.policy.remote])
@@ -830,17 +867,8 @@ class PkosSmartSyncEngine:
         }
 
     def _git_changes(self) -> list[dict[str, Any]]:
-        lines = _run_git(self.policy.repository_path, ["status", "--porcelain=v1", "--untracked-files=all"]).stdout.splitlines()
-        changes: list[dict[str, Any]] = []
-        for line in lines:
-            if len(line) < 4:
-                continue
-            status = line[:2]
-            path = line[3:]
-            if " -> " in path:
-                path = path.split(" -> ", 1)[1]
-            changes.append({"status": status, "path": _normalize_rel(path)})
-        return changes
+        output = _run_git(self.policy.repository_path, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).stdout
+        return _parse_porcelain_z(output)
 
     def _classify_change(self, change: dict[str, Any]) -> PkosFileChange:
         rel = change["path"]
@@ -931,7 +959,7 @@ class PkosSmartSyncEngine:
         return detections
 
     def _matching_override(self, rel: str, *, action: str | None = None, actions: set[str] | None = None) -> dict[str, Any] | None:
-        normalized = _normalize_rel(rel)
+        normalized = _normalize_match_path(rel)
         matches: list[dict[str, Any]] = []
         for override in self.policy.overrides:
             pattern = str(override.get("pattern", ""))
@@ -940,7 +968,7 @@ class PkosSmartSyncEngine:
                 continue
             if actions is not None and override_action not in actions:
                 continue
-            if pattern and fnmatch.fnmatch(normalized, _normalize_rel(pattern)):
+            if pattern and fnmatch.fnmatch(normalized, _normalize_match_path(pattern)):
                 matches.append(override)
         if not matches:
             return None
