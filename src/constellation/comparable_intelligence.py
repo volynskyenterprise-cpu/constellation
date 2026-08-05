@@ -13,7 +13,13 @@ from typing import Any
 from . import __version__
 from .io import read_json, write_json
 from .models import JsonMap
-from .real_estate import RealEstateAssignmentStore, assignment_directory, normalize_property_type
+from .real_estate import (
+    RealEstateAssignmentStore,
+    assignment_directory,
+    compare_structured_addresses,
+    normalize_property_type,
+    structured_address,
+)
 from .simple_yaml import load_yaml
 
 
@@ -857,11 +863,12 @@ def comparable_subject(assignment: JsonMap) -> JsonMap:
 
 
 def canonical_subject_values(assignment: JsonMap) -> JsonMap:
-    subject = _map(assignment.get("subject"))
+    assignment_record = _map(assignment.get("assignment"))
+    subject = _map(assignment_record.get("subject") or assignment.get("subject"))
     facts = _map_list(assignment.get("facts", []))
     fact_map = {str(item.get("field_name")): item.get("value") for item in facts}
     return {
-        "address": _str(subject.get("address") or assignment.get("subject_address")),
+        "address": _str(assignment.get("subject_address") or subject.get("address")),
         "property_type": _first_available({**fact_map, **assignment}, ["property_type_raw", "property_type"]),
         "gross_living_area": _first_available({**assignment, **fact_map}, ["gross_living_area", "gla"]),
         "lot_size": _first_available({**assignment, **fact_map}, ["lot_size"]),
@@ -875,6 +882,42 @@ def canonical_subject_values(assignment: JsonMap) -> JsonMap:
     }
 
 
+def _scenario_address_evidence(scenario_subject: JsonMap) -> JsonMap:
+    return structured_address(
+        _first_available(scenario_subject, SUBJECT_FIELD_ALIASES["address"]),
+        city=_first_available(scenario_subject, ["city"]),
+        state=_first_available(scenario_subject, ["state"]),
+        postal_code=_first_available(scenario_subject, ["postal_code", "zip", "zip_code"]),
+    )
+
+
+def _canonical_address_evidence(assignment: JsonMap, canonical_address: Any) -> JsonMap:
+    assignment_record = _map(assignment.get("assignment"))
+    subject = _map(assignment_record.get("subject") or assignment.get("subject"))
+    return structured_address(
+        canonical_address,
+        city=subject.get("city"),
+        state=subject.get("state"),
+        postal_code=subject.get("postal_code") or subject.get("zip") or subject.get("zip_code"),
+    )
+
+
+def _address_alternate(value: Any, normalized_value: Any, source: str, source_path: Path, evidence: JsonMap) -> JsonMap:
+    return {
+        "value": value,
+        "raw_value": evidence.get("raw_value", value),
+        "normalized_value": normalized_value,
+        "structured_value": evidence.get("structured_value", {}),
+        "normalized_street_identity": evidence.get("normalized_street_identity", ""),
+        "supplied_components": evidence.get("supplied_components", []),
+        "omitted_components": evidence.get("omitted_components", []),
+        "parse_status": evidence.get("parse_status", "unavailable"),
+        "parse_errors": evidence.get("parse_errors", []),
+        "source": source,
+        "source_path": str(source_path),
+    }
+
+
 def resolve_subject_facts(
     assignment: JsonMap,
     scenario_document: JsonMap,
@@ -884,6 +927,8 @@ def resolve_subject_facts(
 ) -> tuple[JsonMap, JsonMap, list[ComparableConflict]]:
     scenario_subject = _map(scenario_document.get("subject"))
     canonical = canonical_subject_values(assignment)
+    scenario_address = _scenario_address_evidence(scenario_subject)
+    canonical_address = _canonical_address_evidence(assignment, canonical.get("address"))
     resolved: JsonMap = {}
     fields: JsonMap = {}
     conflicts: list[ComparableConflict] = []
@@ -897,14 +942,24 @@ def resolve_subject_facts(
         selected = scenario_value if scenario_available else canonical_value if canonical_available else ""
         selected_source = "private_scenario_input" if scenario_available else "canonical_assignment" if canonical_available else "unavailable"
         selected_path = scenario_path if scenario_available else canonical_path if canonical_available else Path()
-        conflict = scenario_available and canonical_available and not subject_values_equivalent(field_name, scenario_value, canonical_value)
+        address_comparison = compare_structured_addresses(scenario_address, canonical_address) if field_name == "address" and scenario_available and canonical_available else None
+        equivalent = bool(address_comparison.get("equivalent")) if address_comparison else subject_values_equivalent(field_name, scenario_value, canonical_value)
+        conflict = scenario_available and canonical_available and not equivalent
         alternate_values = []
         if scenario_available:
-            alternate_values.append({"value": scenario_raw, "normalized_value": scenario_value, "source": "private_scenario_input", "source_path": str(scenario_path)})
+            alternate_values.append(
+                _address_alternate(scenario_raw, scenario_value, "private_scenario_input", scenario_path, scenario_address)
+                if field_name == "address"
+                else {"value": scenario_raw, "normalized_value": scenario_value, "source": "private_scenario_input", "source_path": str(scenario_path)}
+            )
         if canonical_available:
-            alternate_values.append({"value": canonical_raw, "normalized_value": canonical_value, "source": "canonical_assignment", "source_path": str(canonical_path)})
+            alternate_values.append(
+                _address_alternate(canonical_raw, canonical_value, "canonical_assignment", canonical_path, canonical_address)
+                if field_name == "address"
+                else {"value": canonical_raw, "normalized_value": canonical_value, "source": "canonical_assignment", "source_path": str(canonical_path)}
+            )
         resolved[field_name] = selected
-        fields[field_name] = {
+        detail = {
             "selected_value": scenario_raw if scenario_available else canonical_raw if canonical_available else "",
             "normalized_value": selected,
             "selected_source": selected_source,
@@ -914,7 +969,39 @@ def resolve_subject_facts(
             "conflict_status": "open" if conflict else "none",
             "reason": "Scenario-specific non-empty value selected." if scenario_available else "Scenario value unavailable; verified canonical fallback used." if canonical_available else "No scenario or canonical value available.",
         }
+        if field_name == "address":
+            selected_evidence = scenario_address if scenario_available else canonical_address if canonical_available else structured_address("")
+            comparison = address_comparison or {
+                "equivalence_status": "unavailable",
+                "equivalence_reason": "Only one address source is available; no contradiction was asserted.",
+                "equivalent_components": [],
+                "conflicting_components": [],
+                "omitted_components": {
+                    "scenario": scenario_address.get("omitted_components", []),
+                    "canonical": canonical_address.get("omitted_components", []),
+                },
+            }
+            detail.update(
+                {
+                    "raw_value": selected_evidence.get("raw_value", ""),
+                    "structured_value": selected_evidence.get("structured_value", {}),
+                    "normalized_street_identity": selected_evidence.get("normalized_street_identity", ""),
+                    "supplied_components": selected_evidence.get("supplied_components", []),
+                    "omitted_components": comparison.get("omitted_components", {}),
+                    "equivalent_components": comparison.get("equivalent_components", []),
+                    "conflicting_components": comparison.get("conflicting_components", []),
+                    "equivalence_status": comparison.get("equivalence_status", "unavailable"),
+                    "equivalence_reason": comparison.get("equivalence_reason", ""),
+                }
+            )
+            if address_comparison:
+                detail["reason"] = str(address_comparison.get("equivalence_reason", detail["reason"]))
+        fields[field_name] = detail
         if conflict:
+            conflict_reason = "Scenario and canonical subject facts differ; the scenario value governs this scenario only."
+            if field_name == "address" and address_comparison:
+                components = ", ".join(address_comparison.get("conflicting_components", [])) or "address_parseability"
+                conflict_reason = f"Structured subject addresses conflict on: {components}; the scenario value governs this scenario only."
             conflicts.append(
                 ComparableConflict(
                     conflict_id=_stable_id("subject_fact_conflict", [field_name, _str(scenario_value), _str(canonical_value)]),
@@ -925,7 +1012,7 @@ def resolve_subject_facts(
                     severity="medium",
                     status="open",
                     preferred_source="private_scenario_input",
-                    reason="Scenario and canonical subject facts differ; the scenario value governs this scenario only.",
+                    reason=conflict_reason,
                 )
             )
     resolution = {
@@ -1376,7 +1463,7 @@ def normalize_subject_value(field_name: str, value: Any) -> Any:
 
 def subject_values_equivalent(field_name: str, left: Any, right: Any) -> bool:
     if field_name == "address":
-        return normalize_address(left) == normalize_address(right)
+        return bool(compare_structured_addresses(structured_address(left), structured_address(right)).get("equivalent"))
     if isinstance(left, float) or isinstance(right, float):
         try:
             return abs(float(left) - float(right)) <= 0.000001

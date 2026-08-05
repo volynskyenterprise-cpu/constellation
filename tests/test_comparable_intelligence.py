@@ -491,6 +491,64 @@ comparables:
         self.assertEqual({key: universe.counts.get(key, 0) for key in tier_keys}, baseline_tiers)
         self.assertFalse(review_path.exists())
 
+    def test_structured_address_suffix_and_omitted_locality_have_no_subject_conflict(self) -> None:
+        engine = ComparableIntelligenceEngine(self.tmp)
+        baseline = engine.build(self.assignment_id, scenario="as_is", overwrite=True)
+        tier_keys = ["primary_candidate", "secondary_candidate", "contextual_candidate", "review_required", "insufficient_data", "potential_duplicate"]
+        baseline_tiers = {key: baseline.counts.get(key, 0) for key in tier_keys}
+        review_path = engine.store.review_state_path(self.assignment_id, "as_is")
+        self.assertFalse(review_path.exists())
+
+        assignment_path = self.tmp / "real-estate" / "assignments" / self.assignment_id / "assignment.yaml"
+        assignment_text = assignment_path.read_text(encoding="utf-8")
+        assignment_text = assignment_text.replace("property_type: single_family_residential", "property_type: Single Family", 1)
+        assignment_text = assignment_text.replace(
+            "    address: 100 Fictional Avenue",
+            "    address: 100 N. Fictional Avenue\n    city: Example City\n    state: CA\n    postal_code: 90000",
+            1,
+        )
+        assignment_path.write_text(assignment_text, encoding="utf-8")
+        scenario_path = engine.store.input_dir(self.assignment_id, "as_is") / "comparables.yaml"
+        scenario_path.write_text(scenario_path.read_text(encoding="utf-8").replace("address: 100 Fictional Ave.", "address: 100 N. Fictional Ave.", 1), encoding="utf-8")
+
+        canonical = RealEstateAssignmentStore(self.tmp).build(self.assignment_id).to_dict()
+        universe = engine.build(self.assignment_id, scenario="as_is", overwrite=True)
+
+        self.assertEqual(canonical["property_type"], "single_family_residential")
+        self.assertFalse(any(item.field_name in {"address", "property_type"} and item.comparable_id == "subject" for item in universe.conflicts))
+        self.assertEqual(universe.subject["address"], "100 N. Fictional Ave.")
+        address_detail = universe.subject_resolution["fields"]["address"]
+        self.assertEqual(address_detail["selected_source"], "private_scenario_input")
+        self.assertEqual(address_detail["conflict_status"], "none")
+        self.assertEqual(address_detail["equivalence_status"], "incomplete_but_non_conflicting")
+        self.assertEqual(address_detail["conflicting_components"], [])
+        canonical_provenance = next(item for item in address_detail["alternate_values"] if item["source"] == "canonical_assignment")
+        scenario_provenance = next(item for item in address_detail["alternate_values"] if item["source"] == "private_scenario_input")
+        self.assertEqual(canonical_provenance["raw_value"], "100 N. Fictional Avenue, Example City, CA, 90000")
+        self.assertEqual(canonical_provenance["structured_value"]["city"], "example city")
+        self.assertEqual(scenario_provenance["raw_value"], "100 N. Fictional Ave.")
+        self.assertIn("city", scenario_provenance["omitted_components"])
+        self.assertTrue(canonical_provenance["source_path"])
+        self.assertTrue(scenario_provenance["source_path"])
+        self.assertEqual(universe.counts["comparable_count"], baseline.counts["comparable_count"])
+        self.assertEqual({key: universe.counts.get(key, 0) for key in tier_keys}, baseline_tiers)
+        self.assertFalse(review_path.exists())
+
+    def test_missing_directional_remains_component_level_subject_conflict(self) -> None:
+        scenario_path = ComparableStore(self.tmp).input_dir(self.assignment_id, "as_is") / "comparables.yaml"
+        scenario_path.write_text(scenario_path.read_text(encoding="utf-8").replace("address: 100 Fictional Ave.", "address: 100 N. Fictional Ave.", 1), encoding="utf-8")
+        RealEstateAssignmentStore(self.tmp).build(self.assignment_id)
+
+        universe = ComparableIntelligenceEngine(self.tmp).build(self.assignment_id, scenario="as_is", overwrite=True)
+
+        conflicts = [item for item in universe.conflicts if item.field_name == "address" and item.comparable_id == "subject"]
+        self.assertEqual(len(conflicts), 1)
+        self.assertIn("predirectional", conflicts[0].reason)
+        detail = universe.subject_resolution["fields"]["address"]
+        self.assertEqual(detail["equivalence_status"], "conflict")
+        self.assertEqual(detail["conflicting_components"], ["predirectional"])
+        self.assertEqual(detail["selected_source"], "private_scenario_input")
+
     def test_review_state_is_scenario_specific_for_same_id(self) -> None:
         engine = ComparableIntelligenceEngine(self.tmp)
         engine.build(self.assignment_id, scenario="as_is", overwrite=True)

@@ -104,6 +104,12 @@ Assignment Intelligence and Comparable Intelligence share one deterministic prop
 
 Blank classifications remain unavailable. Unsupported non-empty classifications remain visible with a `review_required` normalization state and a missing-information review item instead of silently becoming `other`. No property type is inferred from an address, zoning, bedroom count, ADU, proposed configuration, or ARV condition. Directional address discrepancies remain conservative identity review items.
 
+### v7.3.3 Structured Address Equivalence
+
+Comparable Intelligence compares scenario and canonical subject addresses through explicit structured components. Supported suffix, directional, unit-marker, state-name, punctuation, case, whitespace, and ZIP+4 aliases normalize deterministically while raw values and both source paths remain visible. Locality omitted by one source is incomplete rather than contradictory; conflicting populated city, state, or postal-code facts remain review-required.
+
+Directionals and unit identifiers are identity-bearing. A populated directional or unit does not equal a blank or different value, malformed and unsupported addresses remain reviewable, and no input or canonical output is rewritten automatically. The policy uses no fuzzy matching, geocoding, parcel lookup, provider calls, or external address validation.
+
 Private assignment files use:
 
 ```text

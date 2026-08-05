@@ -12,8 +12,10 @@ from constellation.dashboard import ExecutiveDashboardBuilder, ExecutiveDashboar
 from constellation.real_estate import (
     RealEstateAssignmentStore,
     RealEstateError,
+    compare_structured_addresses,
     normalize_property_type,
     property_type_normalization_status,
+    structured_address,
 )
 
 
@@ -231,6 +233,60 @@ class RealEstateAssignmentTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertNotEqual(normalize_property_type(value), "single_family_residential")
                 self.assertEqual(property_type_normalization_status(value), "review_required")
+
+    def test_structured_address_deterministic_equivalence(self) -> None:
+        cases = [
+            (structured_address("  100 N. Fictional Ave.  "), structured_address("100 North Fictional Avenue"), "deterministic_equivalent"),
+            (
+                structured_address("100 N Fictional Ave"),
+                structured_address("100 N Fictional Avenue", city="Example City", state="CA", postal_code="90000"),
+                "incomplete_but_non_conflicting",
+            ),
+            (
+                structured_address("100 N Fictional Ave", city="LOS ANGELES", state="California", postal_code="90000-1234"),
+                structured_address("100 North Fictional Avenue", city="Los Angeles", state="CA", postal_code="90000"),
+                "deterministic_equivalent",
+            ),
+            (structured_address("100 N Fictional Ave Unit 3"), structured_address("100 North Fictional Avenue #3"), "deterministic_equivalent"),
+            (structured_address("100 N Fictional Ave, Unit 3"), structured_address("100 North Fictional Avenue #3"), "deterministic_equivalent"),
+        ]
+        for left, right, status in cases:
+            with self.subTest(left=left["raw_value"], right=right["raw_value"]):
+                result = compare_structured_addresses(left, right)
+                self.assertTrue(result["equivalent"])
+                self.assertEqual(result["equivalence_status"], status)
+                self.assertEqual(result["conflicting_components"], [])
+
+    def test_structured_address_identity_and_locality_conflicts(self) -> None:
+        cases = [
+            (structured_address("100 N Fictional Ave"), structured_address("100 Fictional Avenue"), "predirectional"),
+            (structured_address("100 N Fictional Ave"), structured_address("100 S Fictional Avenue"), "predirectional"),
+            (structured_address("100 N Fictional Ave"), structured_address("101 N Fictional Avenue"), "street_number"),
+            (structured_address("100 N Fictional Ave"), structured_address("100 N Imaginary Avenue"), "street_name"),
+            (structured_address("100 N Fictional Ave Unit 3"), structured_address("100 N Fictional Avenue Unit 4"), "unit_identifier"),
+            (structured_address("100 N Fictional Ave Unit 3"), structured_address("100 N Fictional Avenue"), "unit_identifier"),
+            (structured_address("100 N Fictional Ave", city="Example City"), structured_address("100 N Fictional Avenue", city="Different City"), "city"),
+            (structured_address("100 N Fictional Ave", state="CA"), structured_address("100 N Fictional Avenue", state="NV"), "state"),
+            (structured_address("100 N Fictional Ave", postal_code="90000"), structured_address("100 N Fictional Avenue", postal_code="90001"), "postal_code"),
+        ]
+        for left, right, component in cases:
+            with self.subTest(component=component):
+                result = compare_structured_addresses(left, right)
+                self.assertFalse(result["equivalent"])
+                self.assertEqual(result["equivalence_status"], "conflict")
+                self.assertIn(component, result["conflicting_components"])
+
+    def test_structured_address_unavailable_and_unsupported_values_remain_reviewable(self) -> None:
+        blank = structured_address("")
+        missing_number = structured_address("Fictional Avenue")
+        unsupported_suffix = structured_address("100 Fictional Way")
+        malformed = structured_address("not an address")
+        self.assertEqual(blank["parse_status"], "unavailable")
+        for value in [missing_number, unsupported_suffix, malformed]:
+            self.assertEqual(value["parse_status"], "review_required")
+        result = compare_structured_addresses(unsupported_suffix, structured_address("100 Fictional Wy"))
+        self.assertFalse(result["equivalent"])
+        self.assertEqual(result["equivalence_status"], "unavailable")
 
     def test_assignment_build_persists_expected_outputs(self) -> None:
         write_assignment(self.root)

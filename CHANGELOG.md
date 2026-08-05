@@ -2,6 +2,13 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.3.3 - Structured Address Equivalence
+
+- Added deterministic structured subject-address comparison for street number, directionals, street name, finite suffix aliases, units, and explicitly supplied locality.
+- Treats suffix, punctuation, case, whitespace, state-name, and ZIP+4 formatting as equivalent while preserving raw values, structured provenance, and scenario precedence.
+- Treats omitted locality as incomplete rather than contradictory, but keeps populated directional, unit, street-identity, and conflicting locality differences open for review.
+- Preserved conservative operation with no fuzzy matching, geocoding, parcel lookup, external validation, or automatic source rewriting.
+
 ## 7.3.2 - Canonical Property-Type Normalization
 
 - Added one deterministic property-type alias policy shared by canonical Assignment Intelligence and Comparable Intelligence.

@@ -30,6 +30,64 @@ PROPERTY_TYPE_ALIASES = {
     "detached_single_family_residential": "single_family_residential",
     "condo": "condominium",
 }
+ADDRESS_SUFFIX_ALIASES = {
+    "ave": "avenue",
+    "avenue": "avenue",
+    "st": "street",
+    "street": "street",
+    "rd": "road",
+    "road": "road",
+    "dr": "drive",
+    "drive": "drive",
+    "blvd": "boulevard",
+    "boulevard": "boulevard",
+    "ln": "lane",
+    "lane": "lane",
+    "ct": "court",
+    "court": "court",
+    "cir": "circle",
+    "circle": "circle",
+    "pl": "place",
+    "place": "place",
+    "ter": "terrace",
+    "terrace": "terrace",
+    "pkwy": "parkway",
+    "parkway": "parkway",
+    "hwy": "highway",
+    "highway": "highway",
+}
+ADDRESS_DIRECTIONAL_ALIASES = {
+    "n": "north",
+    "north": "north",
+    "s": "south",
+    "south": "south",
+    "e": "east",
+    "east": "east",
+    "w": "west",
+    "west": "west",
+    "ne": "northeast",
+    "northeast": "northeast",
+    "nw": "northwest",
+    "northwest": "northwest",
+    "se": "southeast",
+    "southeast": "southeast",
+    "sw": "southwest",
+    "southwest": "southwest",
+}
+ADDRESS_UNIT_ALIASES = {"unit": "unit", "apt": "unit", "apartment": "unit", "suite": "unit", "ste": "unit"}
+ADDRESS_STATE_ALIASES = {"ca": "ca", "california": "ca"}
+ADDRESS_COMPONENTS = [
+    "street_number",
+    "predirectional",
+    "street_name",
+    "street_suffix",
+    "postdirectional",
+    "unit_type",
+    "unit_identifier",
+    "city",
+    "state",
+    "postal_code",
+]
 VALID_VERIFICATION = {"verified", "client_provided", "source_reported", "unverified", "conflicting", "unavailable"}
 VALID_CONFIDENCE = {"high", "medium", "low", "unknown"}
 SUPPORTED_SOURCE_EXTENSIONS = {".md", ".txt", ".yaml", ".yml", ".json", ".csv", ".pdf", ".jpg", ".jpeg", ".png", ".heic", ".tif", ".tiff"}
@@ -1112,23 +1170,8 @@ def _conflict_compare_value(field: str, value: str) -> str:
     if field == "property_type":
         return normalize_property_type(text)
     if field in {"subject.address", "address"}:
-        lower = text.lower()
-        lower = re.sub(r"#\s*([a-z0-9-]+)", r" unit \1", lower)
-        lower = re.sub(r"\b(apt|apartment|ste|suite)\s+([a-z0-9-]+)", r"unit \2", lower)
-        lower = re.sub(r"[^\w\s]", " ", lower)
-        replacements = {
-            "street": "st",
-            "avenue": "ave",
-            "boulevard": "blvd",
-            "drive": "dr",
-            "road": "rd",
-            "lane": "ln",
-            "court": "ct",
-            "place": "pl",
-            "circle": "cir",
-            "unit": "unit",
-        }
-        return " ".join(replacements.get(word, word) for word in lower.split())
+        parsed = structured_address(text)
+        return str(parsed.get("normalized_street_identity") or _address_surface_value(text))
     if field in {"effective_date", "due_date"}:
         iso = re.match(r"^(\d{4})-(\d{2})-(\d{2})(?:[tT ].*)?$", text)
         if iso:
@@ -1159,6 +1202,195 @@ def _missing_rank(severity: str) -> int:
 
 def _valid_or_default(value: str, valid: set[str], default: str) -> str:
     return value if value in valid else default
+
+
+def structured_address(
+    value: Any,
+    *,
+    city: Any = "",
+    state: Any = "",
+    postal_code: Any = "",
+) -> JsonMap:
+    """Parse explicit address components for deterministic comparison only."""
+    raw_value = html.unescape(str(value or "")).replace("\xa0", " ").strip()
+    source_fields = {
+        "address": raw_value,
+        "city": str(city or "").strip(),
+        "state": str(state or "").strip(),
+        "postal_code": str(postal_code or "").strip(),
+    }
+    components = {name: "" for name in ADDRESS_COMPONENTS}
+    raw_components: JsonMap = {**source_fields, "street_suffix": "", "predirectional": "", "postdirectional": "", "unit_type": "", "unit_identifier": ""}
+    errors: list[str] = []
+    if not raw_value:
+        return {
+            "raw_value": raw_value,
+            "source_fields": source_fields,
+            "structured_value": components,
+            "raw_components": raw_components,
+            "normalized_street_identity": "",
+            "supplied_components": [],
+            "omitted_components": ADDRESS_COMPONENTS.copy(),
+            "parse_status": "unavailable",
+            "parse_errors": ["blank_address"],
+        }
+
+    parts = [re.sub(r"\s+", " ", part).strip() for part in raw_value.split(",")]
+    street_text = parts[0]
+    locality_parts = parts[1:]
+    if locality_parts and re.match(r"(?i)^(?:unit|apt|apartment|suite|ste|#)\s*[a-z0-9-]+$", locality_parts[0]):
+        street_text += " " + locality_parts.pop(0)
+    derived_city = locality_parts[0] if len(locality_parts) > 0 else ""
+    derived_state = locality_parts[1] if len(locality_parts) > 1 else ""
+    derived_postal = locality_parts[2] if len(locality_parts) > 2 else ""
+    if len(locality_parts) == 2:
+        state_zip = re.fullmatch(r"\s*([A-Za-z. ]+?)\s+(\d{5}(?:-\d{4})?)\s*", locality_parts[1])
+        if state_zip:
+            derived_state, derived_postal = state_zip.groups()
+    locality_city = source_fields["city"] or derived_city
+    locality_state = source_fields["state"] or derived_state
+    locality_postal = source_fields["postal_code"] or derived_postal
+
+    prepared = re.sub(r"#\s*", " unit ", street_text.lower())
+    prepared = re.sub(r"[^a-z0-9-]+", " ", prepared)
+    tokens = prepared.split()
+    if not tokens or not re.fullmatch(r"\d+[a-z]?(?:-\d+[a-z]?)?", tokens[0]):
+        errors.append("missing_or_malformed_street_number")
+    else:
+        components["street_number"] = tokens.pop(0)
+
+    if tokens and tokens[0] in ADDRESS_DIRECTIONAL_ALIASES:
+        raw_components["predirectional"] = tokens[0]
+        components["predirectional"] = ADDRESS_DIRECTIONAL_ALIASES[tokens.pop(0)]
+
+    unit_index = next((index for index, token in enumerate(tokens) if token in ADDRESS_UNIT_ALIASES), None)
+    street_tokens = tokens if unit_index is None else tokens[:unit_index]
+    if unit_index is not None:
+        raw_components["unit_type"] = tokens[unit_index]
+        components["unit_type"] = ADDRESS_UNIT_ALIASES[tokens[unit_index]]
+        if unit_index + 1 < len(tokens):
+            raw_components["unit_identifier"] = tokens[unit_index + 1]
+            components["unit_identifier"] = tokens[unit_index + 1]
+            if unit_index + 2 < len(tokens):
+                errors.append("malformed_unit_identifier")
+        else:
+            errors.append("missing_unit_identifier")
+
+    if street_tokens and street_tokens[-1] in ADDRESS_DIRECTIONAL_ALIASES:
+        raw_components["postdirectional"] = street_tokens[-1]
+        components["postdirectional"] = ADDRESS_DIRECTIONAL_ALIASES[street_tokens.pop()]
+    if street_tokens and street_tokens[-1] in ADDRESS_SUFFIX_ALIASES:
+        raw_components["street_suffix"] = street_tokens[-1]
+        components["street_suffix"] = ADDRESS_SUFFIX_ALIASES[street_tokens.pop()]
+    else:
+        errors.append("unsupported_or_missing_street_suffix")
+    components["street_name"] = " ".join(street_tokens)
+    if not components["street_name"]:
+        errors.append("missing_street_name")
+
+    components["city"] = re.sub(r"[^a-z0-9]+", " ", locality_city.lower()).strip()
+    state_token = re.sub(r"[^a-z]", "", locality_state.lower())
+    components["state"] = ADDRESS_STATE_ALIASES.get(state_token, state_token)
+    postal_match = re.fullmatch(r"(\d{5})(?:[-\s]?\d{4})?", locality_postal.strip())
+    components["postal_code"] = postal_match.group(1) if postal_match else re.sub(r"\s+", "", locality_postal.lower())
+    if locality_postal and not postal_match:
+        errors.append("malformed_postal_code")
+    raw_components.update({"city": locality_city, "state": locality_state, "postal_code": locality_postal})
+
+    identity_names = ["street_number", "predirectional", "street_name", "street_suffix", "postdirectional", "unit_type", "unit_identifier"]
+    identity = "|".join(components[name] for name in identity_names)
+    supplied = [name for name in ADDRESS_COMPONENTS if components[name] != ""]
+    return {
+        "raw_value": raw_value,
+        "source_fields": source_fields,
+        "structured_value": components,
+        "raw_components": raw_components,
+        "normalized_street_identity": identity,
+        "supplied_components": supplied,
+        "omitted_components": [name for name in ADDRESS_COMPONENTS if name not in supplied],
+        "parse_status": "review_required" if errors else "parsed",
+        "parse_errors": errors,
+    }
+
+
+def compare_structured_addresses(scenario: JsonMap, canonical: JsonMap) -> JsonMap:
+    """Compare parsed subject addresses without inferring omitted facts."""
+    scenario_raw = str(scenario.get("raw_value", ""))
+    canonical_raw = str(canonical.get("raw_value", ""))
+    if not scenario_raw or not canonical_raw:
+        return {
+            "equivalent": False,
+            "equivalence_status": "unavailable",
+            "equivalence_reason": "One or both address values are unavailable.",
+            "equivalent_components": [],
+            "conflicting_components": [],
+            "omitted_components": {"scenario": scenario.get("omitted_components", []), "canonical": canonical.get("omitted_components", [])},
+        }
+
+    left = dict(scenario.get("structured_value", {}))
+    right = dict(canonical.get("structured_value", {}))
+    exact_surface = _address_surface_value(scenario_raw) == _address_surface_value(canonical_raw)
+    parse_errors = list(scenario.get("parse_errors", [])) + list(canonical.get("parse_errors", []))
+    if parse_errors:
+        return {
+            "equivalent": False,
+            "equivalence_status": "unavailable",
+            "equivalence_reason": "Deterministic structured equivalence could not be established for a non-empty address.",
+            "equivalent_components": [],
+            "conflicting_components": ["address_parseability"],
+            "omitted_components": {"scenario": scenario.get("omitted_components", []), "canonical": canonical.get("omitted_components", [])},
+            "parse_errors": {"scenario": scenario.get("parse_errors", []), "canonical": canonical.get("parse_errors", [])},
+        }
+
+    identity_names = ["street_number", "predirectional", "street_name", "street_suffix", "postdirectional", "unit_type", "unit_identifier"]
+    locality_names = ["city", "state", "postal_code"]
+    equivalent_components: list[str] = []
+    conflicting_components: list[str] = []
+    for name in identity_names:
+        if left.get(name, "") == right.get(name, ""):
+            equivalent_components.append(name)
+        else:
+            conflicting_components.append(name)
+    for name in locality_names:
+        left_value, right_value = left.get(name, ""), right.get(name, "")
+        if left_value and right_value:
+            if left_value == right_value:
+                equivalent_components.append(name)
+            else:
+                conflicting_components.append(name)
+
+    omitted = {
+        "scenario": [name for name in ADDRESS_COMPONENTS if not left.get(name, "")],
+        "canonical": [name for name in ADDRESS_COMPONENTS if not right.get(name, "")],
+    }
+    if conflicting_components:
+        return {
+            "equivalent": False,
+            "equivalence_status": "conflict",
+            "equivalence_reason": "Structured address components conflict: " + ", ".join(conflicting_components) + ".",
+            "equivalent_components": equivalent_components,
+            "conflicting_components": conflicting_components,
+            "omitted_components": omitted,
+        }
+    locality_omitted = any((left.get(name, "") == "") != (right.get(name, "") == "") for name in locality_names)
+    status = "exact" if exact_surface and not locality_omitted else "incomplete_but_non_conflicting" if locality_omitted else "deterministic_equivalent"
+    reason = {
+        "exact": "Address values are exactly equivalent after harmless surface normalization.",
+        "deterministic_equivalent": "Explicit address aliases normalize to the same structured components.",
+        "incomplete_but_non_conflicting": "Street identity is equivalent and omitted locality does not contradict supplied locality.",
+    }[status]
+    return {
+        "equivalent": True,
+        "equivalence_status": status,
+        "equivalence_reason": reason,
+        "equivalent_components": equivalent_components,
+        "conflicting_components": [],
+        "omitted_components": omitted,
+    }
+
+
+def _address_surface_value(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", html.unescape(str(value or "")).lower()).strip()
 
 
 def normalize_property_type(value: Any) -> str:

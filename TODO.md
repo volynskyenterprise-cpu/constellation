@@ -7,6 +7,7 @@
 - Smart Sync Secret False-Positive Hardening is complete; harmless secret-field references are no longer blocked while literal credential material remains blocked.
 - Comparable Scenario and Subject Resolution is complete in v7.3.1; keep as-is and ARV subject facts, universes, review state, history, and automation isolated.
 - Canonical Property-Type Normalization is complete in v7.3.2; keep canonical assignment ingestion and Comparable Intelligence on the shared deterministic alias policy.
+- Structured Address Equivalence is complete in v7.3.3; keep subject-address comparison component-based, deterministic, provenance-preserving, and conservative for directionals, units, and populated locality conflicts.
 - Keep Adjustment Intelligence as the next major Real Estate capability in v7.4.0.
 - Retain future MLS/export adapters as optional local connectors, not core requirements.
 - Keep automatic evening Smart Sync preview scheduling as a future optional enhancement; commit and push remain approval-gated.

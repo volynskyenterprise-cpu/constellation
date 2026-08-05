@@ -1,4 +1,4 @@
-# Comparable Intelligence v7.3.2
+# Comparable Intelligence v7.3.3
 
 Comparable Intelligence is the deterministic comparable-sale evidence layer for Constellation Real Estate Intelligence.
 
@@ -45,6 +45,10 @@ Each field resolves independently:
 
 Equivalent formatting such as `1452`, `1,452 sqft.`, and `1452 square feet` does not create a conflict. A material difference preserves both values and source paths as a `subject_fact_conflict`; the private value governs only that scenario and the canonical assignment remains unchanged. Effective dates use the same scenario-first rule.
 
+Subject addresses resolve through structured components: street number, pre- and post-directionals, street name, a finite street-suffix alias map, unit marker and identifier, city, state, and postal code. Equivalent components suppress a false conflict while retaining both raw values, structured provenance, source paths, and scenario precedence. The resolution records whether equivalence is exact, deterministic, incomplete but non-conflicting, conflicting, or unavailable, together with omitted, equivalent, and conflicting components.
+
+Locality supplied by only one source is retained as incomplete context and is not treated as a contradiction. When both sources supply city, state, or postal code, materially different populated values remain conflicts. Five-digit ZIP and ZIP+4 forms share the deterministic five-digit base; `CA` and `California` share an explicit state alias. No locality is inferred from ZIP or any external source.
+
 ## Schemas
 
 Supported local input formats:
@@ -77,7 +81,9 @@ Original source values remain in source metadata.
 
 Canonical Assignment Intelligence and Comparable Intelligence use the same property-type helper. Blank property types remain unavailable. Unsupported non-empty classifications preserve their raw value and source provenance and remain review-required; they are not silently asserted as `other` or inferred from address, zoning, bedrooms, ADUs, proposed condition, or ARV context. `other` is used only when explicitly supplied as a supported classification.
 
-Address normalization is unchanged. Punctuation and suffix abbreviations may normalize, but directional components remain identity-bearing; an address missing `N`, `S`, `E`, or `W` does not become equivalent automatically.
+Subject-address suffixes, directionals, and unit markers use explicit finite aliases. Punctuation, case, whitespace, and supported suffix forms such as `Ave.`/`Avenue` may establish deterministic equivalence. Directionals and unit identifiers remain identity-bearing: populated-versus-blank or different values remain conflicts. Unsupported or malformed addresses remain reviewable rather than being guessed. This subject-equivalence policy does not alter comparable duplicate keys or rewrite canonical/scenario inputs.
+
+No fuzzy matching, edit distance, semantic inference, embeddings, LLMs, geocoding, maps, parcel lookup, USPS API, provider call, or external address validation is used.
 
 Distance aliases `distance_miles`, `distance_from_subject`, and `distance_from_subject_miles` normalize to `distance_from_subject_miles`. Miles, explicit kilometers, and explicit feet are supported. An ambiguous unit remains unavailable; conflicting aliases create a geography review item. No geocoding or provider lookup occurs.
 
