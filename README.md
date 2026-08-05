@@ -62,18 +62,20 @@ Secret false-positive hardening in v7.2.7 distinguishes harmless credential-obje
 
 # Comparable Intelligence
 
-Comparable Intelligence organizes locally supplied comparable-sale evidence for a canonical Real Estate assignment.
+Comparable Intelligence organizes locally supplied comparable-sale evidence for a canonical Real Estate assignment, with isolated `as_is`, `arv`, and explicitly configured valuation scenarios.
 
 ```bash
-python -m constellation real-estate comparables build ASSIGNMENT_ID --overwrite
-python -m constellation real-estate comparables list ASSIGNMENT_ID
-python -m constellation real-estate comparables coverage ASSIGNMENT_ID
-python -m constellation real-estate comparables conflicts ASSIGNMENT_ID
-python -m constellation real-estate comparables select ASSIGNMENT_ID COMPARABLE_ID --confirm
-python -m constellation real-estate comparables exclude ASSIGNMENT_ID COMPARABLE_ID --reason "Reviewed by appraiser." --confirm
+python -m constellation real-estate comparables build ASSIGNMENT_ID --scenario as_is --overwrite
+python -m constellation real-estate comparables list ASSIGNMENT_ID --scenario as_is
+python -m constellation real-estate comparables coverage ASSIGNMENT_ID --scenario as_is
+python -m constellation real-estate comparables conflicts ASSIGNMENT_ID --scenario as_is
+python -m constellation real-estate comparables scenarios list ASSIGNMENT_ID
+python -m constellation real-estate comparables select ASSIGNMENT_ID COMPARABLE_ID --scenario as_is --confirm
 ```
 
-The engine normalizes local YAML, JSON, and CSV records, detects deterministic duplicates and conflicts, classifies factual similarity components, reports bracketing and coverage, and organizes evidence into primary, secondary, contextual, insufficient-data, and review-required tiers.
+The engine resolves non-empty private scenario subject facts before canonical fallback, preserves subject conflicts, normalizes distance aliases to `distance_from_subject_miles`, detects deterministic duplicates, reports bracketing and coverage, and organizes evidence into transparent tiers. Missing distance limits a usable sale rather than discarding it; old sales remain contextual.
+
+Legacy inputs remain readable as `default`. A legacy file is used for an explicitly requested scenario only as a recorded fallback, and multiple scenarios always require explicit selection. As-is and ARV facts, records, review state, reports, history, and daily fingerprints never mix.
 
 Comparable Intelligence does not select final comparables, generate a value opinion, create appraisal adjustments, or replace professional judgment. Appraiser selection and exclusion are explicit local review-state actions.
 
@@ -847,6 +849,8 @@ Extend Constellation's deterministic evidence-first operating model into valuati
 - v7.1.1 - Assignment Consolidation
 - v7.1.2 - Assignment Identity Resolution
 - v7.2.0 - Canonical Assignment Model
+- v7.3.0 - Comparable Intelligence
+- v7.3.1 - Comparable Scenario and Subject Resolution
 
 Primary question answered:
 

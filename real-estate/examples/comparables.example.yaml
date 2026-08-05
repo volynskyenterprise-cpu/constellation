@@ -1,6 +1,8 @@
 assignment_id: example-assignment
+valuation_scenario: as_is
+scenario_label: As-Is
 subject:
-  address: 524 Laurel Avenue
+  address: 100 Fictional Avenue
   property_type: single_family_residential
   gross_living_area: 2450
   lot_size: 7200
@@ -13,7 +15,7 @@ subject:
 comparables:
   - comparable_id: comp-001
     source_type: appraiser_entry
-    address: 500 Example Avenue
+    address: 101 Fictional Street
     status: closed_sale
     sale_date: 2026-05-01
     sale_price: 1850000
@@ -23,6 +25,6 @@ comparables:
     quality: Q3
     bedrooms: 4
     bathrooms: 3
-    distance_miles: 0.4
+    distance_from_subject_miles: 0.4
     source_paths:
       - sources/mls-comp-001.pdf

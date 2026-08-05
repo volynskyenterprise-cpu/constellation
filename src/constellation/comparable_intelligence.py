@@ -33,8 +33,52 @@ CANDIDATE_STATUSES = {
 }
 
 ASSESSMENTS = {"strong_match", "acceptable_match", "meaningful_difference", "major_difference", "unavailable", "review_required"}
-CORE_FIELDS = ["property_address", "property_type", "sale_date", "sale_price", "gross_living_area", "distance_from_subject"]
+CORE_FIELDS = ["property_address", "property_type", "sale_date", "sale_price", "gross_living_area", "distance_from_subject_miles"]
 ORDERED_CODE_PREFIXES = {"condition": "c", "quality": "q"}
+SCENARIO_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+SUPPORTED_INPUT_SUFFIXES = {".yaml", ".yml", ".json", ".csv"}
+OPERATIONAL_INPUT_NAMES = {"review-state.json", "migration-receipt.json"}
+SUBJECT_FIELD_ALIASES = {
+    "address": ["address"],
+    "property_type": ["property_type"],
+    "gross_living_area": ["gross_living_area", "gla"],
+    "lot_size": ["lot_size"],
+    "condition": ["condition"],
+    "quality": ["quality"],
+    "bedroom_count": ["bedroom_count", "bedrooms"],
+    "bathroom_count": ["bathroom_count", "bathrooms"],
+    "year_built": ["year_built"],
+    "pool": ["pool"],
+    "sale_or_effective_date": ["sale_or_effective_date", "effective_date"],
+}
+
+
+@dataclass(frozen=True)
+class ComparableScenarioResolution:
+    assignment_id: str
+    requested_scenario: str
+    resolved_scenario: str
+    scenario_label: str
+    input_files: list[Path]
+    input_path: Path
+    output_path: Path
+    legacy_fallback_used: bool
+    resolution_reason: str
+    available_scenarios: list[str]
+
+    def to_dict(self) -> JsonMap:
+        return {
+            "assignment_id": self.assignment_id,
+            "requested_scenario": self.requested_scenario,
+            "resolved_scenario": self.resolved_scenario,
+            "scenario_label": self.scenario_label,
+            "input_files": [str(path) for path in self.input_files],
+            "input_path": str(self.input_path),
+            "output_path": str(self.output_path),
+            "legacy_fallback_used": self.legacy_fallback_used,
+            "resolution_reason": self.resolution_reason,
+            "available_scenarios": self.available_scenarios,
+        }
 
 
 @dataclass(frozen=True)
@@ -129,9 +173,10 @@ class ComparableRecord:
     market_area: str
     latitude: float | None
     longitude: float | None
-    distance_from_subject: float | None
+    distance_from_subject_miles: float | None
     source_paths: list[str]
     source_fields: JsonMap
+    distance_provenance: JsonMap
     verification_status: str
     confidence: str
     notes: list[str]
@@ -146,6 +191,11 @@ class ComparableRecord:
 
     def to_dict(self) -> JsonMap:
         return self.__dict__.copy()
+
+    @property
+    def distance_from_subject(self) -> float | None:
+        """Compatibility accessor for callers that predate the canonical field name."""
+        return self.distance_from_subject_miles
 
 
 @dataclass(frozen=True)
@@ -193,6 +243,9 @@ class ComparableUniverse:
     counts: JsonMap
     limitations: list[str]
     provenance: JsonMap
+    valuation_scenario: str = "default"
+    scenario_label: str = ""
+    subject_resolution: JsonMap = field(default_factory=dict)
 
     def to_dict(self) -> JsonMap:
         return {
@@ -209,6 +262,9 @@ class ComparableUniverse:
             "counts": self.counts,
             "limitations": self.limitations,
             "provenance": self.provenance,
+            "valuation_scenario": self.valuation_scenario,
+            "scenario_label": self.scenario_label,
+            "subject_resolution": self.subject_resolution,
         }
 
 
@@ -216,11 +272,139 @@ class ComparableStore:
     def __init__(self, root: Path) -> None:
         self.root = root
 
-    def input_dir(self, assignment_id: str) -> Path:
+    def input_dir(self, assignment_id: str, scenario: str | None = None) -> Path:
+        if scenario and scenario != "default":
+            scenario = validate_scenario_id(scenario)
+            return assignment_directory(self.root, assignment_id) / "comparables" / "scenarios" / scenario
         return assignment_directory(self.root, assignment_id) / "comparables"
 
-    def output_dir(self, assignment_id: str) -> Path:
+    def output_dir(self, assignment_id: str, scenario: str | None = None) -> Path:
+        if scenario and scenario != "default":
+            scenario = validate_scenario_id(scenario)
+            return self.root / "outputs" / "real-estate" / "assignments" / assignment_id / "comparables" / "scenarios" / scenario
         return self.root / "outputs" / "real-estate" / "assignments" / assignment_id / "comparables"
+
+    def legacy_input_path(self, assignment_id: str) -> Path:
+        return self.input_dir(assignment_id) / "comparables.yaml"
+
+    def scenario_ids(self, assignment_id: str) -> list[str]:
+        base = self.input_dir(assignment_id) / "scenarios"
+        if not base.exists():
+            return []
+        scenarios = []
+        for path in sorted(base.iterdir()):
+            if not path.is_dir():
+                continue
+            try:
+                scenario = validate_scenario_id(path.name)
+            except ComparableIntelligenceError:
+                continue
+            if self._files_in(path):
+                scenarios.append(scenario)
+        return scenarios
+
+    def list_scenarios(self, assignment_id: str) -> list[JsonMap]:
+        items = []
+        for scenario in self.scenario_ids(assignment_id):
+            context = self.resolve_scenario(assignment_id, scenario)
+            items.append({**context.to_dict(), "status": "available"})
+        legacy = self.legacy_input_path(assignment_id)
+        if legacy.exists():
+            items.append(
+                {
+                    "assignment_id": assignment_id,
+                    "requested_scenario": "",
+                    "resolved_scenario": "default",
+                    "scenario_label": "Legacy Default",
+                    "input_path": str(legacy),
+                    "output_path": str(self.output_dir(assignment_id)),
+                    "legacy_fallback_used": False,
+                    "resolution_reason": "legacy_default",
+                    "available_scenarios": self.scenario_ids(assignment_id),
+                    "status": "legacy_available",
+                }
+            )
+        return items
+
+    def resolve_scenario(self, assignment_id: str, requested_scenario: str | None = None) -> ComparableScenarioResolution:
+        requested = validate_scenario_id(requested_scenario) if requested_scenario else ""
+        available = self.scenario_ids(assignment_id)
+        legacy = self.legacy_input_path(assignment_id)
+        if requested:
+            scenario_files = self._files_in(self.input_dir(assignment_id, requested))
+            if scenario_files:
+                return self._resolution(assignment_id, requested, requested, scenario_files, False, "explicit_scenario", available)
+            if legacy.exists():
+                document = _load_structured_document(legacy)
+                declared = _str(document.get("valuation_scenario"))
+                if declared and declared != requested:
+                    raise ComparableIntelligenceError(
+                        f"Legacy input declares scenario '{declared}' and cannot be used for '{requested}'."
+                    )
+                return self._resolution(assignment_id, requested, requested, [legacy], True, "explicit_legacy_fallback", available)
+            raise ComparableIntelligenceError(
+                f"No comparable input exists for scenario '{requested}'. Available scenarios: {', '.join(available) or 'none'}"
+            )
+        if len(available) > 1:
+            raise ComparableIntelligenceError(
+                f"Multiple comparable scenarios exist; supply --scenario. Available scenarios: {', '.join(available)}"
+            )
+        if len(available) == 1:
+            scenario = available[0]
+            return self._resolution(
+                assignment_id,
+                "",
+                scenario,
+                self._files_in(self.input_dir(assignment_id, scenario)),
+                False,
+                "single_available_scenario",
+                available,
+            )
+        if legacy.exists():
+            return self._resolution(assignment_id, "", "default", [legacy], False, "legacy_default", available)
+        raise ComparableIntelligenceError(f"No comparable input found for assignment: {assignment_id}")
+
+    def available_contexts(self, assignment_id: str) -> list[ComparableScenarioResolution]:
+        scenarios = self.scenario_ids(assignment_id)
+        if scenarios:
+            return [self.resolve_scenario(assignment_id, scenario) for scenario in scenarios]
+        legacy = self.legacy_input_path(assignment_id)
+        return [self.resolve_scenario(assignment_id)] if legacy.exists() else []
+
+    def _resolution(
+        self,
+        assignment_id: str,
+        requested: str,
+        resolved: str,
+        input_files: list[Path],
+        legacy_fallback: bool,
+        reason: str,
+        available: list[str],
+    ) -> ComparableScenarioResolution:
+        document = _load_structured_document(input_files[0]) if input_files else {}
+        configured_labels = _map(self.config().get("scenario_labels"))
+        label = _str(document.get("scenario_label")) or _str(configured_labels.get(resolved)) or {"as_is": "As-Is", "arv": "ARV", "default": "Legacy Default"}.get(resolved, resolved)
+        return ComparableScenarioResolution(
+            assignment_id=assignment_id,
+            requested_scenario=requested,
+            resolved_scenario=resolved,
+            scenario_label=label,
+            input_files=input_files,
+            input_path=input_files[0],
+            output_path=self.output_dir(assignment_id, resolved),
+            legacy_fallback_used=legacy_fallback,
+            resolution_reason=reason,
+            available_scenarios=available,
+        )
+
+    def _files_in(self, directory: Path) -> list[Path]:
+        if not directory.exists():
+            return []
+        return sorted(
+            path
+            for path in directory.iterdir()
+            if path.is_file() and path.suffix.lower() in SUPPORTED_INPUT_SUFFIXES and path.name not in OPERATIONAL_INPUT_NAMES
+        )
 
     def config_path(self) -> Path:
         local = self.root / "config" / "comparable-intelligence.local.yaml"
@@ -234,38 +418,50 @@ class ComparableStore:
         config = data.get("comparable_intelligence", data)
         return {**default_config(), **_map(config)}
 
-    def input_files(self, assignment_id: str) -> list[Path]:
-        directory = self.input_dir(assignment_id)
-        if not directory.exists():
-            return []
-        return sorted(
-            path for path in directory.rglob("*") if path.is_file() and path.suffix.lower() in {".yaml", ".yml", ".json", ".csv"}
-        )
+    def input_files(self, assignment_id: str, scenario: str | None = None) -> list[Path]:
+        return self.resolve_scenario(assignment_id, scenario).input_files
 
-    def load(self, assignment_id: str) -> JsonMap:
-        path = self.output_dir(assignment_id) / "comparable-universe.json"
+    def load(self, assignment_id: str, scenario: str | None = None) -> JsonMap:
+        path = self.output_dir(assignment_id, scenario) / "comparable-universe.json"
         if not path.exists():
             return {}
         return read_json(path)
 
-    def review_state_path(self, assignment_id: str) -> Path:
-        return self.input_dir(assignment_id) / "review-state.json"
+    def review_state_path(self, assignment_id: str, scenario: str | None = None) -> Path:
+        return self.input_dir(assignment_id, scenario) / "review-state.json"
 
-    def load_review_state(self, assignment_id: str) -> JsonMap:
-        path = self.review_state_path(assignment_id)
+    def load_review_state(self, assignment_id: str, scenario: str | None = None) -> JsonMap:
+        path = self.review_state_path(assignment_id, scenario)
         return read_json(path) if path.exists() else {"comparables": {}}
 
-    def save_review_state(self, assignment_id: str, state: JsonMap) -> None:
-        write_json(self.review_state_path(assignment_id), state)
+    def save_review_state(self, assignment_id: str, state: JsonMap, scenario: str | None = None) -> None:
+        write_json(self.review_state_path(assignment_id, scenario), state)
 
     def save(self, universe: ComparableUniverse, previous: JsonMap) -> None:
-        directory = self.output_dir(universe.assignment_id)
+        directory = self.output_dir(universe.assignment_id, universe.valuation_scenario)
         data = universe.to_dict()
         delta = comparable_delta(previous, data)
         write_json(directory / "comparable-universe.json", data)
         write_json(directory / "comparable-coverage.json", data["coverage"])
         write_json(directory / "comparable-conflicts.json", {"conflicts": data["conflicts"]})
         write_json(directory / "comparable-delta.json", delta)
+        write_json(
+            directory / "appraiser-review-state.json",
+            {
+                "assignment_id": universe.assignment_id,
+                "valuation_scenario": universe.valuation_scenario,
+                "comparables": {
+                    record.comparable_id: {
+                        "appraiser_review_status": record.appraiser_review_status,
+                        "appraiser_selected": record.appraiser_selected,
+                        "appraiser_exclusion_reason": record.appraiser_exclusion_reason,
+                        "reviewed_at": record.reviewed_at,
+                        "reviewed_by": record.reviewed_by,
+                    }
+                    for record in universe.comparables
+                },
+            },
+        )
         history_path = directory / "comparable-history.json"
         history = _map_list(read_json(history_path).get("snapshots", [])) if history_path.exists() else []
         if not history or history[-1].get("snapshot_id") != snapshot_id(data):
@@ -280,20 +476,62 @@ class ComparableStore:
         base = self.root / "outputs" / "real-estate" / "assignments"
         universes: list[JsonMap] = []
         if base.exists():
-            for path in sorted(base.glob("*/comparables/comparable-universe.json")):
+            paths = list(base.glob("*/comparables/comparable-universe.json"))
+            paths.extend(base.glob("*/comparables/scenarios/*/comparable-universe.json"))
+            for path in sorted(paths):
                 try:
                     universes.append(read_json(path))
                 except Exception:
                     continue
         return comparable_dashboard_summary(universes)
 
-    def create_template(self, assignment_id: str) -> Path:
-        path = self.input_dir(assignment_id) / "comparables.yaml"
+    def create_template(self, assignment_id: str, scenario: str | None = None) -> Path:
+        resolved = validate_scenario_id(scenario) if scenario else "default"
+        path = self.input_dir(assignment_id, resolved) / "comparables.yaml"
         if path.exists():
             raise ComparableIntelligenceError(f"Comparable template already exists: {path}")
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(_comparable_template(assignment_id), encoding="utf-8")
+        path.write_text(_comparable_template(assignment_id, resolved), encoding="utf-8")
         return path
+
+    def initialize_from_legacy(
+        self,
+        assignment_id: str,
+        scenario: str,
+        *,
+        confirm: bool = False,
+        overwrite_existing: bool = False,
+    ) -> JsonMap:
+        scenario = validate_scenario_id(scenario)
+        if not confirm:
+            raise ComparableIntelligenceError("Scenario initialization requires --confirm.")
+        source = self.legacy_input_path(assignment_id)
+        if not source.exists():
+            raise ComparableIntelligenceError(f"Legacy comparable input does not exist: {source}")
+        target = self.input_dir(assignment_id, scenario) / "comparables.yaml"
+        if target.exists() and not overwrite_existing:
+            raise ComparableIntelligenceError(f"Scenario input already exists: {target}")
+        source_text = source.read_text(encoding="utf-8")
+        document = _load_structured_document(source)
+        declared = _str(document.get("valuation_scenario"))
+        if declared and declared != scenario:
+            raise ComparableIntelligenceError(f"Legacy input declares scenario '{declared}', not '{scenario}'.")
+        target_text = source_text if declared else _insert_root_yaml_field(source_text, "valuation_scenario", scenario)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(target_text, encoding="utf-8")
+        receipt = {
+            "receipt_id": _stable_id("comparable_scenario_migration", [assignment_id, scenario, _file_checksum(source)]),
+            "assignment_id": assignment_id,
+            "scenario": scenario,
+            "source_path": str(source),
+            "target_path": str(target),
+            "source_checksum": _file_checksum(source),
+            "target_checksum": _file_checksum(target),
+            "created_at": _now_iso(),
+            "source_preserved": True,
+        }
+        write_json(target.parent / "migration-receipt.json", receipt)
+        return receipt
 
 
 class ComparableIntelligenceEngine:
@@ -301,17 +539,26 @@ class ComparableIntelligenceEngine:
         self.root = root
         self.store = ComparableStore(root)
 
-    def build(self, assignment_id: str, *, overwrite: bool = False) -> ComparableUniverse:
-        output = self.store.output_dir(assignment_id) / "comparable-universe.json"
+    def build(self, assignment_id: str, *, scenario: str | None = None, overwrite: bool = False) -> ComparableUniverse:
+        context = self.store.resolve_scenario(assignment_id, scenario)
+        output = context.output_path / "comparable-universe.json"
         if output.exists() and not overwrite:
             return universe_from_dict(read_json(output))
         assignment = _load_assignment_snapshot(self.root, assignment_id)
-        subject = comparable_subject(assignment)
+        scenario_document = _load_structured_document(context.input_path)
+        canonical_path = _canonical_assignment_source_path(self.root, assignment_id)
+        subject, subject_resolution, subject_conflicts = resolve_subject_facts(
+            assignment,
+            scenario_document,
+            scenario_path=context.input_path,
+            canonical_path=canonical_path,
+        )
         config = self.store.config()
-        review_state = self.store.load_review_state(assignment_id)
-        records, source_errors = self._load_records(assignment_id, review_state)
+        review_state = self.store.load_review_state(assignment_id, context.resolved_scenario)
+        records, source_errors = self._load_records(context, review_state)
         records, duplicate_conflicts = detect_duplicates(records)
-        conflicts = duplicate_conflicts + detect_value_conflicts(records, config)
+        embedded_conflicts = [ComparableConflict(**item) for record in records for item in record.conflicts]
+        conflicts = subject_conflicts + embedded_conflicts + duplicate_conflicts + detect_value_conflicts(records, config)
         assessments = [assess_comparable(subject, record, config, conflicts) for record in records]
         by_id = {assessment.comparable_id: assessment for assessment in assessments}
         records = [apply_assessment_status(record, by_id.get(record.comparable_id), review_state) for record in records]
@@ -341,47 +588,63 @@ class ComparableIntelligenceEngine:
             provenance={
                 "engine": "ComparableIntelligenceEngine",
                 "version": __version__,
-                "input_files": [str(path) for path in self.store.input_files(assignment_id)],
+                "input_files": [str(path) for path in context.input_files],
+                "input_fingerprint": _input_fingerprint(context.input_files),
                 "config_path": str(self.store.config_path()),
+                "scenario_resolution": context.to_dict(),
             },
+            valuation_scenario=context.resolved_scenario,
+            scenario_label=context.scenario_label,
+            subject_resolution=subject_resolution,
         )
-        previous = self.store.load(assignment_id)
+        previous = self.store.load(assignment_id, context.resolved_scenario)
         self.store.save(universe, previous)
         return universe
 
-    def status(self, assignment_id: str) -> JsonMap:
-        data = self.store.load(assignment_id)
+    def status(self, assignment_id: str, *, scenario: str | None = None) -> JsonMap:
+        context = self.store.resolve_scenario(assignment_id, scenario)
+        data = self.store.load(assignment_id, context.resolved_scenario)
         if not data:
-            return {"available": False, "assignment_id": assignment_id, "input_count": len(self.store.input_files(assignment_id))}
-        return {"available": True, "assignment_id": assignment_id, **_map(data.get("counts")), "report_path": str(self.store.output_dir(assignment_id) / "comparable-universe.md")}
+            return {"available": False, "assignment_id": assignment_id, "input_count": len(context.input_files), **context.to_dict()}
+        return {
+            "available": True,
+            "assignment_id": assignment_id,
+            **_map(data.get("counts")),
+            **context.to_dict(),
+            "report_path": str(context.output_path / "comparable-universe.md"),
+        }
 
-    def select(self, assignment_id: str, comparable_id: str, *, reviewer: str = "appraiser", confirm: bool = False) -> JsonMap:
+    def select(self, assignment_id: str, comparable_id: str, *, scenario: str | None = None, reviewer: str = "appraiser", confirm: bool = False) -> JsonMap:
         if not confirm:
             raise ComparableIntelligenceError("Selection requires --confirm.")
-        return self._update_review_state(assignment_id, comparable_id, {"appraiser_selected": True, "appraiser_review_status": "selected", "appraiser_exclusion_reason": "", "reviewed_by": reviewer})
+        return self._update_review_state(assignment_id, comparable_id, {"appraiser_selected": True, "appraiser_review_status": "selected", "appraiser_exclusion_reason": "", "reviewed_by": reviewer}, scenario=scenario)
 
-    def exclude(self, assignment_id: str, comparable_id: str, *, reason: str, reviewer: str = "appraiser", confirm: bool = False) -> JsonMap:
+    def exclude(self, assignment_id: str, comparable_id: str, *, scenario: str | None = None, reason: str, reviewer: str = "appraiser", confirm: bool = False) -> JsonMap:
         if not confirm:
             raise ComparableIntelligenceError("Exclusion requires --confirm.")
         if not reason:
             raise ComparableIntelligenceError("Exclusion requires a reason.")
-        return self._update_review_state(assignment_id, comparable_id, {"appraiser_selected": False, "appraiser_review_status": "excluded", "appraiser_exclusion_reason": reason, "reviewed_by": reviewer})
+        return self._update_review_state(assignment_id, comparable_id, {"appraiser_selected": False, "appraiser_review_status": "excluded", "appraiser_exclusion_reason": reason, "reviewed_by": reviewer}, scenario=scenario)
 
-    def reset_review(self, assignment_id: str, comparable_id: str) -> JsonMap:
-        state = self.store.load_review_state(assignment_id)
+    def reset_review(self, assignment_id: str, comparable_id: str, *, scenario: str | None = None, confirm: bool = False) -> JsonMap:
+        if not confirm:
+            raise ComparableIntelligenceError("Review reset requires --confirm.")
+        context = self.store.resolve_scenario(assignment_id, scenario)
+        state = self.store.load_review_state(assignment_id, context.resolved_scenario)
         comps = _map(state.get("comparables"))
         comps.pop(comparable_id, None)
         state["comparables"] = comps
         state.setdefault("history", []).append({"comparable_id": comparable_id, "action": "reset_review", "at": _now_iso()})
-        self.store.save_review_state(assignment_id, state)
+        self.store.save_review_state(assignment_id, state, context.resolved_scenario)
         return state
 
-    def _update_review_state(self, assignment_id: str, comparable_id: str, values: JsonMap) -> JsonMap:
-        universe = self.store.load(assignment_id)
+    def _update_review_state(self, assignment_id: str, comparable_id: str, values: JsonMap, *, scenario: str | None = None) -> JsonMap:
+        context = self.store.resolve_scenario(assignment_id, scenario)
+        universe = self.store.load(assignment_id, context.resolved_scenario)
         ids = {str(item.get("comparable_id")) for item in _map_list(universe.get("comparables", []))}
         if comparable_id not in ids:
             raise ComparableIntelligenceError(f"Unknown comparable ID: {comparable_id}")
-        state = self.store.load_review_state(assignment_id)
+        state = self.store.load_review_state(assignment_id, context.resolved_scenario)
         comps = _map(state.get("comparables"))
         record = _map(comps.get(comparable_id))
         record.update(values)
@@ -389,13 +652,13 @@ class ComparableIntelligenceEngine:
         comps[comparable_id] = record
         state["comparables"] = comps
         state.setdefault("history", []).append({"comparable_id": comparable_id, "action": record.get("appraiser_review_status"), "at": record["reviewed_at"], "reason": record.get("appraiser_exclusion_reason", "")})
-        self.store.save_review_state(assignment_id, state)
+        self.store.save_review_state(assignment_id, state, context.resolved_scenario)
         return state
 
-    def _load_records(self, assignment_id: str, review_state: JsonMap) -> tuple[list[ComparableRecord], list[str]]:
+    def _load_records(self, context: ComparableScenarioResolution, review_state: JsonMap) -> tuple[list[ComparableRecord], list[str]]:
         records: list[ComparableRecord] = []
         errors: list[str] = []
-        for path in self.store.input_files(assignment_id):
+        for path in context.input_files:
             try:
                 records.extend(load_comparable_file(path, review_state))
             except Exception as exc:
@@ -429,9 +692,27 @@ def record_from_row(row: JsonMap, path: Path, checksum: str, row_number: int, re
     comparable_id = _slug(raw_id)
     address = _str(row.get("property_address") or row.get("address"))
     sale_date = normalize_date(row.get("sale_date"))
+    distance, distance_provenance, distance_conflict_values = normalize_distance_fields(row)
     missing = [field for field in CORE_FIELDS if not _field_available(row, field)]
+    if distance is None and "distance_from_subject_miles" not in missing:
+        missing.append("distance_from_subject_miles")
     review = _map(_map(review_state.get("comparables")).get(comparable_id))
     source_path = str(path)
+    embedded_conflicts: list[JsonMap] = []
+    if distance_conflict_values:
+        embedded_conflicts.append(
+            ComparableConflict(
+                conflict_id=_stable_id("comp_distance_conflict", [comparable_id, json.dumps(distance_conflict_values, sort_keys=True)]),
+                comparable_id=comparable_id,
+                field_name="distance_from_subject_miles",
+                values=distance_conflict_values,
+                source_paths=_string_list(row.get("source_paths")) or [source_path],
+                severity="high",
+                status="open",
+                preferred_source="",
+                reason="Distance aliases conflict; geography review is required.",
+            ).to_dict()
+        )
     return ComparableRecord(
         comparable_id=comparable_id,
         source_record_id=_str(row.get("source_record_id") or f"{path.name}:{row_number}"),
@@ -478,14 +759,15 @@ def record_from_row(row: JsonMap, path: Path, checksum: str, row_number: int, re
         market_area=_str(row.get("market_area")),
         latitude=to_number(row.get("latitude")),
         longitude=to_number(row.get("longitude")),
-        distance_from_subject=to_number(row.get("distance_from_subject") or row.get("distance_miles")),
+        distance_from_subject_miles=distance,
         source_paths=_string_list(row.get("source_paths")) or [source_path],
         source_fields={key: value for key, value in row.items() if key not in {"comparables"}},
+        distance_provenance=distance_provenance,
         verification_status=_str(row.get("verification_status") or "source_reported"),
         confidence=_str(row.get("confidence") or "unknown"),
         notes=_string_list(row.get("notes")),
         missing_fields=missing,
-        conflicts=[],
+        conflicts=embedded_conflicts,
         candidate_status=_str(review.get("candidate_status") or "review_required"),
         appraiser_review_status=_str(review.get("appraiser_review_status") or "not_reviewed"),
         appraiser_selected=bool(review.get("appraiser_selected", False)),
@@ -498,7 +780,7 @@ def record_from_row(row: JsonMap, path: Path, checksum: str, row_number: int, re
 def assess_comparable(subject: JsonMap, record: ComparableRecord, config: JsonMap, conflicts: list[ComparableConflict]) -> ComparableAssessment:
     differences = [
         categorical_component("property_type_match", subject.get("property_type"), record.property_type, record.source_paths),
-        numeric_component("geographic_relevance", 0, record.distance_from_subject, config.get("distance", {}), "miles", record.source_paths),
+        numeric_component("geographic_relevance", 0, record.distance_from_subject_miles, config.get("distance", {}), "miles", record.source_paths),
         recency_component(subject.get("sale_or_effective_date") or subject.get("effective_date"), record.sale_date, config.get("recency", {}), record.source_paths),
         numeric_component("gross_living_area_similarity", subject.get("gross_living_area"), record.gross_living_area, config.get("gross_living_area", {}), "percent", record.source_paths),
         numeric_component("lot_size_similarity", subject.get("lot_size"), record.lot_size, config.get("lot_size", {}), "percent", record.source_paths),
@@ -516,7 +798,10 @@ def assess_comparable(subject: JsonMap, record: ComparableRecord, config: JsonMa
     if record.arms_length_status in {"non_arms_length", "not_arms_length"}:
         limitations.append("Reported non-arm's-length transaction.")
     if record.missing_fields:
-        limitations.append(f"Missing core fields: {', '.join(record.missing_fields)}")
+        limitations.append(f"Unavailable comparison components: {', '.join(record.missing_fields)}")
+    recency = next((item for item in differences if item.component == "transaction_recency"), None)
+    if recency and recency.assessment == "major_difference":
+        limitations.append("Sale is outside the configured primary recency window and is retained as contextual evidence.")
     if any(conflict.comparable_id == record.comparable_id for conflict in conflicts):
         limitations.append("Open comparable conflict requires review.")
     status = tier_for(record, differences, limitations)
@@ -524,12 +809,29 @@ def assess_comparable(subject: JsonMap, record: ComparableRecord, config: JsonMa
 
 
 def tier_for(record: ComparableRecord, differences: list[ComparableDifference], limitations: list[str]) -> str:
-    if record.property_status not in {"closed_sale", "sold"} and record.gross_living_area is not None:
-        return "contextual_candidate"
-    if record.missing_fields:
-        return "insufficient_data"
+    conflict_fields = {str(item.get("field_name")) for item in record.conflicts}
+    if conflict_fields:
+        return "review_required"
     if "Open comparable conflict requires review." in limitations:
         return "review_required"
+    if record.property_status not in {"closed_sale", "sold"} and record.gross_living_area is not None:
+        return "contextual_candidate"
+    if not _record_has_identity(record):
+        return "review_required"
+    if not record.property_status:
+        return "insufficient_data"
+    if record.property_status in {"closed_sale", "sold"} and (not record.sale_date or record.sale_price is None):
+        return "insufficient_data"
+    if not _record_has_meaningful_property_fact(record):
+        return "insufficient_data"
+    recency = next((item for item in differences if item.component == "transaction_recency"), None)
+    if recency and recency.assessment == "major_difference":
+        return "contextual_candidate"
+    geography = next((item for item in differences if item.component == "geographic_relevance"), None)
+    if geography and geography.assessment in {"unavailable", "major_difference"}:
+        return "secondary_candidate"
+    if not record.property_type:
+        return "secondary_candidate"
     if any(item.assessment == "major_difference" for item in differences if item.component in {"property_type_match", "geographic_relevance", "transaction_recency", "gross_living_area_similarity"}):
         return "secondary_candidate"
     if any(item.assessment in {"meaningful_difference", "major_difference"} for item in differences):
@@ -550,23 +852,92 @@ def apply_assessment_status(record: ComparableRecord, assessment: ComparableAsse
 
 
 def comparable_subject(assignment: JsonMap) -> JsonMap:
+    raw = canonical_subject_values(assignment)
+    return {field_name: normalize_subject_value(field_name, value) for field_name, value in raw.items()}
+
+
+def canonical_subject_values(assignment: JsonMap) -> JsonMap:
     subject = _map(assignment.get("subject"))
     facts = _map_list(assignment.get("facts", []))
     fact_map = {str(item.get("field_name")): item.get("value") for item in facts}
     return {
         "address": _str(subject.get("address") or assignment.get("subject_address")),
-        "property_type": normalize_property_type(assignment.get("property_type") or fact_map.get("property_type")),
-        "gross_living_area": to_number(fact_map.get("gross_living_area") or fact_map.get("gla") or assignment.get("gross_living_area")),
-        "lot_size": to_number(fact_map.get("lot_size") or assignment.get("lot_size")),
-        "condition": normalize_code(fact_map.get("condition") or assignment.get("condition"), "c"),
-        "quality": normalize_code(fact_map.get("quality") or assignment.get("quality"), "q"),
-        "bedroom_count": to_number(fact_map.get("bedroom_count") or fact_map.get("bedrooms")),
-        "bathroom_count": to_number(fact_map.get("bathroom_count") or fact_map.get("bathrooms")),
-        "year_built": to_int(fact_map.get("year_built")),
-        "effective_date": normalize_date(assignment.get("effective_date")),
-        "sale_or_effective_date": normalize_date(fact_map.get("sale_or_effective_date") or assignment.get("effective_date")),
-        "pool": to_bool(fact_map.get("pool")),
+        "property_type": _first_available({**fact_map, **assignment}, ["property_type"]),
+        "gross_living_area": _first_available({**assignment, **fact_map}, ["gross_living_area", "gla"]),
+        "lot_size": _first_available({**assignment, **fact_map}, ["lot_size"]),
+        "condition": _first_available({**assignment, **fact_map}, ["condition"]),
+        "quality": _first_available({**assignment, **fact_map}, ["quality"]),
+        "bedroom_count": _first_available({**assignment, **fact_map}, ["bedroom_count", "bedrooms"]),
+        "bathroom_count": _first_available({**assignment, **fact_map}, ["bathroom_count", "bathrooms"]),
+        "year_built": _first_available({**assignment, **fact_map}, ["year_built"]),
+        "pool": _first_available({**assignment, **fact_map}, ["pool"]),
+        "sale_or_effective_date": _first_available({**assignment, **fact_map}, ["sale_or_effective_date", "effective_date"]),
     }
+
+
+def resolve_subject_facts(
+    assignment: JsonMap,
+    scenario_document: JsonMap,
+    *,
+    scenario_path: Path,
+    canonical_path: Path,
+) -> tuple[JsonMap, JsonMap, list[ComparableConflict]]:
+    scenario_subject = _map(scenario_document.get("subject"))
+    canonical = canonical_subject_values(assignment)
+    resolved: JsonMap = {}
+    fields: JsonMap = {}
+    conflicts: list[ComparableConflict] = []
+    for field_name, aliases in SUBJECT_FIELD_ALIASES.items():
+        scenario_raw = _first_available(scenario_subject, aliases)
+        canonical_raw = canonical.get(field_name)
+        scenario_value = normalize_subject_value(field_name, scenario_raw)
+        canonical_value = normalize_subject_value(field_name, canonical_raw)
+        scenario_available = _value_available(scenario_value)
+        canonical_available = _value_available(canonical_value)
+        selected = scenario_value if scenario_available else canonical_value if canonical_available else ""
+        selected_source = "private_scenario_input" if scenario_available else "canonical_assignment" if canonical_available else "unavailable"
+        selected_path = scenario_path if scenario_available else canonical_path if canonical_available else Path()
+        conflict = scenario_available and canonical_available and not subject_values_equivalent(field_name, scenario_value, canonical_value)
+        alternate_values = []
+        if scenario_available:
+            alternate_values.append({"value": scenario_raw, "normalized_value": scenario_value, "source": "private_scenario_input", "source_path": str(scenario_path)})
+        if canonical_available:
+            alternate_values.append({"value": canonical_raw, "normalized_value": canonical_value, "source": "canonical_assignment", "source_path": str(canonical_path)})
+        resolved[field_name] = selected
+        fields[field_name] = {
+            "selected_value": scenario_raw if scenario_available else canonical_raw if canonical_available else "",
+            "normalized_value": selected,
+            "selected_source": selected_source,
+            "selected_source_path": str(selected_path) if selected_path else "",
+            "fallback_used": not scenario_available and canonical_available,
+            "alternate_values": alternate_values,
+            "conflict_status": "open" if conflict else "none",
+            "reason": "Scenario-specific non-empty value selected." if scenario_available else "Scenario value unavailable; verified canonical fallback used." if canonical_available else "No scenario or canonical value available.",
+        }
+        if conflict:
+            conflicts.append(
+                ComparableConflict(
+                    conflict_id=_stable_id("subject_fact_conflict", [field_name, _str(scenario_value), _str(canonical_value)]),
+                    comparable_id="subject",
+                    field_name=field_name,
+                    values=[scenario_value, canonical_value],
+                    source_paths=[str(scenario_path), str(canonical_path)],
+                    severity="medium",
+                    status="open",
+                    preferred_source="private_scenario_input",
+                    reason="Scenario and canonical subject facts differ; the scenario value governs this scenario only.",
+                )
+            )
+    resolution = {
+        "precedence": ["private_scenario_input", "canonical_assignment", "unavailable"],
+        "fields": fields,
+        "private_scenario_fields_used": sorted(key for key, value in fields.items() if value["selected_source"] == "private_scenario_input"),
+        "canonical_fallback_fields_used": sorted(key for key, value in fields.items() if value["selected_source"] == "canonical_assignment"),
+        "unavailable_fields": sorted(key for key, value in fields.items() if value["selected_source"] == "unavailable"),
+        "subject_conflict_ids": [item.conflict_id for item in conflicts],
+        "statement": "Subject facts used for this scenario were supplied by the private scenario input. Canonical assignment facts were used only where the scenario input was blank or unavailable.",
+    }
+    return resolved, resolution, conflicts
 
 
 def detect_duplicates(records: list[ComparableRecord]) -> tuple[list[ComparableRecord], list[ComparableConflict]]:
@@ -645,7 +1016,7 @@ def assess_coverage(assignment_id: str, subject: JsonMap, records: list[Comparab
     usable = [item for item in records if item.candidate_status in {"primary_candidate", "secondary_candidate", "contextual_candidate"}]
     dimensions = {
         "property_type": categorical_coverage(subject.get("property_type"), [r.property_type for r in usable]),
-        "location": numeric_coverage(0, [r.distance_from_subject for r in usable], lower_is_better=True),
+        "location": numeric_coverage(0, [r.distance_from_subject_miles for r in usable], lower_is_better=True),
         "sale_date": recency_coverage(subject.get("sale_or_effective_date"), [r.sale_date for r in usable], _map(config.get("recency"))),
         "gross_living_area": bracket_coverage(subject.get("gross_living_area"), [r.gross_living_area for r in usable]),
         "lot_size": bracket_coverage(subject.get("lot_size"), [r.lot_size for r in usable]),
@@ -712,7 +1083,15 @@ def comparable_dashboard_summary(universes: list[JsonMap]) -> JsonMap:
     records = [record for universe in universes for record in _map_list(universe.get("comparables", []))]
     counts = [_map(universe.get("counts")) for universe in universes]
     limited = [universe for universe in universes if any(level in {"limited", "absent"} for level in _map(_map(universe.get("coverage")).get("levels")).values())]
-    return {
+    assignment_ids = {str(universe.get("canonical_assignment_id") or universe.get("assignment_id")) for universe in universes}
+    scenario_ids = [str(universe.get("valuation_scenario") or "default") for universe in universes]
+    scenario_review_required = sum(
+        1
+        for item in counts
+        if int(item.get("review_required", 0) or 0) + int(item.get("insufficient_data", 0) or 0) + int(item.get("potential_duplicate", 0) or 0)
+    )
+    scenario_conflicts = sum(int(item.get("open_conflict_count", 0) or 0) for item in counts)
+    result = {
         "assignments_with_comparable_data": sum(1 for universe in universes if _map(universe.get("counts")).get("comparable_count", 0)),
         "total_comparable_records": len(records),
         "primary_candidate_count": sum(int(item.get("primary_candidate", 0) or 0) for item in counts),
@@ -723,11 +1102,32 @@ def comparable_dashboard_summary(universes: list[JsonMap]) -> JsonMap:
         "assignments_with_limited_coverage": len(limited),
         "latest_comparable_run_at": max([str(universe.get("created_at", "")) for universe in universes] or [""]),
         "key_comparable_report_paths": [str(Path("outputs/real-estate/assignments") / str(universe.get("assignment_id")) / "comparables" / "comparable-universe.md") for universe in universes[:5]],
+        "assignments_with_comparable_scenarios": len(assignment_ids),
+        "total_comparable_scenarios": len(universes),
+        "as_is_scenario_count": scenario_ids.count("as_is"),
+        "arv_scenario_count": scenario_ids.count("arv"),
+        "scenario_builds_completed": len(universes),
+        "scenario_review_required_count": scenario_review_required,
+        "scenario_conflict_count": scenario_conflicts,
+        "scenarios_with_limited_coverage": len(limited),
+        "latest_scenario_run_at": max([str(universe.get("created_at", "")) for universe in universes] or [""]),
     }
+    result["key_comparable_report_paths"] = [
+        str(
+            Path("outputs/real-estate/assignments")
+            / str(universe.get("assignment_id"))
+            / "comparables"
+            / (Path("scenarios") / str(universe.get("valuation_scenario")) if str(universe.get("valuation_scenario") or "default") != "default" else Path())
+            / "comparable-universe.md"
+        )
+        for universe in universes[:5]
+    ]
+    return result
 
 
 def default_config() -> JsonMap:
     return {
+        "scenario_labels": {"as_is": "As-Is", "arv": "ARV"},
         "recency": {"strong_days": 180, "acceptable_days": 365, "review_days": 730},
         "gross_living_area": {"strong_percent": 10, "acceptable_percent": 20, "major_percent": 35},
         "lot_size": {"strong_percent": 15, "acceptable_percent": 30, "major_percent": 50},
@@ -752,8 +1152,10 @@ def numeric_component(component: str, subject_value: Any, comparable_value: Any,
 
 
 def recency_component(subject_date: Any, sale_date: Any, thresholds: Any, sources: list[str]) -> ComparableDifference:
-    sd = parse_date(subject_date) or date.today()
+    sd = parse_date(subject_date)
     cd = parse_date(sale_date)
+    if not sd:
+        return ComparableDifference("transaction_recency", str(subject_date or ""), str(sale_date or ""), "", "", "unavailable", "high", "Subject effective date is unavailable.", sources)
     if not cd:
         return ComparableDifference("transaction_recency", str(subject_date or ""), str(sale_date or ""), "", "", "unavailable", "high", "Sale date is unavailable.", sources)
     days = abs((sd - cd).days)
@@ -856,7 +1258,9 @@ def numeric_coverage(subject_value: Any, values: list[Any], *, lower_is_better: 
 
 
 def recency_coverage(subject_date: Any, values: list[Any], config: JsonMap) -> JsonMap:
-    sd = parse_date(subject_date) or date.today()
+    sd = parse_date(subject_date)
+    if not sd:
+        return {"coverage": "unavailable", "candidate_count": 0}
     days = [abs((sd - cd).days) for cd in (parse_date(value) for value in values) if cd]
     if not days:
         return {"coverage": "absent", "candidate_count": 0}
@@ -879,6 +1283,131 @@ def research_questions(dimensions: JsonMap) -> list[str]:
     if _map(dimensions.get("property_type")).get("coverage") in {"limited", "absent"}:
         questions.append("Confirm that candidate property types match the subject.")
     return questions or ["Verify source details for any candidate used in the appraisal analysis."]
+
+
+def validate_scenario_id(value: str | None) -> str:
+    scenario = _str(value)
+    if not scenario or not SCENARIO_PATTERN.fullmatch(scenario) or ".." in scenario or "/" in scenario or "\\" in scenario:
+        raise ComparableIntelligenceError(
+            "Scenario IDs must be lowercase path-safe identifiers containing letters, numbers, underscores, or hyphens."
+        )
+    return scenario
+
+
+def normalize_distance_fields(row: JsonMap) -> tuple[float | None, JsonMap, list[Any]]:
+    aliases = ["distance_from_subject_miles", "distance_miles", "distance_from_subject"]
+    observed = []
+    valid = []
+    for alias in aliases:
+        if alias not in row or not _value_available(row.get(alias)):
+            continue
+        raw = row.get(alias)
+        miles, status = _distance_to_miles(raw, unit_implied=alias.endswith("_miles") or alias == "distance_miles")
+        entry = {"input_field": alias, "input_value": raw, "normalized_miles": miles, "status": status}
+        observed.append(entry)
+        if miles is not None:
+            valid.append(entry)
+    unique = []
+    for entry in valid:
+        value = float(entry["normalized_miles"])
+        if not any(abs(value - existing) <= 0.000001 for existing in unique):
+            unique.append(value)
+    conflict_values = observed if len(unique) > 1 else []
+    selected = unique[0] if len(unique) == 1 else None
+    selected_alias = next((str(item["input_field"]) for item in valid if item["normalized_miles"] == selected), "") if selected is not None else ""
+    return (
+        selected,
+        {
+            "canonical_field": "distance_from_subject_miles",
+            "selected_value": selected,
+            "selected_alias": selected_alias,
+            "observed_aliases": observed,
+            "conflict_status": "open" if conflict_values else "none",
+            "reason": "Equivalent distance aliases normalized to miles." if selected is not None else "Distance is unavailable or ambiguous." if not conflict_values else "Distance aliases conflict.",
+        },
+        conflict_values,
+    )
+
+
+def _distance_to_miles(value: Any, *, unit_implied: bool) -> tuple[float | None, str]:
+    if isinstance(value, (int, float)):
+        return (float(value), "normalized_miles") if unit_implied else (None, "ambiguous_unit")
+    text = _str(value).lower().replace(",", "")
+    if not text:
+        return None, "unavailable"
+    match = re.fullmatch(r"\s*([-+]?\d+(?:\.\d+)?)\s*(miles?|mi)\.?\s*", text)
+    if match:
+        return float(match.group(1)), "normalized_miles"
+    match = re.fullmatch(r"\s*([-+]?\d+(?:\.\d+)?)\s*(kilometers?|kilometres?|km)\.?\s*", text)
+    if match:
+        return round(float(match.group(1)) * 0.621371192237334, 6), "converted_from_kilometers"
+    match = re.fullmatch(r"\s*([-+]?\d+(?:\.\d+)?)\s*(feet|foot|ft)\.?\s*", text)
+    if match:
+        return round(float(match.group(1)) / 5280.0, 6), "converted_from_feet"
+    if unit_implied:
+        try:
+            return float(text), "normalized_miles"
+        except ValueError:
+            return None, "invalid"
+    return None, "ambiguous_unit"
+
+
+def normalize_subject_value(field_name: str, value: Any) -> Any:
+    if not _value_available(value):
+        return None
+    if field_name in {"gross_living_area", "lot_size", "bedroom_count", "bathroom_count"}:
+        return to_number(value)
+    if field_name == "year_built":
+        return to_int(value)
+    if field_name == "property_type":
+        return normalize_property_type(value)
+    if field_name == "condition":
+        return normalize_code(value, "c")
+    if field_name == "quality":
+        return normalize_code(value, "q")
+    if field_name == "pool":
+        return to_bool(value)
+    if field_name == "sale_or_effective_date":
+        return normalize_date(value)
+    if field_name == "address":
+        return _str(value)
+    return _str(value)
+
+
+def subject_values_equivalent(field_name: str, left: Any, right: Any) -> bool:
+    if field_name == "address":
+        return normalize_address(left) == normalize_address(right)
+    if isinstance(left, float) or isinstance(right, float):
+        try:
+            return abs(float(left) - float(right)) <= 0.000001
+        except (TypeError, ValueError):
+            return False
+    return left == right
+
+
+def _record_has_identity(record: ComparableRecord) -> bool:
+    source = record.source_fields
+    return bool(
+        record.property_address
+        or record.listing_id
+        or record.parcel_number
+        or _str(source.get("comparable_id"))
+        or _str(source.get("source_record_id"))
+    )
+
+
+def _record_has_meaningful_property_fact(record: ComparableRecord) -> bool:
+    return any(
+        value not in {None, ""}
+        for value in [
+            record.property_type,
+            record.gross_living_area,
+            record.lot_size,
+            record.bedroom_count,
+            record.bathroom_count,
+            record.year_built,
+        ]
+    )
 
 
 def normalize_address(value: Any) -> str:
@@ -916,7 +1445,12 @@ def normalize_status(value: Any) -> str:
 
 def normalize_property_type(value: Any) -> str:
     text = _slug(_str(value))
-    return {"sfr": "single_family_residential", "single_family": "single_family_residential", "single_family_residential": "single_family_residential", "condo": "condominium"}.get(text, text)
+    return {
+        "sfr": "single_family_residential",
+        "single-family": "single_family_residential",
+        "single-family-residential": "single_family_residential",
+        "condo": "condominium",
+    }.get(text, text.replace("-", "_"))
 
 
 def normalize_code(value: Any, prefix: str) -> str:
@@ -941,7 +1475,7 @@ def to_number(value: Any) -> float | None:
     if not text:
         return None
     text = re.sub(r"[$,]", "", text)
-    text = re.sub(r"\s*(sf|sqft|sq ft|miles|mi)\b", "", text, flags=re.I)
+    text = re.sub(r"\s*(square\s+feet|sq\.?\s*ft\.?|sf|sqft|miles?|mi)\b", "", text, flags=re.I)
     try:
         return float(text)
     except ValueError:
@@ -966,17 +1500,34 @@ def to_bool(value: Any) -> bool | None:
 
 def render_universe_markdown(universe: ComparableUniverse) -> str:
     data = universe.to_dict()
+    scenario = _map(universe.provenance.get("scenario_resolution"))
     lines = [
         "# Comparable Universe",
         "",
-        "## Assignment Header",
+        "## Scenario Header",
         "",
-        f"- Assignment ID: `{universe.assignment_id}`",
+        f"- Canonical assignment ID: `{universe.canonical_assignment_id}`",
+        f"- Scenario ID: `{universe.valuation_scenario}`",
+        f"- Scenario label: `{universe.scenario_label}`",
+        f"- Scenario effective date: `{universe.subject.get('sale_or_effective_date', '')}`",
+        f"- Subject-fact source: `private scenario with canonical fallback`",
+        f"- Legacy fallback used: `{scenario.get('legacy_fallback_used', False)}`",
+        f"- Scenario input path: `{scenario.get('input_path', '')}`",
+        f"- Scenario output path: `{scenario.get('output_path', '')}`",
+        f"- Generated at: `{universe.created_at}`",
         f"- Comparable records: `{universe.counts.get('comparable_count', 0)}`",
         "",
         "## Subject Summary",
         "",
         *[f"- {key}: `{value}`" for key, value in universe.subject.items()],
+        "",
+        "## Subject Resolution",
+        "",
+        f"- {_str(universe.subject_resolution.get('statement'))}",
+        f"- Private scenario fields used: `{', '.join(_string_list(universe.subject_resolution.get('private_scenario_fields_used'))) or 'none'}`",
+        f"- Canonical fallback fields used: `{', '.join(_string_list(universe.subject_resolution.get('canonical_fallback_fields_used'))) or 'none'}`",
+        f"- Unavailable fields: `{', '.join(_string_list(universe.subject_resolution.get('unavailable_fields'))) or 'none'}`",
+        f"- Subject conflicts: `{len(_string_list(universe.subject_resolution.get('subject_conflict_ids')))}`",
         "",
         "## Executive Comparable Summary",
         "",
@@ -1013,7 +1564,19 @@ def render_universe_markdown(universe: ComparableUniverse) -> str:
 
 
 def render_coverage_markdown(universe: ComparableUniverse) -> str:
-    lines = ["# Comparable Coverage", "", "## Coverage Summary", ""]
+    lines = [
+        "# Comparable Coverage",
+        "",
+        "## Scenario Header",
+        "",
+        f"- Canonical assignment ID: `{universe.canonical_assignment_id}`",
+        f"- Scenario ID: `{universe.valuation_scenario}`",
+        f"- Scenario effective date: `{universe.subject.get('sale_or_effective_date', '')}`",
+        f"- Generated at: `{universe.created_at}`",
+        "",
+        "## Coverage Summary",
+        "",
+    ]
     for key, level in universe.coverage.levels.items():
         lines.append(f"- {key}: `{level}`")
     for section in ["Recency", "Geography", "GLA", "Lot Size", "Bed/Bath", "Age", "Quality", "Condition", "Amenities", "Special Features"]:
@@ -1030,7 +1593,16 @@ def render_coverage_markdown(universe: ComparableUniverse) -> str:
 
 
 def render_review_queue_markdown(universe: ComparableUniverse) -> str:
-    lines = ["# Comparable Review Queue", ""]
+    lines = [
+        "# Comparable Review Queue",
+        "",
+        "## Scenario Header",
+        "",
+        f"- Canonical assignment ID: `{universe.canonical_assignment_id}`",
+        f"- Scenario ID: `{universe.valuation_scenario}`",
+        f"- Generated at: `{universe.created_at}`",
+        "",
+    ]
     for item in universe.review_queue:
         lines.append(f"- {item.get('severity')}: {item.get('item_type')} {item.get('comparable_id')} - {item.get('reason')}")
     if not universe.review_queue:
@@ -1040,7 +1612,7 @@ def render_review_queue_markdown(universe: ComparableUniverse) -> str:
 
 def _record_lines(records: list[ComparableRecord]) -> list[str]:
     return [
-        f"- `{record.comparable_id}` {record.property_address} status=`{record.property_status}` sale_date=`{record.sale_date}` price=`{record.sale_price}` GLA=`{record.gross_living_area}` distance=`{record.distance_from_subject}`"
+        f"- `{record.comparable_id}` {record.property_address} status=`{record.property_status}` sale_date=`{record.sale_date}` price=`{record.sale_price}` GLA=`{record.gross_living_area}` distance_miles=`{record.distance_from_subject_miles}`"
         for record in records
     ]
 
@@ -1050,13 +1622,7 @@ def _review_item(comparable_id: str, item_type: str, field: str, severity: str, 
 
 
 def _load_assignment_snapshot(root: Path, assignment_id: str) -> JsonMap:
-    store = RealEstateAssignmentStore(root)
-    path = store.output_dir(assignment_id) / "assignment.json"
-    if not path.exists():
-        try:
-            store.build(assignment_id)
-        except Exception:
-            pass
+    path = RealEstateAssignmentStore(root).output_dir(assignment_id) / "assignment.json"
     if path.exists():
         return read_json(path)
     assignment_path = assignment_directory(root, assignment_id) / "assignment.yaml"
@@ -1075,10 +1641,31 @@ def universe_from_dict(data: JsonMap) -> ComparableUniverse:
     ]
     conflicts = [ComparableConflict(**item) for item in _map_list(data.get("conflicts", []))]
     coverage = ComparableCoverage(**_map(data.get("coverage")))
-    return ComparableUniverse(str(data.get("assignment_id")), str(data.get("canonical_assignment_id")), str(data.get("created_at")), str(data.get("version")), _map(data.get("subject")), records, assessments, conflicts, coverage, _map_list(data.get("review_queue", [])), _map(data.get("counts")), _string_list(data.get("limitations")), _map(data.get("provenance")))
+    return ComparableUniverse(
+        assignment_id=str(data.get("assignment_id")),
+        canonical_assignment_id=str(data.get("canonical_assignment_id")),
+        created_at=str(data.get("created_at")),
+        version=str(data.get("version")),
+        subject=_map(data.get("subject")),
+        comparables=records,
+        assessments=assessments,
+        conflicts=conflicts,
+        coverage=coverage,
+        review_queue=_map_list(data.get("review_queue", [])),
+        counts=_map(data.get("counts")),
+        limitations=_string_list(data.get("limitations")),
+        provenance=_map(data.get("provenance")),
+        valuation_scenario=str(data.get("valuation_scenario") or "default"),
+        scenario_label=str(data.get("scenario_label") or "Legacy Default"),
+        subject_resolution=_map(data.get("subject_resolution")),
+    )
 
 
 def record_from_dict(data: JsonMap) -> ComparableRecord:
+    data = dict(data)
+    if "distance_from_subject_miles" not in data:
+        data["distance_from_subject_miles"] = data.get("distance_from_subject")
+    data.setdefault("distance_provenance", {})
     fields = {field.name for field in ComparableRecord.__dataclass_fields__.values()}  # type: ignore[attr-defined]
     return ComparableRecord(**{key: data.get(key) for key in fields})
 
@@ -1097,14 +1684,19 @@ def _preferred_source(items: list[ComparableRecord], config: JsonMap) -> str:
 
 
 def _field_available(row: JsonMap, field: str) -> bool:
-    aliases = {"property_address": ["property_address", "address"], "gross_living_area": ["gross_living_area", "gla"], "distance_from_subject": ["distance_from_subject", "distance_miles"]}
+    aliases = {
+        "property_address": ["property_address", "address"],
+        "gross_living_area": ["gross_living_area", "gla"],
+        "distance_from_subject_miles": ["distance_from_subject_miles", "distance_from_subject", "distance_miles"],
+    }
     keys = aliases.get(field, [field])
-    return any(_str(row.get(key)) for key in keys)
+    return any(_value_available(row.get(key)) for key in keys)
 
 
-def _comparable_template(assignment_id: str) -> str:
+def _comparable_template(assignment_id: str, scenario: str = "default") -> str:
+    scenario_line = "" if scenario == "default" else f"valuation_scenario: {scenario}\n"
     return f"""assignment_id: {assignment_id}
-subject:
+{scenario_line}subject:
   address:
   property_type:
   gross_living_area:
@@ -1116,6 +1708,50 @@ subject:
   sale_or_effective_date:
 comparables: []
 """
+
+
+def _canonical_assignment_source_path(root: Path, assignment_id: str) -> Path:
+    generated = RealEstateAssignmentStore(root).output_dir(assignment_id) / "assignment.json"
+    return generated if generated.exists() else assignment_directory(root, assignment_id) / "assignment.yaml"
+
+
+def _load_structured_document(path: Path) -> JsonMap:
+    if path.suffix.lower() in {".yaml", ".yml"}:
+        return _map(load_yaml(path))
+    if path.suffix.lower() == ".json":
+        return _map(read_json(path))
+    return {}
+
+
+def _input_fingerprint(paths: list[Path]) -> str:
+    parts = [f"{path.name}:{_file_checksum(path)}" for path in sorted(paths)]
+    return sha256("|".join(parts).encode("utf-8")).hexdigest()
+
+
+def _insert_root_yaml_field(text: str, key: str, value: str) -> str:
+    lines = text.splitlines()
+    insert_at = 1 if lines and lines[0].lstrip().startswith("assignment_id:") else 0
+    lines.insert(insert_at, f"{key}: {value}")
+    suffix = "\n" if text.endswith("\n") else ""
+    return "\n".join(lines) + suffix
+
+
+def _first_available(values: JsonMap, aliases: list[str]) -> Any:
+    for alias in aliases:
+        value = values.get(alias)
+        if _value_available(value):
+            return value
+    return None
+
+
+def _value_available(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, dict)):
+        return bool(value)
+    return True
 
 
 def _file_checksum(path: Path) -> str:

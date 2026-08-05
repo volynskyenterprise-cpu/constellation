@@ -443,25 +443,44 @@ def main(argv: list[str] | None = None) -> int:
     ]:
         parser_for_command = real_estate_comparables_subparsers.add_parser(command_name, help=help_text)
         parser_for_command.add_argument("assignment_id", help="Assignment ID or alias.")
+        parser_for_command.add_argument("--scenario", help="Explicit valuation scenario ID, such as as_is or arv.")
         if command_name == "build":
             parser_for_command.add_argument("--overwrite", action="store_true", help="Overwrite Comparable Intelligence outputs.")
     show_parser = real_estate_comparables_subparsers.add_parser("show", help="Show one comparable record.")
     show_parser.add_argument("assignment_id", help="Assignment ID or alias.")
     show_parser.add_argument("comparable_id", help="Comparable ID.")
+    show_parser.add_argument("--scenario", help="Explicit valuation scenario ID.")
     select_parser = real_estate_comparables_subparsers.add_parser("select", help="Record appraiser selection review state.")
     select_parser.add_argument("assignment_id", help="Assignment ID or alias.")
     select_parser.add_argument("comparable_id", help="Comparable ID.")
+    select_parser.add_argument("--scenario", help="Explicit valuation scenario ID.")
     select_parser.add_argument("--reviewer", default="appraiser", help="Reviewer identity.")
     select_parser.add_argument("--confirm", action="store_true", help="Confirm appraiser-controlled review state change.")
     exclude_parser = real_estate_comparables_subparsers.add_parser("exclude", help="Record appraiser exclusion review state.")
     exclude_parser.add_argument("assignment_id", help="Assignment ID or alias.")
     exclude_parser.add_argument("comparable_id", help="Comparable ID.")
+    exclude_parser.add_argument("--scenario", help="Explicit valuation scenario ID.")
     exclude_parser.add_argument("--reason", required=True, help="Appraiser exclusion reason.")
     exclude_parser.add_argument("--reviewer", default="appraiser", help="Reviewer identity.")
     exclude_parser.add_argument("--confirm", action="store_true", help="Confirm appraiser-controlled review state change.")
     reset_parser = real_estate_comparables_subparsers.add_parser("reset-review", help="Reset appraiser review state for a comparable.")
     reset_parser.add_argument("assignment_id", help="Assignment ID or alias.")
     reset_parser.add_argument("comparable_id", help="Comparable ID.")
+    reset_parser.add_argument("--scenario", help="Explicit valuation scenario ID.")
+    reset_parser.add_argument("--confirm", action="store_true", help="Confirm appraiser-controlled review reset.")
+    scenarios_parser = real_estate_comparables_subparsers.add_parser("scenarios", help="Inspect or initialize valuation scenarios.")
+    scenarios_subparsers = scenarios_parser.add_subparsers(dest="real_estate_comparable_scenarios_command", required=True)
+    scenarios_list = scenarios_subparsers.add_parser("list", help="List comparable scenarios for an assignment.")
+    scenarios_list.add_argument("assignment_id", help="Assignment ID or alias.")
+    scenarios_show = scenarios_subparsers.add_parser("show", help="Show one comparable scenario resolution.")
+    scenarios_show.add_argument("assignment_id", help="Assignment ID or alias.")
+    scenarios_show.add_argument("--scenario", required=True, help="Valuation scenario ID.")
+    scenarios_initialize = scenarios_subparsers.add_parser("initialize", help="Safely initialize a scenario from the legacy input.")
+    scenarios_initialize.add_argument("assignment_id", help="Assignment ID or alias.")
+    scenarios_initialize.add_argument("--scenario", required=True, help="Valuation scenario ID.")
+    scenarios_initialize.add_argument("--from-legacy", action="store_true", help="Copy the preserved legacy input.")
+    scenarios_initialize.add_argument("--confirm", action="store_true", help="Confirm the private local copy operation.")
+    scenarios_initialize.add_argument("--overwrite-existing", action="store_true", help="Safely overwrite an existing target scenario input.")
     real_estate_intake_parser = real_estate_subparsers.add_parser("intake", help="Auto-ingest Real Estate assignments from structured local intake.")
     real_estate_intake_subparsers = real_estate_intake_parser.add_subparsers(dest="real_estate_intake_command", required=True)
     real_estate_intake_subparsers.add_parser("status", help="Show Real Estate intake status.")
@@ -1886,21 +1905,52 @@ def main(argv: list[str] | None = None) -> int:
                 comparable_engine = ComparableIntelligenceEngine(args.root.resolve())
                 comparable_store = ComparableStore(args.root.resolve())
                 command = args.real_estate_comparables_command
+                requested_scenario = getattr(args, "scenario", None)
+                if command == "scenarios":
+                    scenario_command = args.real_estate_comparable_scenarios_command
+                    if scenario_command == "list":
+                        items = comparable_store.list_scenarios(assignment_id)
+                        if not items:
+                            print("No comparable scenarios found.")
+                            return 0
+                        for item in items:
+                            print(
+                                f"{item.get('resolved_scenario')} status={item.get('status')} "
+                                f"input={item.get('input_path')} output={item.get('output_path')}"
+                            )
+                        return 0
+                    if scenario_command == "show":
+                        context = comparable_store.resolve_scenario(assignment_id, requested_scenario)
+                        print(json.dumps(context.to_dict(), indent=2, sort_keys=True))
+                        return 0
+                    if scenario_command == "initialize":
+                        if not args.from_legacy:
+                            raise ComparableIntelligenceError("Scenario initialization requires --from-legacy.")
+                        receipt = comparable_store.initialize_from_legacy(
+                            assignment_id,
+                            requested_scenario,
+                            confirm=bool(args.confirm),
+                            overwrite_existing=bool(args.overwrite_existing),
+                        )
+                        print(json.dumps(receipt, indent=2, sort_keys=True))
+                        return 0
                 if command == "create-template":
-                    path = comparable_store.create_template(assignment_id)
+                    path = comparable_store.create_template(assignment_id, requested_scenario)
                     print(f"comparable_template: {path}")
                     print("warning: Private local comparable data. Do not commit.")
                     return 0
+                context = comparable_store.resolve_scenario(assignment_id, requested_scenario)
+                _print_comparable_scenario_resolution(context.to_dict(), args.assignment_id, assignment_id)
                 if command == "build":
-                    universe = comparable_engine.build(assignment_id, overwrite=bool(args.overwrite))
-                    _print_comparable_status(universe.to_dict(), comparable_store.output_dir(assignment_id))
+                    universe = comparable_engine.build(assignment_id, scenario=requested_scenario, overwrite=bool(args.overwrite))
+                    _print_comparable_status(universe.to_dict(), context.output_path)
                     return 0
                 if command == "status":
-                    _print_comparable_status(comparable_engine.status(assignment_id), comparable_store.output_dir(assignment_id))
+                    _print_comparable_status(comparable_engine.status(assignment_id, scenario=requested_scenario), context.output_path)
                     return 0
-                data = comparable_store.load(assignment_id)
+                data = comparable_store.load(assignment_id, context.resolved_scenario)
                 if not data:
-                    data = comparable_engine.build(assignment_id).to_dict()
+                    data = comparable_engine.build(assignment_id, scenario=requested_scenario).to_dict()
                 if command == "list":
                     for record in _map_list(data.get("comparables", [])):
                         print(f"{record.get('comparable_id')} status={record.get('candidate_status')} property_status={record.get('property_status')} address={record.get('property_address')} sale_date={record.get('sale_date')} price={record.get('sale_price')}")
@@ -1924,26 +1974,26 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"{item.get('severity')}: {item.get('item_type')} comparable={item.get('comparable_id')} field={item.get('field')} reason={item.get('reason')}")
                     return 0
                 if command == "review":
-                    print(json.dumps(comparable_store.load_review_state(assignment_id), indent=2, sort_keys=True))
+                    print(json.dumps(comparable_store.load_review_state(assignment_id, context.resolved_scenario), indent=2, sort_keys=True))
                     return 0
                 if command == "select":
-                    comparable_engine.select(assignment_id, args.comparable_id, reviewer=args.reviewer, confirm=bool(args.confirm))
-                    comparable_engine.build(assignment_id, overwrite=True)
+                    comparable_engine.select(assignment_id, args.comparable_id, scenario=requested_scenario, reviewer=args.reviewer, confirm=bool(args.confirm))
+                    comparable_engine.build(assignment_id, scenario=requested_scenario, overwrite=True)
                     print(f"selected: {args.comparable_id}")
                     return 0
                 if command == "exclude":
-                    comparable_engine.exclude(assignment_id, args.comparable_id, reason=args.reason, reviewer=args.reviewer, confirm=bool(args.confirm))
-                    comparable_engine.build(assignment_id, overwrite=True)
+                    comparable_engine.exclude(assignment_id, args.comparable_id, scenario=requested_scenario, reason=args.reason, reviewer=args.reviewer, confirm=bool(args.confirm))
+                    comparable_engine.build(assignment_id, scenario=requested_scenario, overwrite=True)
                     print(f"excluded: {args.comparable_id}")
                     return 0
                 if command == "reset-review":
-                    comparable_engine.reset_review(assignment_id, args.comparable_id)
-                    comparable_engine.build(assignment_id, overwrite=True)
+                    comparable_engine.reset_review(assignment_id, args.comparable_id, scenario=requested_scenario, confirm=bool(args.confirm))
+                    comparable_engine.build(assignment_id, scenario=requested_scenario, overwrite=True)
                     print(f"review_reset: {args.comparable_id}")
                     return 0
                 if command == "export":
-                    comparable_engine.build(assignment_id)
-                    out = comparable_store.output_dir(assignment_id)
+                    comparable_engine.build(assignment_id, scenario=requested_scenario)
+                    out = context.output_path
                     print(f"comparable_universe: {out / 'comparable-universe.md'}")
                     print(f"comparable_coverage: {out / 'comparable-coverage.md'}")
                     print(f"comparable_review_queue: {out / 'comparable-review-queue.md'}")
@@ -2175,6 +2225,16 @@ def _print_comparable_status(data, output_dir: Path) -> None:
     print(f"open_conflicts: {counts.get('open_conflict_count', 0)}")
     print(f"review_items: {counts.get('review_item_count', 0)}")
     print(f"report_path: {output_dir / 'comparable-universe.md'}")
+
+
+def _print_comparable_scenario_resolution(data, requested_alias: str, canonical_assignment_id: str) -> None:
+    print(f"requested_alias: {requested_alias}")
+    print(f"canonical_assignment_id: {canonical_assignment_id}")
+    print(f"requested_scenario: {data.get('requested_scenario') or ''}")
+    print(f"resolved_scenario: {data.get('resolved_scenario') or ''}")
+    print(f"scenario_input_path: {data.get('input_path') or ''}")
+    print(f"scenario_output_path: {data.get('output_path') or ''}")
+    print(f"legacy_fallback_used: {data.get('legacy_fallback_used', False)}")
 
 
 def _print_real_estate_intake_status(status) -> None:

@@ -2,6 +2,14 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.3.1 - Comparable Scenario and Subject Resolution
+
+- Added isolated valuation scenarios with independent private inputs, outputs, subject facts, review state, conflicts, history, deltas, and daily fingerprints.
+- Added scenario-first subject resolution with canonical fallback, normalized equivalence checks, provenance, and preserved subject-fact conflicts.
+- Normalized distance aliases to `distance_from_subject_miles`, including explicit mile, kilometer, and foot units without geocoding.
+- Refined candidate tiers so missing distance does not discard usable closed sales and old transactions remain contextual evidence.
+- Added scenario-aware CLI commands, safe legacy initialization receipts, Assignment Intelligence summaries, dashboard metrics, and affected-scenario-only daily rebuilds.
+
 ## 7.3.0 - Comparable Intelligence
 
 - Added deterministic Comparable Intelligence for canonical Real Estate assignments.

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "constellation-kernel"
-version = "7.3.0"
+version = "7.3.1"
 description = "Minimal file-based runtime kernel for Constellation."
 readme = "README.md"
 requires-python = ">=3.11"

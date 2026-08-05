@@ -519,34 +519,44 @@ def _render_consolidation_section(root: Path, assignment_id: str) -> str:
 
 
 def _render_comparable_section(root: Path, assignment_id: str) -> str:
-    path = root / "outputs" / "real-estate" / "assignments" / assignment_id / "comparables" / "comparable-universe.json"
-    if not path.exists():
+    base = root / "outputs" / "real-estate" / "assignments" / assignment_id / "comparables"
+    paths = []
+    legacy = base / "comparable-universe.json"
+    if legacy.exists():
+        paths.append(legacy)
+    paths.extend(sorted((base / "scenarios").glob("*/comparable-universe.json")) if (base / "scenarios").exists() else [])
+    if not paths:
         return "\n\n## Comparable Intelligence\n\n- Comparable Intelligence: unavailable\n- Report path: \n"
-    try:
-        data = read_json(path)
-    except Exception:
-        return "\n\n## Comparable Intelligence\n\n- Comparable Intelligence: unavailable\n- Report path: \n"
-    counts = _map(data.get("counts"))
-    coverage = _map(_map(data.get("coverage")).get("levels"))
-    limited = [key for key, value in coverage.items() if value in {"limited", "absent"}]
-    report = path.with_suffix(".md")
-    return "\n".join(
-        [
-            "",
-            "## Comparable Intelligence",
-            "",
-            f"- Comparable candidate count: `{counts.get('comparable_count', 0)}`",
-            f"- Primary candidates: `{counts.get('primary_candidate', 0)}`",
-            f"- Secondary candidates: `{counts.get('secondary_candidate', 0)}`",
-            f"- Contextual candidates: `{counts.get('contextual_candidate', 0)}`",
-            f"- Review-required candidates: `{counts.get('review_required', 0)}`",
-            f"- Open conflicts: `{counts.get('open_conflict_count', 0)}`",
-            f"- Limited or absent coverage: `{', '.join(limited) if limited else 'none'}`",
-            f"- Report path: `{report}`",
-            "- Appraiser selection, adjustment development, reconciliation, and value conclusion remain outside automation.",
-            "",
-        ]
-    )
+    lines = ["", "## Comparable Intelligence", ""]
+    for path in paths:
+        try:
+            data = read_json(path)
+        except Exception:
+            continue
+        counts = _map(data.get("counts"))
+        coverage = _map(_map(data.get("coverage")).get("bracketing"))
+        scenario = str(data.get("valuation_scenario") or "default")
+        label = str(data.get("scenario_label") or {"as_is": "As-Is", "arv": "ARV", "default": "Legacy Default"}.get(scenario, scenario))
+        lines.extend(
+            [
+                f"### {label}",
+                "",
+                f"- Scenario: `{scenario}`",
+                f"- Records: `{counts.get('comparable_count', 0)}`",
+                f"- Primary: `{counts.get('primary_candidate', 0)}`",
+                f"- Secondary: `{counts.get('secondary_candidate', 0)}`",
+                f"- Contextual: `{counts.get('contextual_candidate', 0)}`",
+                f"- Review required: `{counts.get('review_required', 0)}`",
+                f"- GLA coverage: `{_map(coverage.get('gross_living_area')).get('bracketing', 'unavailable')}`",
+                f"- Lot-size coverage: `{_map(coverage.get('lot_size')).get('bracketing', 'unavailable')}`",
+                f"- Open conflicts: `{counts.get('open_conflict_count', 0)}`",
+                f"- Report path: `{path.with_suffix('.md')}`",
+                "",
+            ]
+        )
+    lines.append("- Appraiser selection, adjustment development, reconciliation, and value conclusion remain outside automation.")
+    lines.append("")
+    return "\n".join(lines)
 
 
 def render_source_manifest(snapshot: RealEstateAssignmentSnapshot) -> str:

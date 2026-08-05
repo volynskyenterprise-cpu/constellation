@@ -1,4 +1,8 @@
 comparable_intelligence:
+  scenario_labels:
+    as_is: As-Is
+    arv: ARV
+
   recency:
     strong_days: 180
     acceptable_days: 365
@@ -26,3 +30,7 @@ comparable_intelligence:
     - public_record
     - client_provided
     - derived
+
+  tiering:
+    missing_geography_primary_cap: secondary_candidate
+    old_sale_tier: contextual_candidate

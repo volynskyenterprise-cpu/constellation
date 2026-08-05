@@ -81,6 +81,14 @@ class RealEstateDailyRun:
     comparable_conflicts_opened: int
     comparable_review_items: int
     limited_coverage_assignments: int
+    comparable_scenarios_detected: int
+    comparable_scenarios_changed: int
+    comparable_scenarios_built: int
+    comparable_scenario_records_added: int
+    comparable_scenario_records_updated: int
+    comparable_scenario_conflicts_opened: int
+    comparable_scenario_review_items: int
+    limited_coverage_scenarios: int
     review_item_count: int
     warning_count: int
     error_count: int
@@ -234,18 +242,20 @@ class RealEstateDailyEngine:
         comparable_store = ComparableStore(self.root)
         previous_comparable_checksums = _map(_map(previous.get("provenance")).get("comparable_input_checksums"))
         comparable_input_checksums = _comparable_input_checksums(comparable_store, sorted(canonical_ids))
-        changed_comparable_assignments = [
-            assignment_id
-            for assignment_id, checksum in comparable_input_checksums.items()
-            if full_refresh or previous_comparable_checksums.get(assignment_id) != checksum
+        changed_comparable_scenarios = [
+            scenario_key
+            for scenario_key, checksum in comparable_input_checksums.items()
+            if full_refresh or previous_comparable_checksums.get(scenario_key) != checksum
         ]
         comparable_engine = ComparableIntelligenceEngine(self.root)
-        for assignment_id in changed_comparable_assignments:
+        for scenario_key in changed_comparable_scenarios:
+            assignment_id, scenario = scenario_key.split("::", 1)
             try:
-                before = comparable_store.load(assignment_id)
-                universe = comparable_engine.build(assignment_id, overwrite=True)
-                delta = _map(read_json(comparable_store.output_dir(assignment_id) / "comparable-delta.json")) if (comparable_store.output_dir(assignment_id) / "comparable-delta.json").exists() else {}
-                comparable_builds.append(assignment_id)
+                before = comparable_store.load(assignment_id, scenario)
+                universe = comparable_engine.build(assignment_id, scenario=None if scenario == "default" else scenario, overwrite=True)
+                scenario_output = comparable_store.output_dir(assignment_id, scenario)
+                delta = _map(read_json(scenario_output / "comparable-delta.json")) if (scenario_output / "comparable-delta.json").exists() else {}
+                comparable_builds.append(scenario_key)
                 comparable_records_added += len(delta.get("new_candidates", []) or [])
                 comparable_records_updated += len(delta.get("updated_candidates", []) or [])
                 comparable_conflicts_opened += int(universe.counts.get("open_conflict_count", 0) or 0) - int(_map(before.get("counts")).get("open_conflict_count", 0) or 0)
@@ -258,8 +268,16 @@ class RealEstateDailyEngine:
             _stage(
                 "Comparable Intelligence",
                 {
-                    "comparable_inputs_changed": len(changed_comparable_assignments),
-                    "assignments_built": len(comparable_builds),
+                    "comparable_scenarios_detected": len(comparable_input_checksums),
+                    "comparable_scenarios_changed": len(changed_comparable_scenarios),
+                    "comparable_scenarios_built": len(comparable_builds),
+                    "comparable_scenario_records_added": comparable_records_added,
+                    "comparable_scenario_records_updated": comparable_records_updated,
+                    "comparable_scenario_conflicts_opened": comparable_conflicts_opened,
+                    "comparable_scenario_review_items": comparable_review_items,
+                    "limited_coverage_scenarios": limited_coverage_assignments,
+                    "comparable_inputs_changed": len(changed_comparable_scenarios),
+                    "assignments_built": len({item.split('::', 1)[0] for item in comparable_builds}),
                     "records_added": comparable_records_added,
                     "records_updated": comparable_records_updated,
                     "conflicts_opened": comparable_conflicts_opened,
@@ -313,13 +331,21 @@ class RealEstateDailyEngine:
             orphan_artifacts=int(canonical_counts.get("orphan_count", 0)),
             true_conflicts=int(canonical_counts.get("true_assignment_conflict_count", 0)),
             missing_critical_assignments=_missing_critical_count(review_queue if "review_queue" in locals() else []),
-            comparable_inputs_changed=len(changed_comparable_assignments) if "changed_comparable_assignments" in locals() else 0,
-            comparable_assignments_built=len(comparable_builds) if "comparable_builds" in locals() else 0,
+            comparable_inputs_changed=len(changed_comparable_scenarios) if "changed_comparable_scenarios" in locals() else 0,
+            comparable_assignments_built=len({item.split('::', 1)[0] for item in comparable_builds}) if "comparable_builds" in locals() else 0,
             comparable_records_added=comparable_records_added if "comparable_records_added" in locals() else 0,
             comparable_records_updated=comparable_records_updated if "comparable_records_updated" in locals() else 0,
             comparable_conflicts_opened=comparable_conflicts_opened if "comparable_conflicts_opened" in locals() else 0,
             comparable_review_items=comparable_review_items if "comparable_review_items" in locals() else 0,
             limited_coverage_assignments=limited_coverage_assignments if "limited_coverage_assignments" in locals() else 0,
+            comparable_scenarios_detected=len(comparable_input_checksums) if "comparable_input_checksums" in locals() else 0,
+            comparable_scenarios_changed=len(changed_comparable_scenarios) if "changed_comparable_scenarios" in locals() else 0,
+            comparable_scenarios_built=len(comparable_builds) if "comparable_builds" in locals() else 0,
+            comparable_scenario_records_added=comparable_records_added if "comparable_records_added" in locals() else 0,
+            comparable_scenario_records_updated=comparable_records_updated if "comparable_records_updated" in locals() else 0,
+            comparable_scenario_conflicts_opened=comparable_conflicts_opened if "comparable_conflicts_opened" in locals() else 0,
+            comparable_scenario_review_items=comparable_review_items if "comparable_review_items" in locals() else 0,
+            limited_coverage_scenarios=limited_coverage_assignments if "limited_coverage_assignments" in locals() else 0,
             review_item_count=len(review_queue) if "review_queue" in locals() else 0,
             warning_count=len(warnings),
             error_count=len(errors),
@@ -370,6 +396,14 @@ def render_real_estate_daily_report(run: RealEstateDailyRun, delta: JsonMap) -> 
         "",
         "## Comparable Intelligence",
         "",
+        f"- Comparable scenarios detected: `{run.comparable_scenarios_detected}`",
+        f"- Comparable scenarios changed: `{run.comparable_scenarios_changed}`",
+        f"- Comparable scenarios built: `{run.comparable_scenarios_built}`",
+        f"- Scenario records added: `{run.comparable_scenario_records_added}`",
+        f"- Scenario records updated: `{run.comparable_scenario_records_updated}`",
+        f"- Scenario conflicts opened: `{run.comparable_scenario_conflicts_opened}`",
+        f"- Scenario review items: `{run.comparable_scenario_review_items}`",
+        f"- Limited coverage scenarios: `{run.limited_coverage_scenarios}`",
         f"- Comparable inputs changed: `{run.comparable_inputs_changed}`",
         f"- Comparable assignments built: `{run.comparable_assignments_built}`",
         f"- Comparable records added: `{run.comparable_records_added}`",
@@ -474,16 +508,14 @@ def _digest(value: str) -> str:
 def _comparable_input_checksums(store: ComparableStore, assignment_ids: list[str]) -> JsonMap:
     checksums: JsonMap = {}
     for assignment_id in assignment_ids:
-        files = store.input_files(assignment_id)
-        if not files:
-            continue
-        parts = []
-        for path in files:
-            try:
-                parts.append(f"{path}:{sha256(path.read_bytes()).hexdigest()}")
-            except OSError:
-                parts.append(f"{path}:unreadable")
-        checksums[assignment_id] = _digest("|".join(parts))
+        for context in store.available_contexts(assignment_id):
+            parts = []
+            for path in context.input_files:
+                try:
+                    parts.append(f"{path.name}:{sha256(path.read_bytes()).hexdigest()}")
+                except OSError:
+                    parts.append(f"{path.name}:unreadable")
+            checksums[f"{assignment_id}::{context.resolved_scenario}"] = _digest("|".join(parts))
     return checksums
 
 

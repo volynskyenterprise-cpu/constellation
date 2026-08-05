@@ -247,6 +247,12 @@ It organizes locally supplied comparable-sale evidence for a canonical assignmen
 
 It does not select final comparables, generate appraisal adjustments, reconcile value indicators, produce value conclusions, retrieve live MLS data, use semantic matching, or replace professional judgment.
 
+## v7.3.1 Implementation - Comparable Scenario and Subject Resolution
+
+Two-value assignments now use isolated comparable scenarios, including `as_is` and `arv`. Each scenario owns its subject facts, comparable universe, coverage, conflicts, review state, history, and outputs. Scenario facts take precedence over blank or conflicting generic canonical facts for that scenario only; conflicts remain visible and neither source is overwritten.
+
+Distance aliases normalize deterministically to `distance_from_subject_miles`. Missing geography limits tier eligibility but no longer makes an otherwise usable closed sale insufficient. Older sales remain available as contextual evidence. Comparable Intelligence remains a pre-adjustment evidence-organization layer: it does not calculate values, adjustments, feasibility, legality, hypothetical conditions, or final comparable selection.
+
 ## 5. Institutional Valuation Operating System
 
 Real Estate Intelligence should operate as an institutional layer around the appraisal workflow.

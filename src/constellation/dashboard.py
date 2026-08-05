@@ -201,6 +201,8 @@ class ExecutiveDashboardBuilder:
             "active_real_estate_assignments": real_estate_summary.get("active_assignment_count", 0),
             "real_estate_missing_items": real_estate_summary.get("total_missing_item_count", 0),
             "real_estate_daily_status": real_estate_summary.get("daily_run_status", "unavailable"),
+            "real_estate_comparable_scenarios": real_estate_summary.get("total_comparable_scenarios", 0),
+            "real_estate_comparable_scenarios_needing_review": real_estate_summary.get("scenario_review_required_count", 0),
             "connector_warning_count": connector_warning_summary.get("connector_warning_count"),
             "next_files_to_inspect": [item["path"] for item in key_files[:5]],
         }
