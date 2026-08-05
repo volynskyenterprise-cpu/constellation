@@ -1,4 +1,4 @@
-# Comparable Intelligence v7.3.1
+# Comparable Intelligence v7.3.2
 
 Comparable Intelligence is the deterministic comparable-sale evidence layer for Constellation Real Estate Intelligence.
 
@@ -65,6 +65,7 @@ Normalization is deterministic:
 
 - HTML entities and non-breaking spaces in addresses
 - street abbreviations and unit markers
+- shared canonical property-type aliases, including `Single Family`, `single-family`, `SFR`, and `detached single family` -> `single_family_residential`
 - currency and comma-formatted numeric values
 - dates in explicit U.S. and ISO formats
 - status synonyms such as `sold` -> `closed_sale`
@@ -73,6 +74,10 @@ Normalization is deterministic:
 - condition and quality codes such as `C3` and `Q4`
 
 Original source values remain in source metadata.
+
+Canonical Assignment Intelligence and Comparable Intelligence use the same property-type helper. Blank property types remain unavailable. Unsupported non-empty classifications preserve their raw value and source provenance and remain review-required; they are not silently asserted as `other` or inferred from address, zoning, bedrooms, ADUs, proposed condition, or ARV context. `other` is used only when explicitly supplied as a supported classification.
+
+Address normalization is unchanged. Punctuation and suffix abbreviations may normalize, but directional components remain identity-bearing; an address missing `N`, `S`, `E`, or `W` does not become equivalent automatically.
 
 Distance aliases `distance_miles`, `distance_from_subject`, and `distance_from_subject_miles` normalize to `distance_from_subject_miles`. Miles, explicit kilometers, and explicit feet are supported. An ambiguous unit remains unavailable; conflicting aliases create a geography review item. No geocoding or provider lookup occurs.
 

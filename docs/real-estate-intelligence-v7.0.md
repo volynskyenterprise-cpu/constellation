@@ -98,6 +98,12 @@ Assignment Intelligence answers the Phase I Observe question:
 
 It creates deterministic local assignment records from `assignment.yaml`, source-file metadata, and explicitly supplied structured facts. It produces assignment briefs, source manifests, evidence indexes, missing-information reports, risk reports, timeline records, history snapshots, and deltas.
 
+### v7.3.2 Canonical Property-Type Normalization
+
+Assignment Intelligence and Comparable Intelligence share one deterministic property-type alias policy. Explicit single-family labels such as `Single Family`, `single-family`, `SFR`, and `detached single family` normalize to `single_family_residential`, while the raw source value and assignment provenance remain visible.
+
+Blank classifications remain unavailable. Unsupported non-empty classifications remain visible with a `review_required` normalization state and a missing-information review item instead of silently becoming `other`. No property type is inferred from an address, zoning, bedroom count, ADU, proposed configuration, or ARV condition. Directional address discrepancies remain conservative identity review items.
+
 Private assignment files use:
 
 ```text

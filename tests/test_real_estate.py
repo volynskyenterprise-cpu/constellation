@@ -9,7 +9,12 @@ from unittest.mock import patch
 
 from constellation.cli import main
 from constellation.dashboard import ExecutiveDashboardBuilder, ExecutiveDashboardStore
-from constellation.real_estate import RealEstateAssignmentStore, RealEstateError
+from constellation.real_estate import (
+    RealEstateAssignmentStore,
+    RealEstateError,
+    normalize_property_type,
+    property_type_normalization_status,
+)
 
 
 def write_assignment(root: Path, assignment_id: str = "test-assignment", *, missing: bool = False, conflict: bool = True, due_date: str = "2099-07-21") -> Path:
@@ -163,6 +168,69 @@ class RealEstateAssignmentTests(unittest.TestCase):
         self.assertGreaterEqual(data["source_count"], 4)
         self.assertGreater(data["fact_count"], 0)
         self.assertGreater(data["verified_fact_count"], 0)
+
+    def test_property_type_aliases_share_one_deterministic_normalization(self) -> None:
+        aliases = [
+            "Single Family",
+            "single family",
+            "single-family",
+            "single_family",
+            "single_family_residential",
+            "SFR",
+            "detached single family",
+            "detached_single_family",
+            "  (SiNgLe FaMiLy)  ",
+        ]
+        for value in aliases:
+            with self.subTest(value=value):
+                self.assertEqual(normalize_property_type(value), "single_family_residential")
+                self.assertEqual(property_type_normalization_status(value), "normalized")
+
+    def test_canonical_assignment_normalizes_single_family_and_preserves_raw_provenance(self) -> None:
+        assignment_dir = write_assignment(self.root, "property-alias", conflict=False)
+        path = assignment_dir / "assignment.yaml"
+        path.write_text(path.read_text(encoding="utf-8").replace("property_type: single_family_residential", "property_type: Single Family"), encoding="utf-8")
+
+        data = self.store.build("property-alias").to_dict()
+
+        self.assertEqual(data["property_type"], "single_family_residential")
+        self.assertNotEqual(data["property_type"], "other")
+        self.assertEqual(data["property_type_raw"], "Single Family")
+        self.assertEqual(data["property_type_normalization_status"], "normalized")
+        fact = next(item for item in data["facts"] if item["field_name"] == "property_type")
+        self.assertEqual(fact["value"], "Single Family")
+        self.assertEqual(fact["provenance"]["normalized_value"], "single_family_residential")
+        self.assertEqual(fact["provenance"]["source"], "assignment.yaml")
+
+    def test_property_type_blank_other_and_unknown_states_are_explicit(self) -> None:
+        cases = [
+            ("blank-type", "", "", "unavailable", True),
+            ("explicit-other", "other", "other", "explicit_other", False),
+            ("unknown-type", "Estate Compound", "estate_compound", "review_required", True),
+        ]
+        for assignment_id, raw, normalized, status, review_required in cases:
+            with self.subTest(raw=raw):
+                assignment_dir = write_assignment(self.root, assignment_id, conflict=False)
+                path = assignment_dir / "assignment.yaml"
+                replacement = f"property_type: {raw}" if raw else "property_type:"
+                path.write_text(path.read_text(encoding="utf-8").replace("property_type: single_family_residential", replacement), encoding="utf-8")
+                data = self.store.build(assignment_id).to_dict()
+                self.assertEqual(data["property_type"], normalized)
+                self.assertEqual(data["property_type_normalization_status"], status)
+                property_review = [item for item in data["missing_items"] if item["field_name"] == "property_type"]
+                self.assertEqual(bool(property_review), review_required)
+                if status == "review_required":
+                    fact = next(item for item in data["facts"] if item["field_name"] == "property_type")
+                    self.assertEqual(fact["value"], raw)
+                    self.assertEqual(fact["verification_status"], "unverified")
+                    self.assertEqual(property_review[0]["provenance"]["raw_value"], raw)
+
+    def test_proposed_and_accessory_unit_labels_are_not_inferred(self) -> None:
+        unsupported = ["Proposed ARV Single Family", "SFR + ADU", "Accessory Unit Configuration"]
+        for value in unsupported:
+            with self.subTest(value=value):
+                self.assertNotEqual(normalize_property_type(value), "single_family_residential")
+                self.assertEqual(property_type_normalization_status(value), "review_required")
 
     def test_assignment_build_persists_expected_outputs(self) -> None:
         write_assignment(self.root)

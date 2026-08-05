@@ -2,6 +2,13 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.3.2 - Canonical Property-Type Normalization
+
+- Added one deterministic property-type alias policy shared by canonical Assignment Intelligence and Comparable Intelligence.
+- Normalized explicit single-family labels such as `Single Family`, `single-family`, `SFR`, and `detached single family` to `single_family_residential` while preserving raw source provenance.
+- Kept blank classifications unavailable and routed unsupported non-empty classifications to explicit review instead of silently converting them to `other`.
+- Preserved conservative address review: missing directional prefixes remain identity-bearing conflicts.
+
 ## 7.3.1 - Comparable Scenario and Subject Resolution
 
 - Added isolated valuation scenarios with independent private inputs, outputs, subject facts, review state, conflicts, history, deltas, and daily fingerprints.

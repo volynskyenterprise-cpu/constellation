@@ -75,6 +75,8 @@ python -m constellation real-estate comparables select ASSIGNMENT_ID COMPARABLE_
 
 The engine resolves non-empty private scenario subject facts before canonical fallback, preserves subject conflicts, normalizes distance aliases to `distance_from_subject_miles`, detects deterministic duplicates, reports bracketing and coverage, and organizes evidence into transparent tiers. Missing distance limits a usable sale rather than discarding it; old sales remain contextual.
 
+Canonical Assignment Intelligence and Comparable Intelligence share deterministic property-type aliases. Explicit labels including `Single Family`, `single-family`, `SFR`, and `detached single family` normalize to `single_family_residential`; raw source values and provenance remain visible. Blank values remain unavailable, and unsupported non-empty classifications require review instead of silently becoming `other`. Address handling remains conservative: a missing directional prefix is still an identity-bearing subject conflict.
+
 Legacy inputs remain readable as `default`. A legacy file is used for an explicitly requested scenario only as a recorded fallback, and multiple scenarios always require explicit selection. As-is and ARV facts, records, review state, reports, history, and daily fingerprints never mix.
 
 Comparable Intelligence does not select final comparables, generate a value opinion, create appraisal adjustments, or replace professional judgment. Appraiser selection and exclusion are explicit local review-state actions.

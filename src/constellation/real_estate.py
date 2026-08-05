@@ -22,6 +22,14 @@ class RealEstateError(RuntimeError):
 VALID_STATUSES = {"intake", "active", "waiting_for_information", "analysis", "review", "completed", "archived"}
 VALID_ASSIGNMENT_TYPES = {"appraisal", "appraisal_review", "consultation", "litigation_support", "retrospective_appraisal", "prospective_appraisal", "market_study", "other"}
 VALID_PROPERTY_TYPES = {"single_family_residential", "condominium", "cooperative", "two_to_four_unit", "land", "commercial", "industrial", "mixed_use", "hospitality", "other"}
+PROPERTY_TYPE_ALIASES = {
+    "sfr": "single_family_residential",
+    "single_family": "single_family_residential",
+    "single_family_residential": "single_family_residential",
+    "detached_single_family": "single_family_residential",
+    "detached_single_family_residential": "single_family_residential",
+    "condo": "condominium",
+}
 VALID_VERIFICATION = {"verified", "client_provided", "source_reported", "unverified", "conflicting", "unavailable"}
 VALID_CONFIDENCE = {"high", "medium", "low", "unknown"}
 SUPPORTED_SOURCE_EXTENSIONS = {".md", ".txt", ".yaml", ".yml", ".json", ".csv", ".pdf", ".jpg", ".jpeg", ".png", ".heic", ".tif", ".tiff"}
@@ -56,6 +64,8 @@ class RealEstateAssignment:
     status: str
     assignment_type: str
     property_type: str
+    property_type_raw: str
+    property_type_normalization_status: str
     intended_use: str
     client_name: str
     effective_date: str
@@ -75,6 +85,8 @@ class RealEstateAssignment:
             "status": self.status,
             "assignment_type": self.assignment_type,
             "property_type": self.property_type,
+            "property_type_raw": self.property_type_raw,
+            "property_type_normalization_status": self.property_type_normalization_status,
             "intended_use": self.intended_use,
             "client_name": self.client_name,
             "effective_date": self.effective_date,
@@ -228,6 +240,8 @@ class RealEstateAssignmentSnapshot:
             "assignment_id": self.assignment.assignment_id,
             "status": self.assignment.status,
             "property_type": self.assignment.property_type,
+            "property_type_raw": self.assignment.property_type_raw,
+            "property_type_normalization_status": self.assignment.property_type_normalization_status,
             "subject_address": _subject_address(self.assignment.subject),
             "due_date": self.assignment.due_date,
             "sources": [item.to_dict() for item in self.sources],
@@ -588,12 +602,16 @@ def _read_assignment(path: Path) -> RealEstateAssignment:
     assignment_id = str(data.get("assignment_id") or path.parent.name)
     status = _valid_or_default(str(data.get("status") or "intake"), VALID_STATUSES, "intake")
     assignment_type = _valid_or_default(str(data.get("assignment_type") or "other"), VALID_ASSIGNMENT_TYPES, "other")
-    property_type = _valid_or_default(str(data.get("property_type") or "other"), VALID_PROPERTY_TYPES, "other")
+    property_type_raw = str(data.get("property_type") or "")
+    property_type = normalize_property_type(property_type_raw)
+    property_type_status = property_type_normalization_status(property_type_raw)
     return RealEstateAssignment(
         assignment_id=assignment_id,
         status=status,
         assignment_type=assignment_type,
         property_type=property_type,
+        property_type_raw=property_type_raw,
+        property_type_normalization_status=property_type_status,
         intended_use=str(data.get("intended_use") or ""),
         client_name=str(data.get("client_name") or ""),
         effective_date=str(data.get("effective_date") or ""),
@@ -666,7 +684,6 @@ def _facts(assignment: RealEstateAssignment, sources: list[RealEstateSourceRecor
     fields = {
         "assignment_id": assignment.assignment_id,
         "assignment_type": assignment.assignment_type,
-        "property_type": assignment.property_type,
         "intended_use": assignment.intended_use,
         "client_name": assignment.client_name,
         "effective_date": assignment.effective_date,
@@ -683,10 +700,28 @@ def _facts(assignment: RealEstateAssignment, sources: list[RealEstateSourceRecor
         "scope.ownership_interest": assignment.scope.ownership_interest,
     }
     for field, value in fields.items():
-        if field in {"assignment_type", "property_type", "report_type"} and str(value).strip().lower() == "other":
+        if field in {"assignment_type", "report_type"} and str(value).strip().lower() == "other":
             continue
         if value:
             facts.append(_fact(assignment.assignment_id, "assignment_yaml", field, value, "client_provided", [], "medium", {"source": "assignment.yaml"}))
+    if assignment.property_type_raw.strip():
+        facts.append(
+            _fact(
+                assignment.assignment_id,
+                "assignment_yaml",
+                "property_type",
+                assignment.property_type_raw,
+                "unverified" if assignment.property_type_normalization_status == "review_required" else "client_provided",
+                [],
+                "low" if assignment.property_type_normalization_status == "review_required" else "medium",
+                {
+                    "source": "assignment.yaml",
+                    "raw_value": assignment.property_type_raw,
+                    "normalized_value": assignment.property_type,
+                    "normalization_status": assignment.property_type_normalization_status,
+                },
+            )
+        )
     for source in sources:
         facts.append(_fact(assignment.assignment_id, "file_metadata", f"source.{source.source_id}.exists", "true", "verified", [source.source_id], "high", {"source_path": source.source_path}))
         facts.append(_fact(assignment.assignment_id, "file_metadata", f"source.{source.source_id}.checksum", source.checksum, "verified", [source.source_id], "high", {"source_path": source.source_path}))
@@ -772,7 +807,6 @@ def _missing_items(assignment: RealEstateAssignment, sources: list[RealEstateSou
         ("intended_use", assignment.intended_use, "high", "assignment terms", "Confirm intended use."),
         ("effective_date", assignment.effective_date, "high", "valuation date", "Confirm effective date."),
         ("due_date", assignment.due_date, "medium", "timeline", "Confirm assignment due date."),
-        ("property_type", assignment.property_type if assignment.property_type != "other" else "", "high", "scope", "Confirm property type."),
         ("assignment_type", assignment.assignment_type if assignment.assignment_type != "other" else "", "high", "scope", "Confirm assignment type."),
         ("report_type", assignment.report_type, "medium", "report setup", "Confirm report type."),
         ("scope.inspection_type", assignment.scope.inspection_type, "high", "scope", "Confirm inspection scope."),
@@ -781,6 +815,29 @@ def _missing_items(assignment: RealEstateAssignment, sources: list[RealEstateSou
         ("source_documents", str(bool(sources)), "high", "evidence", "Add source documents under the assignment sources directory."),
     ]
     items = []
+    if assignment.property_type_normalization_status in {"unavailable", "review_required"}:
+        review_required = assignment.property_type_normalization_status == "review_required"
+        items.append(
+            RealEstateMissingItem(
+                missing_item_id=f"missing_{_digest(assignment.assignment_id + 'property_type')}",
+                field_name="property_type",
+                description=(
+                    f"Unrecognized property type requires review: {assignment.property_type_raw}."
+                    if review_required
+                    else "Missing required assignment information: property_type."
+                ),
+                severity="high",
+                required_for="scope",
+                resolution_guidance="Map the explicit source classification to a supported property type through governed review." if review_required else "Confirm property type.",
+                provenance={
+                    "rule": "unrecognized_property_type" if review_required else "required_assignment_field",
+                    "raw_value": assignment.property_type_raw,
+                    "normalized_value": assignment.property_type,
+                    "normalization_status": assignment.property_type_normalization_status,
+                    "source": "assignment.yaml",
+                },
+            )
+        )
     for field, value, severity, required_for, guidance in required:
         if not value:
             items.append(
@@ -1052,6 +1109,8 @@ def _conflict_severity(field: str) -> str:
 def _conflict_compare_value(field: str, value: str) -> str:
     text = html.unescape(str(value or "")).replace("\xa0", " ")
     text = re.sub(r"\s+", " ", text).strip()
+    if field == "property_type":
+        return normalize_property_type(text)
     if field in {"subject.address", "address"}:
         lower = text.lower()
         lower = re.sub(r"#\s*([a-z0-9-]+)", r" unit \1", lower)
@@ -1100,6 +1159,26 @@ def _missing_rank(severity: str) -> int:
 
 def _valid_or_default(value: str, valid: set[str], default: str) -> str:
     return value if value in valid else default
+
+
+def normalize_property_type(value: Any) -> str:
+    """Normalize explicit property-type labels without inference."""
+    text = html.unescape(str(value or "")).replace("\xa0", " ").strip().lower()
+    text = re.sub(r"^[^\w]+|[^\w]+$", "", text)
+    token = re.sub(r"[\s_-]+", "_", text).strip("_")
+    return PROPERTY_TYPE_ALIASES.get(token, token)
+
+
+def property_type_normalization_status(value: Any) -> str:
+    raw = str(value or "")
+    normalized = normalize_property_type(raw)
+    if not raw.strip():
+        return "unavailable"
+    if normalized == "other":
+        return "explicit_other"
+    if normalized in VALID_PROPERTY_TYPES:
+        return "normalized"
+    return "review_required"
 
 
 def _fact_lines(facts: list[RealEstateFact]) -> list[str]:

@@ -13,7 +13,7 @@ from typing import Any
 from . import __version__
 from .io import read_json, write_json
 from .models import JsonMap
-from .real_estate import RealEstateAssignmentStore, assignment_directory
+from .real_estate import RealEstateAssignmentStore, assignment_directory, normalize_property_type
 from .simple_yaml import load_yaml
 
 
@@ -862,7 +862,7 @@ def canonical_subject_values(assignment: JsonMap) -> JsonMap:
     fact_map = {str(item.get("field_name")): item.get("value") for item in facts}
     return {
         "address": _str(subject.get("address") or assignment.get("subject_address")),
-        "property_type": _first_available({**fact_map, **assignment}, ["property_type"]),
+        "property_type": _first_available({**fact_map, **assignment}, ["property_type_raw", "property_type"]),
         "gross_living_area": _first_available({**assignment, **fact_map}, ["gross_living_area", "gla"]),
         "lot_size": _first_available({**assignment, **fact_map}, ["lot_size"]),
         "condition": _first_available({**assignment, **fact_map}, ["condition"]),
@@ -1441,16 +1441,6 @@ def normalize_status(value: Any) -> str:
     text = re.sub(r"[^a-z0-9]+", "_", _str(value).lower()).strip("_")
     synonyms = {"sold": "closed_sale", "closed": "closed_sale", "closed_sale": "closed_sale", "active": "active_listing", "listing": "active_listing", "pending": "pending_sale", "arm_s_length": "arms_length", "arms_length": "arms_length"}
     return synonyms.get(text, text)
-
-
-def normalize_property_type(value: Any) -> str:
-    text = _slug(_str(value))
-    return {
-        "sfr": "single_family_residential",
-        "single-family": "single_family_residential",
-        "single-family-residential": "single_family_residential",
-        "condo": "condominium",
-    }.get(text, text.replace("-", "_"))
 
 
 def normalize_code(value: Any, prefix: str) -> str:
