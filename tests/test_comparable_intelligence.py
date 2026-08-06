@@ -16,6 +16,7 @@ from constellation.comparable_intelligence import (
     normalize_address,
     normalize_date,
     normalize_distance_fields,
+    normalize_subject_value,
     normalize_status,
     to_number,
     validate_scenario_id,
@@ -365,7 +366,36 @@ subject:
   quality: Q3
   bedrooms: 4
   bathrooms: 4
+  unit_count: 1
+  accessory_unit: false
+  accessory_unit_count: 0
+  accessory_unit_type: none
+  garage_count: 2
+  parking_count: 2
+  pool: true
+  spa: true
+  view: residential
+  design_style: Detached Two-Story Farmhouse
+  effective_age: 12
+  year_built: 1998
+  location_features:
+    - interior residential
   sale_or_effective_date: 2026-07-10
+subject_verification:
+  unit_count: appraiser_verified
+  accessory_unit: appraiser_verified
+  accessory_unit_count: appraiser_verified
+subject_alternates:
+  - source_type: construction_budget
+    source_path: sources/fictional-completion-scope.pdf
+    verification_status: alternate_scope
+    notes: Alternate completion configuration stated by a fictional source.
+    values:
+      unit_count: 3
+      accessory_unit: true
+      accessory_unit_count: 2
+      bedrooms: 5
+      bathrooms: 5.1
 comparables:
   - comparable_id: shared-comp
     address: 201 Imaginary Road
@@ -377,6 +407,16 @@ comparables:
     lot_size: 6400
     bedrooms: 4
     bathrooms: 4
+    unit_count: 1
+    accessory_unit: false
+    accessory_unit_count: 0
+    garage_count: 2
+    parking_count: 2
+    pool: true
+    spa: true
+    view: residential
+    design_style: detached_two_story_farmhouse
+    effective_age: 10
     distance_from_subject_miles: 0.5
   - comparable_id: arv-two
     address: 202 Imaginary Road
@@ -388,6 +428,16 @@ comparables:
     lot_size: 6700
     bedrooms: 4
     bathrooms: 4
+    unit_count: 1
+    accessory_unit: false
+    accessory_unit_count: 0
+    garage_count: 2
+    parking_count: 2
+    pool: true
+    spa: true
+    view: residential
+    design_style: detached two-story farmhouse
+    effective_age: 14
     distance_from_subject_miles: 0.8
   - comparable_id: arv-three
     address: 203 Imaginary Road
@@ -399,6 +449,16 @@ comparables:
     lot_size: 6200
     bedrooms: 4
     bathrooms: 3
+    unit_count: 1
+    accessory_unit: false
+    accessory_unit_count: 0
+    garage_count: 1
+    parking_count: 2
+    pool: false
+    spa: false
+    view: residential
+    design_style: detached two story farmhouse
+    effective_age: 18
     distance_from_subject_miles: 1.1
 """
 
@@ -424,6 +484,163 @@ comparables:
         detail = universe.subject_resolution["fields"]["gross_living_area"]
         self.assertEqual(detail["selected_source"], "private_scenario_input")
         self.assertEqual(detail["conflict_status"], "open")
+
+    def test_expanded_arv_subject_alternates_surface_governed_conflicts(self) -> None:
+        engine = ComparableIntelligenceEngine(self.tmp)
+        scenario_path = engine.store.input_dir(self.assignment_id, "arv") / "comparables.yaml"
+        original = scenario_path.read_text(encoding="utf-8")
+        without_alternates = original.split("subject_alternates:", 1)[0] + "comparables:" + original.split("comparables:", 1)[1]
+        scenario_path.write_text(without_alternates, encoding="utf-8")
+        baseline = engine.build(self.assignment_id, scenario="arv", overwrite=True)
+        tier_keys = ["primary_candidate", "secondary_candidate", "contextual_candidate", "review_required", "insufficient_data", "potential_duplicate"]
+        baseline_tiers = {key: baseline.counts.get(key, 0) for key in tier_keys}
+        scenario_path.write_text(original, encoding="utf-8")
+
+        universe = engine.build(self.assignment_id, scenario="arv", overwrite=True)
+
+        fields = universe.subject_resolution["fields"]
+        expected = {
+            "unit_count": 1,
+            "accessory_unit": False,
+            "accessory_unit_count": 0,
+            "garage_count": 2,
+            "parking_count": 2,
+            "pool": True,
+            "spa": True,
+            "view": "residential",
+            "design_style": "detached two story farmhouse",
+            "effective_age": 12,
+            "year_built": 1998,
+            "location_features": ["interior residential"],
+        }
+        for field_name, value in expected.items():
+            with self.subTest(field_name=field_name):
+                self.assertEqual(universe.subject[field_name], value)
+                self.assertEqual(fields[field_name]["selected_source"], "private_scenario_input")
+                self.assertTrue(fields[field_name]["raw_source_field_name"])
+                self.assertTrue(fields[field_name]["verification_status"])
+        subject_conflicts = {item.field_name: item for item in universe.conflicts if item.comparable_id == "subject"}
+        unit_conflicts = {field_name: conflict for field_name, conflict in subject_conflicts.items() if field_name in {"unit_count", "accessory_unit", "accessory_unit_count"}}
+        self.assertEqual(set(unit_conflicts), {"unit_count", "accessory_unit", "accessory_unit_count"})
+        for field_name in unit_conflicts:
+            conflict = unit_conflicts[field_name]
+            self.assertEqual(conflict.status, "open")
+            self.assertEqual(conflict.selected_source, "private_scenario_input")
+            self.assertEqual(conflict.alternate_source, "construction_budget")
+            self.assertEqual(len(conflict.source_assertions), 2)
+            self.assertIn("No legality or valuation conclusion", conflict.reason)
+        delta = json.loads((engine.store.output_dir(self.assignment_id, "arv") / "comparable-delta.json").read_text(encoding="utf-8"))
+        self.assertTrue({item.conflict_id for item in unit_conflicts.values()}.issubset(set(delta["subject_conflicts_opened"])))
+        self.assertEqual(universe.coverage.bracketing["accessory_unit"]["subject_baseline_status"], "conflicted")
+        self.assertNotEqual(universe.coverage.levels["accessory_unit"], "unavailable")
+        self.assertEqual({key: universe.counts.get(key, 0) for key in tier_keys}, baseline_tiers)
+        item_types = {item["item_type"] for item in universe.review_queue}
+        self.assertTrue({"conflicting_unit_count", "conflicting_accessory_unit_presence", "conflicting_accessory_unit_count"}.issubset(item_types))
+        report = (engine.store.output_dir(self.assignment_id, "arv") / "comparable-universe.md").read_text(encoding="utf-8")
+        self.assertIn("Unit and Accessory-Unit Evidence", report)
+        self.assertIn("No legality, permitting, completion, GLA, adjustment, or valuation determination", report)
+        self.assertNotIn("legally", report.lower())
+
+    def test_expanded_subject_normalization_is_explicit_and_non_inferential(self) -> None:
+        equivalent_cases = [
+            ("accessory_unit", "present", True),
+            ("accessory_unit", "absent", False),
+            ("unit_count", "3", 3),
+            ("garage_count", 0, 0),
+            ("design_style", " Detached_Two-Story  Farmhouse ", "detached two story farmhouse"),
+            ("location_features", [" Quiet-Street ", "park_view"], ["park view", "quiet street"]),
+        ]
+        for field_name, raw, expected in equivalent_cases:
+            with self.subTest(field_name=field_name, raw=raw):
+                self.assertEqual(normalize_subject_value(field_name, raw), expected)
+        for field_name, raw in [("unit_count", -1), ("accessory_unit_count", 1.5), ("effective_age", "unknown"), ("accessory_unit", "ambiguous")]:
+            with self.subTest(field_name=field_name, raw=raw):
+                self.assertIsNone(normalize_subject_value(field_name, raw))
+
+    def test_expanded_subject_aliases_preserve_raw_source_field_names(self) -> None:
+        scenario_path = ComparableStore(self.tmp).input_dir(self.assignment_id, "arv") / "comparables.yaml"
+        text = scenario_path.read_text(encoding="utf-8")
+        replacements = [
+            ("  unit_count: 1", "  total_units: 1"),
+            ("  accessory_unit: false", "  adu: false"),
+            ("  accessory_unit_count: 0", "  adu_count: 0"),
+            ("  garage_count: 2", "  garage_spaces: 2"),
+            ("  parking_count: 2", "  parking_spaces: 2"),
+            ("  design_style: Detached Two-Story Farmhouse", "  style: Detached Two-Story Farmhouse"),
+        ]
+        for old, new in replacements:
+            text = text.replace(old, new, 1)
+        scenario_path.write_text(text, encoding="utf-8")
+
+        universe = ComparableIntelligenceEngine(self.tmp).build(self.assignment_id, scenario="arv", overwrite=True)
+
+        raw_fields = {field_name: detail["raw_source_field_name"] for field_name, detail in universe.subject_resolution["fields"].items()}
+        self.assertEqual(raw_fields["unit_count"], "total_units")
+        self.assertEqual(raw_fields["accessory_unit"], "adu")
+        self.assertEqual(raw_fields["accessory_unit_count"], "adu_count")
+        self.assertEqual(raw_fields["garage_count"], "garage_spaces")
+        self.assertEqual(raw_fields["parking_count"], "parking_spaces")
+        self.assertEqual(raw_fields["design_style"], "style")
+        self.assertEqual(universe.subject["unit_count"], 1)
+        self.assertFalse(universe.subject["accessory_unit"])
+    def test_invalid_expanded_scenario_value_falls_back_but_remains_reviewable(self) -> None:
+        assignment_path = self.tmp / "real-estate" / "assignments" / self.assignment_id / "assignment.yaml"
+        assignment_path.write_text(assignment_path.read_text(encoding="utf-8") + "    - field_name: effective_age\n      value: 20\n", encoding="utf-8")
+        scenario_path = ComparableStore(self.tmp).input_dir(self.assignment_id, "as_is") / "comparables.yaml"
+        scenario_path.write_text(scenario_path.read_text(encoding="utf-8").replace("  sale_or_effective_date:", "  effective_age: unknown\n  sale_or_effective_date:"), encoding="utf-8")
+
+        universe = ComparableIntelligenceEngine(self.tmp).build(self.assignment_id, scenario="as_is", overwrite=True)
+
+        detail = universe.subject_resolution["fields"]["effective_age"]
+        self.assertEqual(universe.subject["effective_age"], 20)
+        self.assertTrue(detail["fallback_used"])
+        self.assertEqual(detail["normalization_status"], "review_required")
+        invalid = next(item for item in detail["alternate_values"] if item["source"] == "private_scenario_input")
+        self.assertEqual(invalid["raw_value"], "unknown")
+        self.assertEqual(invalid["normalization_status"], "review_required")
+        self.assertFalse(any(item.field_name == "effective_age" and item.comparable_id == "subject" for item in universe.conflicts))
+        self.assertTrue(any(item["item_type"] == "subject_value_review_required" and item["field"] == "effective_age" for item in universe.review_queue))
+
+    def test_prior_subject_evidence_alternates_remain_readable(self) -> None:
+        scenario_path = ComparableStore(self.tmp).input_dir(self.assignment_id, "as_is") / "comparables.yaml"
+        scenario_path.write_text(
+            scenario_path.read_text(encoding="utf-8").replace(
+                "comparables:",
+                "  unit_count: 1\nsubject_evidence:\n  unit_count:\n    alternate_values:\n      - value: 3\n        source: fictional_scope\n        source_path: sources/fictional-scope.txt\n        verification_status: alternate_scope\ncomparables:",
+                1,
+            ),
+            encoding="utf-8",
+        )
+
+        universe = ComparableIntelligenceEngine(self.tmp).build(self.assignment_id, scenario="as_is", overwrite=True)
+
+        conflict = next(item for item in universe.conflicts if item.comparable_id == "subject" and item.field_name == "unit_count")
+        self.assertEqual(conflict.normalized_values, [1, 3])
+        self.assertEqual(conflict.alternate_source, "fictional_scope")
+
+    def test_expanded_conflicts_remain_scenario_specific_and_idempotent(self) -> None:
+        engine = ComparableIntelligenceEngine(self.tmp)
+        as_is = engine.build(self.assignment_id, scenario="as_is", overwrite=True)
+        arv_first = engine.build(self.assignment_id, scenario="arv", overwrite=True)
+        history_path = engine.store.output_dir(self.assignment_id, "arv") / "comparable-history.json"
+        history_before = json.loads(history_path.read_text(encoding="utf-8"))
+        review_path = engine.store.review_state_path(self.assignment_id, "arv")
+        review_before = review_path.read_bytes() if review_path.exists() else b""
+        arv_second = engine.build(self.assignment_id, scenario="arv", overwrite=True)
+        history_after = json.loads(history_path.read_text(encoding="utf-8"))
+        review_after = review_path.read_bytes() if review_path.exists() else b""
+
+        self.assertFalse(any(item.field_name in {"unit_count", "accessory_unit", "accessory_unit_count"} for item in as_is.conflicts))
+        self.assertEqual(arv_first.counts, arv_second.counts)
+        self.assertEqual(len(history_before["snapshots"]), len(history_after["snapshots"]))
+        self.assertEqual(review_before, review_after)
+        delta = json.loads((engine.store.output_dir(self.assignment_id, "arv") / "comparable-delta.json").read_text(encoding="utf-8"))
+        self.assertEqual(delta["subject_conflicts_opened"], [])
+        self.assertEqual(delta["subject_conflicts_resolved"], [])
+        summary = comparable_dashboard_summary([as_is.to_dict(), arv_second.to_dict()])
+        self.assertEqual(summary["scenario_subject_conflict_count"], sum(item.counts["subject_conflict_count"] for item in [as_is, arv_second]))
+        self.assertEqual(summary["scenarios_with_unit_configuration_review"], 1)
+        self.assertEqual(summary["scenarios_with_accessory_unit_review"], 1)
 
     def test_equivalent_formatted_subject_value_has_no_conflict(self) -> None:
         universe = ComparableIntelligenceEngine(self.tmp).build(self.assignment_id, scenario="as_is", overwrite=True)
@@ -647,6 +864,8 @@ comparables:
         brief = _render_comparable_section(self.tmp, self.assignment_id)
         self.assertIn("### As-Is", brief)
         self.assertIn("### ARV", brief)
+        self.assertIn("Open subject conflicts", brief)
+        self.assertIn("Unit configuration", brief)
 
     def test_daily_fingerprints_scenarios_independently(self) -> None:
         store = ComparableStore(self.tmp)

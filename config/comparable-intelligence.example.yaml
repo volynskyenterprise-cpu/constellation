@@ -34,3 +34,24 @@ comparable_intelligence:
   tiering:
     missing_geography_primary_cap: secondary_candidate
     old_sale_tier: contextual_candidate
+
+  subject_resolution:
+    precedence:
+      - private_scenario_input
+      - canonical_assignment
+      - unavailable
+    alternate_evidence_key: subject_alternates
+    expanded_fields:
+      - unit_count
+      - accessory_unit
+      - accessory_unit_count
+      - accessory_unit_type
+      - garage_count
+      - parking_count
+      - pool
+      - spa
+      - view
+      - design_style
+      - effective_age
+      - year_built
+      - location_features

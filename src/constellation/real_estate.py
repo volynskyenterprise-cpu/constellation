@@ -607,6 +607,7 @@ def _render_comparable_section(root: Path, assignment_id: str) -> str:
             continue
         counts = _map(data.get("counts"))
         coverage = _map(_map(data.get("coverage")).get("bracketing"))
+        subject_resolution = _map(data.get("subject_resolution"))
         scenario = str(data.get("valuation_scenario") or "default")
         label = str(data.get("scenario_label") or {"as_is": "As-Is", "arv": "ARV", "default": "Legacy Default"}.get(scenario, scenario))
         lines.extend(
@@ -622,6 +623,9 @@ def _render_comparable_section(root: Path, assignment_id: str) -> str:
                 f"- GLA coverage: `{_map(coverage.get('gross_living_area')).get('bracketing', 'unavailable')}`",
                 f"- Lot-size coverage: `{_map(coverage.get('lot_size')).get('bracketing', 'unavailable')}`",
                 f"- Open conflicts: `{counts.get('open_conflict_count', 0)}`",
+                f"- Open subject conflicts: `{counts.get('subject_conflict_count', 0)}`",
+                f"- Unit configuration: `{'review required' if subject_resolution.get('unit_configuration_review_required') else 'no open unit-configuration conflict'}`",
+                f"- Accessory-unit evidence: `{'review required' if subject_resolution.get('accessory_unit_review_required') else 'no open accessory-unit conflict'}`",
                 f"- Report path: `{path.with_suffix('.md')}`",
                 "",
             ]

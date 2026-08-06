@@ -110,6 +110,14 @@ Comparable Intelligence compares scenario and canonical subject addresses throug
 
 Directionals and unit identifiers are identity-bearing. A populated directional or unit does not equal a blank or different value, malformed and unsupported addresses remain reviewable, and no input or canonical output is rewritten automatically. The policy uses no fuzzy matching, geocoding, parcel lookup, provider calls, or external address validation.
 
+### v7.3.4 Expanded Scenario Subject Provenance
+
+Comparable Intelligence resolves explicit scenario facts for unit and accessory-unit configuration, garage and parking counts, pool and spa, view, design/style, effective age, year built, and location features. Deterministic aliases produce canonical internal field names while retaining raw field names, source paths, alternate values, and verification status.
+
+Private `subject_alternates` assertions are compared without changing the governing scenario fact. Material differences open scenario-specific conflicts and review items, and coverage is labeled when its subject baseline is conflicted. Assignment briefs and aggregate dashboards expose only administrative conflict counts and review indicators; private subject detail remains in assignment-specific reports.
+
+Unit/accessory-unit evidence remains descriptive. Constellation does not determine legality, permits, completion, zoning compliance, highest and best use, GLA treatment, feasibility, adjustments, or value.
+
 Private assignment files use:
 
 ```text

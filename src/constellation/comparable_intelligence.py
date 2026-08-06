@@ -54,9 +54,31 @@ SUBJECT_FIELD_ALIASES = {
     "bedroom_count": ["bedroom_count", "bedrooms"],
     "bathroom_count": ["bathroom_count", "bathrooms"],
     "year_built": ["year_built"],
+    "effective_age": ["effective_age"],
+    "unit_count": ["unit_count", "units", "total_units"],
+    "accessory_unit": ["accessory_unit", "adu"],
+    "accessory_unit_count": ["accessory_unit_count", "adu_count"],
+    "accessory_unit_type": ["accessory_unit_type", "adu_type"],
+    "garage_count": ["garage_count", "garage_spaces"],
+    "parking_count": ["parking_count", "parking_spaces"],
     "pool": ["pool"],
+    "spa": ["spa"],
+    "view": ["view"],
+    "design_style": ["design_style", "design", "style"],
+    "location_features": ["location_features"],
     "sale_or_effective_date": ["sale_or_effective_date", "effective_date"],
 }
+
+COUNT_SUBJECT_FIELDS = {
+    "unit_count",
+    "accessory_unit_count",
+    "garage_count",
+    "parking_count",
+    "effective_age",
+    "year_built",
+}
+BOOLEAN_SUBJECT_FIELDS = {"accessory_unit", "pool", "spa"}
+UNIT_CONFIGURATION_FIELDS = {"unit_count", "accessory_unit", "accessory_unit_count", "accessory_unit_type"}
 
 
 @dataclass(frozen=True)
@@ -127,6 +149,15 @@ class ComparableConflict:
     status: str
     preferred_source: str
     reason: str
+    selected_value: Any = None
+    alternate_value: Any = None
+    normalized_values: list[Any] = field(default_factory=list)
+    selected_source: str = ""
+    selected_source_path: str = ""
+    alternate_source: str = ""
+    alternate_source_path: str = ""
+    verification_statuses: list[str] = field(default_factory=list)
+    source_assertions: list[JsonMap] = field(default_factory=list)
 
     def to_dict(self) -> JsonMap:
         return self.__dict__.copy()
@@ -170,6 +201,9 @@ class ComparableRecord:
     spa: bool | None
     view: str
     accessory_unit: bool | None
+    accessory_unit_count: int | None
+    accessory_unit_type: str
+    unit_count: int | None
     basement: bool | None
     location_features: list[str]
     zoning: str
@@ -568,8 +602,8 @@ class ComparableIntelligenceEngine:
         assessments = [assess_comparable(subject, record, config, conflicts) for record in records]
         by_id = {assessment.comparable_id: assessment for assessment in assessments}
         records = [apply_assessment_status(record, by_id.get(record.comparable_id), review_state) for record in records]
-        coverage = assess_coverage(assignment_id, subject, records, config)
-        review_queue = build_review_queue(records, assessments, conflicts, coverage)
+        coverage = assess_coverage(assignment_id, subject, records, config, subject_resolution=subject_resolution)
+        review_queue = build_review_queue(records, assessments, conflicts, coverage, subject_resolution=subject_resolution)
         counts = comparable_counts(records, conflicts, review_queue)
         limitations = [
             "Comparable Intelligence organizes evidence and does not select final comparables.",
@@ -741,23 +775,26 @@ def record_from_row(row: JsonMap, path: Path, checksum: str, row_number: int, re
         concessions=_str(row.get("concessions")),
         arms_length_status=normalize_status(row.get("arms_length_status")),
         property_type=normalize_property_type(row.get("property_type")),
-        design_style=_str(row.get("design_style")),
-        year_built=to_int(row.get("year_built")),
-        effective_age=to_int(row.get("effective_age")),
+        design_style=normalize_subject_text(_first_available(row, ["design_style", "design", "style"])),
+        year_built=normalize_nonnegative_integer(row.get("year_built")),
+        effective_age=normalize_nonnegative_integer(row.get("effective_age")),
         condition=normalize_code(row.get("condition"), "c"),
         quality=normalize_code(row.get("quality"), "q"),
         gross_living_area=to_number(row.get("gross_living_area") or row.get("gla")),
         lot_size=to_number(row.get("lot_size")),
         bedroom_count=to_number(row.get("bedroom_count") or row.get("bedrooms")),
         bathroom_count=to_number(row.get("bathroom_count") or row.get("bathrooms")),
-        garage_count=to_number(row.get("garage_count")),
-        parking_count=to_number(row.get("parking_count")),
+        garage_count=normalize_nonnegative_integer(_first_available(row, ["garage_count", "garage_spaces"])),
+        parking_count=normalize_nonnegative_integer(_first_available(row, ["parking_count", "parking_spaces"])),
         pool=to_bool(row.get("pool")),
         spa=to_bool(row.get("spa")),
-        view=_str(row.get("view")),
-        accessory_unit=to_bool(row.get("accessory_unit") or row.get("adu")),
+        view=normalize_subject_text(row.get("view")),
+        accessory_unit=to_bool(_first_available(row, ["accessory_unit", "adu"])),
+        accessory_unit_count=normalize_nonnegative_integer(_first_available(row, ["accessory_unit_count", "adu_count"])),
+        accessory_unit_type=normalize_subject_text(_first_available(row, ["accessory_unit_type", "adu_type"])),
+        unit_count=normalize_nonnegative_integer(_first_available(row, ["unit_count", "units", "total_units"])),
         basement=to_bool(row.get("basement")),
-        location_features=_string_list(row.get("location_features")),
+        location_features=normalize_subject_value("location_features", row.get("location_features")) or [],
         zoning=_str(row.get("zoning")),
         ownership_interest=_str(row.get("ownership_interest")),
         city=_str(row.get("city")),
@@ -877,7 +914,18 @@ def canonical_subject_values(assignment: JsonMap) -> JsonMap:
         "bedroom_count": _first_available({**assignment, **fact_map}, ["bedroom_count", "bedrooms"]),
         "bathroom_count": _first_available({**assignment, **fact_map}, ["bathroom_count", "bathrooms"]),
         "year_built": _first_available({**assignment, **fact_map}, ["year_built"]),
+        "effective_age": _first_available({**assignment, **fact_map}, ["effective_age"]),
+        "unit_count": _first_available({**assignment, **fact_map}, ["unit_count", "units", "total_units"]),
+        "accessory_unit": _first_available({**assignment, **fact_map}, ["accessory_unit", "adu"]),
+        "accessory_unit_count": _first_available({**assignment, **fact_map}, ["accessory_unit_count", "adu_count"]),
+        "accessory_unit_type": _first_available({**assignment, **fact_map}, ["accessory_unit_type", "adu_type"]),
+        "garage_count": _first_available({**assignment, **fact_map}, ["garage_count", "garage_spaces"]),
+        "parking_count": _first_available({**assignment, **fact_map}, ["parking_count", "parking_spaces"]),
         "pool": _first_available({**assignment, **fact_map}, ["pool"]),
+        "spa": _first_available({**assignment, **fact_map}, ["spa"]),
+        "view": _first_available({**assignment, **fact_map}, ["view"]),
+        "design_style": _first_available({**assignment, **fact_map}, ["design_style", "design", "style"]),
+        "location_features": _first_available({**assignment, **fact_map}, ["location_features"]),
         "sale_or_effective_date": _first_available({**assignment, **fact_map}, ["sale_or_effective_date", "effective_date"]),
     }
 
@@ -918,6 +966,91 @@ def _address_alternate(value: Any, normalized_value: Any, source: str, source_pa
     }
 
 
+def _available_entry(values: JsonMap, aliases: list[str]) -> tuple[str, Any]:
+    for alias in aliases:
+        if alias in values and _value_available(values.get(alias)):
+            return alias, values.get(alias)
+    return "", None
+
+
+def _canonical_raw_field_name(assignment: JsonMap, field_name: str, aliases: list[str]) -> str:
+    facts = {str(item.get("field_name")): item.get("value") for item in _map_list(assignment.get("facts", []))}
+    candidates = ["property_type_raw", *aliases] if field_name == "property_type" else aliases
+    for container in (assignment, facts, _map(_map(assignment.get("assignment")).get("subject")), _map(assignment.get("subject"))):
+        name, _ = _available_entry(container, candidates)
+        if name:
+            return name
+    return aliases[0]
+
+
+def _alternate_documents(scenario_document: JsonMap) -> list[JsonMap]:
+    """Read the v7.3.4 alternate schema plus prior explicit subject-evidence shapes."""
+    documents = list(_map_list(scenario_document.get("subject_alternates", [])))
+    evidence = scenario_document.get("subject_evidence")
+    if isinstance(evidence, list):
+        documents.extend(_map_list(evidence))
+    elif isinstance(evidence, dict):
+        documents.extend(_map_list(evidence.get("alternates", [])))
+        for raw_field, raw_evidence in evidence.items():
+            if raw_field == "alternates":
+                continue
+            entries = raw_evidence if isinstance(raw_evidence, list) else [raw_evidence]
+            for entry in entries:
+                item = _map(entry)
+                for alternate in _map_list(item.get("alternate_values", [])):
+                    documents.append(
+                        {
+                            "source_type": alternate.get("source_type") or alternate.get("source") or item.get("source_type") or item.get("source"),
+                            "source_path": alternate.get("source_path") or item.get("source_path"),
+                            "verification_status": alternate.get("verification_status") or item.get("verification_status") or "alternate_assertion",
+                            "notes": alternate.get("notes") or item.get("notes"),
+                            "values": {raw_field: alternate.get("raw_value", alternate.get("value"))},
+                        }
+                    )
+                if "alternate_value" in item:
+                    documents.append(
+                        {
+                            "source_type": item.get("source_type") or item.get("source"),
+                            "source_path": item.get("source_path"),
+                            "verification_status": item.get("verification_status") or "alternate_assertion",
+                            "notes": item.get("notes"),
+                            "values": {raw_field: item.get("alternate_value")},
+                        }
+                    )
+    return documents
+
+
+def _alternate_assertions(scenario_document: JsonMap) -> dict[str, list[JsonMap]]:
+    assertions: dict[str, list[JsonMap]] = {field_name: [] for field_name in SUBJECT_FIELD_ALIASES}
+    for document in _alternate_documents(scenario_document):
+        values = _map(document.get("values"))
+        for field_name, aliases in SUBJECT_FIELD_ALIASES.items():
+            raw_field, raw_value = _available_entry(values, aliases)
+            if not raw_field:
+                continue
+            normalized = normalize_subject_value(field_name, raw_value)
+            assertions[field_name].append(
+                {
+                    "value": raw_value,
+                    "raw_value": raw_value,
+                    "normalized_value": normalized,
+                    "raw_source_field_name": raw_field,
+                    "source": _str(document.get("source_type") or "alternate_source"),
+                    "source_path": _str(document.get("source_path")),
+                    "verification_status": _str(document.get("verification_status") or "alternate_assertion"),
+                    "notes": _string_list(document.get("notes")),
+                    "normalization_status": "normalized" if _value_available(normalized) else "review_required",
+                }
+            )
+    return assertions
+
+
+def _subject_conflict_reason(field_name: str) -> str:
+    if field_name in UNIT_CONFIGURATION_FIELDS:
+        return "The scenario sources contain differing unit-configuration assertions. Appraiser review is required. No legality or valuation conclusion is generated."
+    return f"Explicit normalized subject assertions differ for {field_name}; the governing scenario value remains selected and appraiser review is required."
+
+
 def resolve_subject_facts(
     assignment: JsonMap,
     scenario_document: JsonMap,
@@ -929,14 +1062,19 @@ def resolve_subject_facts(
     canonical = canonical_subject_values(assignment)
     scenario_address = _scenario_address_evidence(scenario_subject)
     canonical_address = _canonical_address_evidence(assignment, canonical.get("address"))
+    alternate_assertions = _alternate_assertions(scenario_document)
+    scenario_verification = _map(scenario_document.get("subject_verification"))
     resolved: JsonMap = {}
     fields: JsonMap = {}
     conflicts: list[ComparableConflict] = []
     for field_name, aliases in SUBJECT_FIELD_ALIASES.items():
-        scenario_raw = _first_available(scenario_subject, aliases)
+        scenario_raw_field, scenario_raw = _available_entry(scenario_subject, aliases)
         canonical_raw = canonical.get(field_name)
+        canonical_raw_field = _canonical_raw_field_name(assignment, field_name, aliases)
         scenario_value = normalize_subject_value(field_name, scenario_raw)
         canonical_value = normalize_subject_value(field_name, canonical_raw)
+        scenario_asserted = _value_available(scenario_raw)
+        canonical_asserted = _value_available(canonical_raw)
         scenario_available = _value_available(scenario_value)
         canonical_available = _value_available(canonical_value)
         selected = scenario_value if scenario_available else canonical_value if canonical_available else ""
@@ -946,19 +1084,42 @@ def resolve_subject_facts(
         equivalent = bool(address_comparison.get("equivalent")) if address_comparison else subject_values_equivalent(field_name, scenario_value, canonical_value)
         conflict = scenario_available and canonical_available and not equivalent
         alternate_values = []
-        if scenario_available:
-            alternate_values.append(
+        if scenario_asserted:
+            scenario_assertion = (
                 _address_alternate(scenario_raw, scenario_value, "private_scenario_input", scenario_path, scenario_address)
                 if field_name == "address"
-                else {"value": scenario_raw, "normalized_value": scenario_value, "source": "private_scenario_input", "source_path": str(scenario_path)}
+                else {"value": scenario_raw, "raw_value": scenario_raw, "normalized_value": scenario_value, "source": "private_scenario_input", "source_path": str(scenario_path)}
             )
-        if canonical_available:
-            alternate_values.append(
+            scenario_assertion.update(
+                {
+                    "raw_source_field_name": scenario_raw_field,
+                    "verification_status": _str(scenario_verification.get(field_name) or scenario_verification.get(scenario_raw_field) or "scenario_asserted"),
+                    "normalization_status": "normalized" if scenario_available else "review_required",
+                }
+            )
+            alternate_values.append(scenario_assertion)
+        if canonical_asserted:
+            canonical_assertion = (
                 _address_alternate(canonical_raw, canonical_value, "canonical_assignment", canonical_path, canonical_address)
                 if field_name == "address"
-                else {"value": canonical_raw, "normalized_value": canonical_value, "source": "canonical_assignment", "source_path": str(canonical_path)}
+                else {"value": canonical_raw, "raw_value": canonical_raw, "normalized_value": canonical_value, "source": "canonical_assignment", "source_path": str(canonical_path)}
             )
+            canonical_assertion.update(
+                {
+                    "raw_source_field_name": canonical_raw_field,
+                    "verification_status": "verified_canonical",
+                    "normalization_status": "normalized" if canonical_available else "review_required",
+                }
+            )
+            alternate_values.append(canonical_assertion)
+        alternate_values.extend(alternate_assertions.get(field_name, []))
         resolved[field_name] = selected
+        selected_raw_field = scenario_raw_field if scenario_available else canonical_raw_field if canonical_available else ""
+        selected_verification = (
+            _str(scenario_verification.get(field_name) or scenario_verification.get(scenario_raw_field) or "scenario_asserted")
+            if scenario_available
+            else "verified_canonical" if canonical_available else "unavailable"
+        )
         detail = {
             "selected_value": scenario_raw if scenario_available else canonical_raw if canonical_available else "",
             "normalized_value": selected,
@@ -967,6 +1128,10 @@ def resolve_subject_facts(
             "fallback_used": not scenario_available and canonical_available,
             "alternate_values": alternate_values,
             "conflict_status": "open" if conflict else "none",
+            "raw_source_field_name": selected_raw_field,
+            "verification_status": selected_verification,
+            "normalization_status": "review_required" if (scenario_asserted and not scenario_available) or (canonical_asserted and not canonical_available) else "normalized" if _value_available(selected) else "unavailable",
+            "normalization_review_sources": [item.get("source") for item in alternate_values if item.get("normalization_status") == "review_required"],
             "reason": "Scenario-specific non-empty value selected." if scenario_available else "Scenario value unavailable; verified canonical fallback used." if canonical_available else "No scenario or canonical value available.",
         }
         if field_name == "address":
@@ -996,9 +1161,10 @@ def resolve_subject_facts(
             )
             if address_comparison:
                 detail["reason"] = str(address_comparison.get("equivalence_reason", detail["reason"]))
-        fields[field_name] = detail
         if conflict:
             conflict_reason = "Scenario and canonical subject facts differ; the scenario value governs this scenario only."
+            if field_name in UNIT_CONFIGURATION_FIELDS:
+                conflict_reason = _subject_conflict_reason(field_name)
             if field_name == "address" and address_comparison:
                 components = ", ".join(address_comparison.get("conflicting_components", [])) or "address_parseability"
                 conflict_reason = f"Structured subject addresses conflict on: {components}; the scenario value governs this scenario only."
@@ -1013,8 +1179,49 @@ def resolve_subject_facts(
                     status="open",
                     preferred_source="private_scenario_input",
                     reason=conflict_reason,
+                    selected_value=scenario_raw,
+                    alternate_value=canonical_raw,
+                    normalized_values=[scenario_value, canonical_value],
+                    selected_source="private_scenario_input",
+                    selected_source_path=str(scenario_path),
+                    alternate_source="canonical_assignment",
+                    alternate_source_path=str(canonical_path),
+                    verification_statuses=[selected_verification, "verified_canonical"],
+                    source_assertions=[alternate_values[0], alternate_values[1]],
                 )
             )
+        for assertion in alternate_assertions.get(field_name, []):
+            alternate_value = assertion.get("normalized_value")
+            if not _value_available(selected) or not _value_available(alternate_value):
+                continue
+            if subject_values_equivalent(field_name, selected, alternate_value):
+                continue
+            detail["conflict_status"] = "open"
+            reason = _subject_conflict_reason(field_name)
+            selected_assertion = next((item for item in alternate_values if item.get("source") == selected_source), {})
+            conflicts.append(
+                ComparableConflict(
+                    conflict_id=_stable_id("subject_fact_conflict", [field_name, _str(selected), _str(alternate_value), _str(assertion.get("source_path"))]),
+                    comparable_id="subject",
+                    field_name=field_name,
+                    values=[detail["selected_value"], assertion.get("raw_value")],
+                    source_paths=[str(selected_path), _str(assertion.get("source_path"))],
+                    severity="high" if field_name in UNIT_CONFIGURATION_FIELDS else "medium",
+                    status="open",
+                    preferred_source=selected_source,
+                    reason=reason,
+                    selected_value=detail["selected_value"],
+                    alternate_value=assertion.get("raw_value"),
+                    normalized_values=[selected, alternate_value],
+                    selected_source=selected_source,
+                    selected_source_path=str(selected_path),
+                    alternate_source=_str(assertion.get("source")),
+                    alternate_source_path=_str(assertion.get("source_path")),
+                    verification_statuses=[selected_verification, _str(assertion.get("verification_status"))],
+                    source_assertions=[selected_assertion, assertion],
+                )
+            )
+        fields[field_name] = detail
     resolution = {
         "precedence": ["private_scenario_input", "canonical_assignment", "unavailable"],
         "fields": fields,
@@ -1022,6 +1229,9 @@ def resolve_subject_facts(
         "canonical_fallback_fields_used": sorted(key for key, value in fields.items() if value["selected_source"] == "canonical_assignment"),
         "unavailable_fields": sorted(key for key, value in fields.items() if value["selected_source"] == "unavailable"),
         "subject_conflict_ids": [item.conflict_id for item in conflicts],
+        "unit_configuration_review_required": any(item.field_name in UNIT_CONFIGURATION_FIELDS for item in conflicts),
+        "accessory_unit_review_required": any(item.field_name in {"accessory_unit", "accessory_unit_count", "accessory_unit_type"} for item in conflicts),
+        "professional_judgment_limitation": "Unit and accessory-unit evidence is descriptive. No legality, permitting, completion, GLA treatment, adjustment, or valuation determination is generated.",
         "statement": "Subject facts used for this scenario were supplied by the private scenario input. Canonical assignment facts were used only where the scenario input was blank or unavailable.",
     }
     return resolved, resolution, conflicts
@@ -1099,7 +1309,14 @@ def detect_value_conflicts(records: list[ComparableRecord], config: JsonMap) -> 
     return conflicts
 
 
-def assess_coverage(assignment_id: str, subject: JsonMap, records: list[ComparableRecord], config: JsonMap) -> ComparableCoverage:
+def assess_coverage(
+    assignment_id: str,
+    subject: JsonMap,
+    records: list[ComparableRecord],
+    config: JsonMap,
+    *,
+    subject_resolution: JsonMap | None = None,
+) -> ComparableCoverage:
     usable = [item for item in records if item.candidate_status in {"primary_candidate", "secondary_candidate", "contextual_candidate"}]
     dimensions = {
         "property_type": categorical_coverage(subject.get("property_type"), [r.property_type for r in usable]),
@@ -1113,9 +1330,24 @@ def assess_coverage(assignment_id: str, subject: JsonMap, records: list[Comparab
         "quality": code_coverage(subject.get("quality"), [r.quality for r in usable], "q"),
         "condition": code_coverage(subject.get("condition"), [r.condition for r in usable], "c"),
         "pool": categorical_coverage(subject.get("pool"), [r.pool for r in usable]),
+        "spa": categorical_coverage(subject.get("spa"), [r.spa for r in usable]),
         "accessory_unit": categorical_coverage(subject.get("accessory_unit"), [r.accessory_unit for r in usable]),
+        "accessory_unit_count": bracket_coverage(subject.get("accessory_unit_count"), [r.accessory_unit_count for r in usable]),
+        "unit_count": bracket_coverage(subject.get("unit_count"), [r.unit_count for r in usable]),
+        "garage_count": bracket_coverage(subject.get("garage_count"), [r.garage_count for r in usable]),
+        "parking_count": bracket_coverage(subject.get("parking_count"), [r.parking_count for r in usable]),
+        "view": categorical_coverage(subject.get("view"), [r.view for r in usable]),
+        "effective_age": bracket_coverage(subject.get("effective_age"), [r.effective_age for r in usable], inverse=True),
+        "design_style": categorical_coverage(subject.get("design_style"), [r.design_style for r in usable]),
+        "location_features": categorical_list_coverage(subject.get("location_features"), [r.location_features for r in usable]),
     }
+    resolution_fields = _map(_map(subject_resolution).get("fields"))
+    for field_name, coverage in dimensions.items():
+        detail = _map(resolution_fields.get(field_name))
+        coverage["subject_baseline_status"] = "conflicted" if detail.get("conflict_status") == "open" else "resolved" if _value_available(subject.get(field_name)) else "unavailable"
+        coverage["subject_baseline_value"] = subject.get(field_name)
     limitations = [f"{key} coverage is {value['coverage']}." for key, value in dimensions.items() if value.get("coverage") in {"limited", "absent", "unavailable"}]
+    limitations.extend(f"{key} coverage is reported against a conflicted subject baseline; appraiser review is required." for key, value in dimensions.items() if value.get("subject_baseline_status") == "conflicted")
     questions = research_questions(dimensions)
     return ComparableCoverage(assignment_id, {key: value["coverage"] for key, value in dimensions.items()}, dimensions, limitations, questions)
 
@@ -1126,12 +1358,20 @@ def comparable_counts(records: list[ComparableRecord], conflicts: list[Comparabl
         "comparable_count": len(records),
         **counts,
         "open_conflict_count": sum(1 for item in conflicts if item.status == "open"),
+        "subject_conflict_count": sum(1 for item in conflicts if item.status == "open" and item.comparable_id == "subject"),
         "review_item_count": len(review_queue),
         "appraiser_selected_count": sum(1 for item in records if item.appraiser_selected),
     }
 
 
-def build_review_queue(records: list[ComparableRecord], assessments: list[ComparableAssessment], conflicts: list[ComparableConflict], coverage: ComparableCoverage) -> list[JsonMap]:
+def build_review_queue(
+    records: list[ComparableRecord],
+    assessments: list[ComparableAssessment],
+    conflicts: list[ComparableConflict],
+    coverage: ComparableCoverage,
+    *,
+    subject_resolution: JsonMap | None = None,
+) -> list[JsonMap]:
     queue = []
     for record in records:
         for field in record.missing_fields:
@@ -1141,10 +1381,30 @@ def build_review_queue(records: list[ComparableRecord], assessments: list[Compar
         if record.appraiser_review_status == "not_reviewed":
             queue.append(_review_item(record.comparable_id, "appraiser_selection_not_reviewed", "review_state", "low", "Appraiser review state has not been recorded."))
     for conflict in conflicts:
-        queue.append(_review_item(conflict.comparable_id, "source_conflict", conflict.field_name, conflict.severity, conflict.reason))
+        subject_types = {
+            "unit_count": "conflicting_unit_count",
+            "accessory_unit": "conflicting_accessory_unit_presence",
+            "accessory_unit_count": "conflicting_accessory_unit_count",
+            "accessory_unit_type": "conflicting_accessory_unit_type",
+            "garage_count": "conflicting_garage_count",
+            "parking_count": "conflicting_parking_count",
+            "pool": "conflicting_pool_status",
+            "spa": "conflicting_spa_status",
+            "design_style": "conflicting_design_style",
+            "effective_age": "conflicting_effective_age",
+        }
+        item_type = subject_types.get(conflict.field_name, "subject_fact_conflict") if conflict.comparable_id == "subject" else "source_conflict"
+        queue.append(_review_item(conflict.comparable_id, item_type, conflict.field_name, conflict.severity, conflict.reason))
     for dimension, level in coverage.levels.items():
         if level in {"limited", "absent"}:
             queue.append(_review_item("", "coverage_gap", dimension, "medium", f"{dimension} coverage is {level}."))
+    for field_name, detail_value in _map(_map(subject_resolution).get("fields")).items():
+        detail = _map(detail_value)
+        if detail.get("normalization_status") == "review_required":
+            queue.append(_review_item("subject", "subject_value_review_required", field_name, "medium", f"Explicit {field_name} evidence is unknown, ambiguous, or invalid; appraiser review is required."))
+        for assertion in _map_list(detail.get("alternate_values", [])):
+            if assertion.get("source") not in {"private_scenario_input", "canonical_assignment"} and not assertion.get("source_path"):
+                queue.append(_review_item("subject", "unavailable_source_provenance", field_name, "medium", f"Alternate {field_name} evidence lacks source-path provenance."))
     return sorted(queue, key=lambda item: (item["severity"], item["item_type"], item["comparable_id"]))
 
 
@@ -1155,12 +1415,16 @@ def review_items_for(record: ComparableRecord, status: str, limitations: list[st
 def comparable_delta(previous: JsonMap, current: JsonMap) -> JsonMap:
     prev = {str(item.get("comparable_id")): item for item in _map_list(previous.get("comparables", []))}
     cur = {str(item.get("comparable_id")): item for item in _map_list(current.get("comparables", []))}
+    previous_subject_conflicts = {str(item.get("conflict_id")) for item in _map_list(previous.get("conflicts", [])) if item.get("comparable_id") == "subject" and item.get("status") == "open"}
+    current_subject_conflicts = {str(item.get("conflict_id")) for item in _map_list(current.get("conflicts", [])) if item.get("comparable_id") == "subject" and item.get("status") == "open"}
     return {
         "new_candidates": sorted(set(cur) - set(prev)),
         "updated_candidates": sorted(item for item in set(cur) & set(prev) if cur[item] != prev[item]),
         "removed_source_references": sorted(set(prev) - set(cur)),
         "candidate_tier_changes": sorted(item for item in set(cur) & set(prev) if cur[item].get("candidate_status") != prev[item].get("candidate_status")),
         "conflict_count_change": int(_map(current.get("counts")).get("open_conflict_count", 0)) - int(_map(previous.get("counts")).get("open_conflict_count", 0) or 0),
+        "subject_conflicts_opened": sorted(current_subject_conflicts - previous_subject_conflicts),
+        "subject_conflicts_resolved": sorted(previous_subject_conflicts - current_subject_conflicts),
         "coverage_changed": _map(previous.get("coverage")).get("levels") != _map(current.get("coverage")).get("levels"),
         "created_at": _now_iso(),
     }
@@ -1178,6 +1442,22 @@ def comparable_dashboard_summary(universes: list[JsonMap]) -> JsonMap:
         if int(item.get("review_required", 0) or 0) + int(item.get("insufficient_data", 0) or 0) + int(item.get("potential_duplicate", 0) or 0)
     )
     scenario_conflicts = sum(int(item.get("open_conflict_count", 0) or 0) for item in counts)
+    subject_conflicts = [
+        conflict
+        for universe in universes
+        for conflict in _map_list(universe.get("conflicts", []))
+        if conflict.get("status") == "open" and conflict.get("comparable_id") == "subject"
+    ]
+    scenarios_with_unit_review = sum(
+        1
+        for universe in universes
+        if any(item.get("field_name") in UNIT_CONFIGURATION_FIELDS for item in _map_list(universe.get("conflicts", [])) if item.get("status") == "open")
+    )
+    scenarios_with_accessory_review = sum(
+        1
+        for universe in universes
+        if any(item.get("field_name") in {"accessory_unit", "accessory_unit_count", "accessory_unit_type"} for item in _map_list(universe.get("conflicts", [])) if item.get("status") == "open")
+    )
     result = {
         "assignments_with_comparable_data": sum(1 for universe in universes if _map(universe.get("counts")).get("comparable_count", 0)),
         "total_comparable_records": len(records),
@@ -1196,6 +1476,10 @@ def comparable_dashboard_summary(universes: list[JsonMap]) -> JsonMap:
         "scenario_builds_completed": len(universes),
         "scenario_review_required_count": scenario_review_required,
         "scenario_conflict_count": scenario_conflicts,
+        "scenario_subject_conflict_count": len(subject_conflicts),
+        "scenarios_with_unit_configuration_review": scenarios_with_unit_review,
+        "scenarios_with_accessory_unit_review": scenarios_with_accessory_review,
+        "latest_subject_resolution_run_at": max([str(universe.get("created_at", "")) for universe in universes if universe.get("subject_resolution")] or [""]),
         "scenarios_with_limited_coverage": len(limited),
         "latest_scenario_run_at": max([str(universe.get("created_at", "")) for universe in universes] or [""]),
     }
@@ -1334,6 +1618,15 @@ def categorical_coverage(subject_value: Any, values: list[Any]) -> JsonMap:
     return {"coverage": "excellent" if matching >= 3 else "adequate" if matching else "limited" if vals else "absent", "matching": matching, "candidate_count": len(vals)}
 
 
+def categorical_list_coverage(subject_value: Any, values: list[Any]) -> JsonMap:
+    subject_items = set(_string_list(subject_value))
+    candidate_values = [set(_string_list(value)) for value in values if _string_list(value)]
+    if not subject_items:
+        return {"coverage": "unavailable", "matching": 0, "candidate_count": len(candidate_values)}
+    matching = sum(1 for value in candidate_values if value == subject_items)
+    return {"coverage": "excellent" if matching >= 3 else "adequate" if matching else "limited" if candidate_values else "absent", "matching": matching, "candidate_count": len(candidate_values)}
+
+
 def numeric_coverage(subject_value: Any, values: list[Any], *, lower_is_better: bool = False) -> JsonMap:
     nums = [item for item in (to_number(v) for v in values) if item is not None]
     if not nums:
@@ -1444,21 +1737,43 @@ def normalize_subject_value(field_name: str, value: Any) -> Any:
         return None
     if field_name in {"gross_living_area", "lot_size", "bedroom_count", "bathroom_count"}:
         return to_number(value)
-    if field_name == "year_built":
-        return to_int(value)
+    if field_name in COUNT_SUBJECT_FIELDS:
+        return normalize_nonnegative_integer(value)
     if field_name == "property_type":
         return normalize_property_type(value)
     if field_name == "condition":
         return normalize_code(value, "c")
     if field_name == "quality":
         return normalize_code(value, "q")
-    if field_name == "pool":
+    if field_name in BOOLEAN_SUBJECT_FIELDS:
         return to_bool(value)
     if field_name == "sale_or_effective_date":
         return normalize_date(value)
     if field_name == "address":
         return _str(value)
+    if field_name == "location_features":
+        values = value if isinstance(value, list) else [value]
+        normalized = [normalize_subject_text(item) for item in values if normalize_subject_text(item)]
+        return sorted(dict.fromkeys(normalized))
+    if field_name in {"design_style", "view", "accessory_unit_type"}:
+        return normalize_subject_text(value)
     return _str(value)
+
+
+def normalize_nonnegative_integer(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    number = to_number(value)
+    if number is None or number < 0 or not float(number).is_integer():
+        return None
+    return int(number)
+
+
+def normalize_subject_text(value: Any) -> str:
+    text = html.unescape(_str(value)).lower()
+    text = re.sub(r"[-_]+", " ", text)
+    text = re.sub(r"[^a-z0-9\s/]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def subject_values_equivalent(field_name: str, left: Any, right: Any) -> bool:
@@ -1568,9 +1883,9 @@ def to_bool(value: Any) -> bool | None:
     if isinstance(value, bool):
         return value
     text = _str(value).lower()
-    if text in {"yes", "true", "y", "1"}:
+    if text in {"yes", "true", "y", "1", "present"}:
         return True
-    if text in {"no", "false", "n", "0"}:
+    if text in {"no", "false", "n", "0", "absent"}:
         return False
     return None
 
@@ -1606,6 +1921,22 @@ def render_universe_markdown(universe: ComparableUniverse) -> str:
         f"- Unavailable fields: `{', '.join(_string_list(universe.subject_resolution.get('unavailable_fields'))) or 'none'}`",
         f"- Subject conflicts: `{len(_string_list(universe.subject_resolution.get('subject_conflict_ids')))}`",
         "",
+        "### Resolved Subject Facts and Provenance",
+        "",
+    ]
+    for field_name, detail_value in _map(universe.subject_resolution.get("fields")).items():
+        detail = _map(detail_value)
+        lines.append(
+            f"- {field_name}: selected=`{detail.get('normalized_value')}` source=`{detail.get('selected_source')}` "
+            f"raw_field=`{detail.get('raw_source_field_name')}` verification=`{detail.get('verification_status')}` "
+            f"conflict=`{detail.get('conflict_status')}` alternates=`{len(_map_list(detail.get('alternate_values')))}`"
+        )
+    lines.extend([
+        "",
+        "## Unit and Accessory-Unit Evidence",
+        "",
+        *_unit_evidence_lines(universe),
+        "",
         "## Executive Comparable Summary",
         "",
         f"- Primary candidates: `{universe.counts.get('primary_candidate', 0)}`",
@@ -1614,7 +1945,7 @@ def render_universe_markdown(universe: ComparableUniverse) -> str:
         f"- Review-required candidates: `{universe.counts.get('review_required', 0)}`",
         f"- Open conflicts: `{universe.counts.get('open_conflict_count', 0)}`",
         "",
-    ]
+    ])
     for title, status in [("Primary Candidates", "primary_candidate"), ("Secondary Candidates", "secondary_candidate"), ("Contextual Evidence", "contextual_candidate"), ("Review-Required Candidates", "review_required")]:
         lines.extend([f"## {title}", ""])
         subset = [record for record in universe.comparables if record.candidate_status == status]
@@ -1655,7 +1986,8 @@ def render_coverage_markdown(universe: ComparableUniverse) -> str:
         "",
     ]
     for key, level in universe.coverage.levels.items():
-        lines.append(f"- {key}: `{level}`")
+        baseline = _map(universe.coverage.bracketing.get(key)).get("subject_baseline_status", "unavailable")
+        lines.append(f"- {key}: `{level}` subject_baseline=`{baseline}`")
     for section in ["Recency", "Geography", "GLA", "Lot Size", "Bed/Bath", "Age", "Quality", "Condition", "Amenities", "Special Features"]:
         lines.extend(["", f"## {section}", ""])
         key = section.lower().replace("/", "_").replace(" ", "_")
@@ -1665,7 +1997,19 @@ def render_coverage_markdown(universe: ComparableUniverse) -> str:
     lines.extend(f"- {item}" for item in universe.coverage.limitations or ["None."])
     lines.extend(["", "## Recommended Research Questions", ""])
     lines.extend(f"- {item}" for item in universe.coverage.research_questions)
-    lines.extend(["", "## Limitations", "", "- Coverage identifies factual gaps only. It does not recommend value or adjustments."])
+    lines.extend(
+        [
+            "",
+            "## Unit and Accessory-Unit Evidence",
+            "",
+            *_unit_evidence_lines(universe),
+            "",
+            "## Limitations",
+            "",
+            "- Coverage identifies factual gaps only. It does not recommend value or adjustments.",
+            "- Unit and accessory-unit coverage makes no legality, completion, GLA-treatment, or valuation determination.",
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 
@@ -1684,7 +2028,23 @@ def render_review_queue_markdown(universe: ComparableUniverse) -> str:
         lines.append(f"- {item.get('severity')}: {item.get('item_type')} {item.get('comparable_id')} - {item.get('reason')}")
     if not universe.review_queue:
         lines.append("None.")
+    lines.extend(["", "## Unit and Accessory-Unit Evidence", "", *_unit_evidence_lines(universe)])
     return "\n".join(lines) + "\n"
+
+
+def _unit_evidence_lines(universe: ComparableUniverse) -> list[str]:
+    fields = _map(universe.subject_resolution.get("fields"))
+    lines = []
+    for field_name in ["unit_count", "accessory_unit", "accessory_unit_count", "accessory_unit_type"]:
+        detail = _map(fields.get(field_name))
+        alternates = _map_list(detail.get("alternate_values"))
+        alternate_sources = [f"{item.get('source')}={item.get('normalized_value')} ({item.get('verification_status')})" for item in alternates if item.get("source") not in {detail.get("selected_source"), "canonical_assignment"}]
+        lines.append(
+            f"- {field_name}: governing=`{detail.get('normalized_value')}` verification=`{detail.get('verification_status')}` "
+            f"conflict=`{detail.get('conflict_status')}` alternate_sources=`{'; '.join(alternate_sources) or 'none'}`"
+        )
+    lines.append("- Appraiser review is required for conflicting assertions. No legality, permitting, completion, GLA, adjustment, or valuation determination is generated.")
+    return lines
 
 
 def _record_lines(records: list[ComparableRecord]) -> list[str]:
@@ -1748,7 +2108,23 @@ def record_from_dict(data: JsonMap) -> ComparableRecord:
 
 
 def snapshot_id(data: JsonMap) -> str:
-    return _stable_id("comparable_snapshot", [json.dumps(data.get("counts", {}), sort_keys=True), json.dumps(data.get("comparables", []), sort_keys=True)])
+    resolution = {
+        field_name: {
+            "normalized_value": _map(detail).get("normalized_value"),
+            "conflict_status": _map(detail).get("conflict_status"),
+            "alternate_values": _map(detail).get("alternate_values", []),
+        }
+        for field_name, detail in _map(_map(data.get("subject_resolution")).get("fields")).items()
+    }
+    return _stable_id(
+        "comparable_snapshot",
+        [
+            json.dumps(data.get("counts", {}), sort_keys=True),
+            json.dumps(data.get("comparables", []), sort_keys=True),
+            json.dumps(data.get("conflicts", []), sort_keys=True),
+            json.dumps(resolution, sort_keys=True),
+        ],
+    )
 
 
 def _preferred_source(items: list[ComparableRecord], config: JsonMap) -> str:
@@ -1782,7 +2158,21 @@ def _comparable_template(assignment_id: str, scenario: str = "default") -> str:
   quality:
   bedrooms:
   bathrooms:
+  unit_count:
+  accessory_unit:
+  accessory_unit_count:
+  accessory_unit_type:
+  garage_count:
+  parking_count:
+  pool:
+  spa:
+  view:
+  design_style:
+  effective_age:
+  year_built:
+  location_features:
   sale_or_effective_date:
+subject_alternates: []
 comparables: []
 """
 

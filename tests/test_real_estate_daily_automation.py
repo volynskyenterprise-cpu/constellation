@@ -110,6 +110,43 @@ class RealEstateDailyAutomationTests(unittest.TestCase):
         self.assertTrue(delta["no_change"])
         self.assertEqual(second.provenance["migration_applied"], 0)
 
+    def test_daily_reports_scenario_subject_conflicts_opened_and_resolved(self) -> None:
+        write_assignment(self.intake_root / "incoming" / "daily.json")
+        RealEstateDailyEngine(self.root).run(overwrite=True)
+        assignment_dir = next((self.root / "real-estate" / "assignments").iterdir())
+        scenario_dir = assignment_dir / "comparables" / "scenarios" / "arv"
+        scenario_dir.mkdir(parents=True)
+        scenario_path = scenario_dir / "comparables.yaml"
+        scenario_path.write_text(
+            f"""assignment_id: {assignment_dir.name}
+valuation_scenario: arv
+subject:
+  unit_count: 1
+  accessory_unit: false
+  accessory_unit_count: 0
+subject_alternates:
+  - source_type: fictional_scope
+    source_path: sources/fictional-scope.txt
+    verification_status: alternate_scope
+    values:
+      unit_count: 3
+      accessory_unit: true
+      accessory_unit_count: 2
+comparables: []
+""",
+            encoding="utf-8",
+        )
+
+        opened = RealEstateDailyEngine(self.root).run(overwrite=True)
+        self.assertEqual(len(opened.comparable_scenario_subject_conflicts_opened), 3)
+        self.assertEqual(opened.comparable_scenario_subject_conflicts_resolved, [])
+        self.assertTrue(all(f"{assignment_dir.name}::arv:" in item for item in opened.comparable_scenario_subject_conflicts_opened))
+
+        scenario_path.write_text(scenario_path.read_text(encoding="utf-8").split("subject_alternates:", 1)[0] + "comparables: []\n", encoding="utf-8")
+        resolved = RealEstateDailyEngine(self.root).run(overwrite=True)
+        self.assertEqual(resolved.comparable_scenario_subject_conflicts_opened, [])
+        self.assertEqual(len(resolved.comparable_scenario_subject_conflicts_resolved), 3)
+
     def test_cli_daily_run_status_history_and_export(self) -> None:
         write_assignment(self.intake_root / "incoming" / "daily.json")
         commands = [

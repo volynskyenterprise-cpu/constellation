@@ -10,7 +10,31 @@ subject:
   quality: Q3
   bedrooms: 4
   bathrooms: 3
+  unit_count: 1
+  accessory_unit: false
+  accessory_unit_count: 0
+  accessory_unit_type: none
+  garage_count: 2
+  parking_count: 2
+  pool: true
+  spa: false
+  view: residential
+  design_style: detached two-story traditional
+  effective_age: 12
+  year_built: 1998
+  location_features:
+    - interior residential
   sale_or_effective_date: 2026-07-15
+
+subject_alternates:
+  - source_type: construction_scope
+    source_path: sources/fictional-completion-scope.pdf
+    verification_status: alternate_scope
+    notes: Alternate fictional configuration preserved for appraiser review.
+    values:
+      unit_count: 2
+      accessory_unit: true
+      accessory_unit_count: 1
 
 comparables:
   - comparable_id: comp-001
@@ -25,6 +49,16 @@ comparables:
     quality: Q3
     bedrooms: 4
     bathrooms: 3
+    unit_count: 1
+    accessory_unit: false
+    accessory_unit_count: 0
+    garage_count: 2
+    parking_count: 2
+    pool: true
+    spa: false
+    view: residential
+    design_style: detached two story traditional
+    effective_age: 10
     distance_from_subject_miles: 0.4
     source_paths:
       - sources/mls-comp-001.pdf

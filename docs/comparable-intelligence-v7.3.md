@@ -1,4 +1,4 @@
-# Comparable Intelligence v7.3.3
+# Comparable Intelligence v7.3.4
 
 Comparable Intelligence is the deterministic comparable-sale evidence layer for Constellation Real Estate Intelligence.
 
@@ -48,6 +48,27 @@ Equivalent formatting such as `1452`, `1,452 sqft.`, and `1452 square feet` does
 Subject addresses resolve through structured components: street number, pre- and post-directionals, street name, a finite street-suffix alias map, unit marker and identifier, city, state, and postal code. Equivalent components suppress a false conflict while retaining both raw values, structured provenance, source paths, and scenario precedence. The resolution records whether equivalence is exact, deterministic, incomplete but non-conflicting, conflicting, or unavailable, together with omitted, equivalent, and conflicting components.
 
 Locality supplied by only one source is retained as incomplete context and is not treated as a contradiction. When both sources supply city, state, or postal code, materially different populated values remain conflicts. Five-digit ZIP and ZIP+4 forms share the deterministic five-digit base; `CA` and `California` share an explicit state alias. No locality is inferred from ZIP or any external source.
+
+### Expanded Scenario Subject Provenance
+
+Scenario resolution also covers `unit_count`, `accessory_unit`, `accessory_unit_count`, `accessory_unit_type`, `garage_count`, `parking_count`, `pool`, `spa`, `view`, `design_style`, `effective_age`, `year_built`, and `location_features`. Narrow aliases resolve to one internal name while provenance retains the original source field. Counts accept explicit nonnegative integers, booleans accept explicit present/absent forms, and style text receives only case, whitespace, hyphen, and underscore normalization. No field is inferred from another.
+
+Additional assertions use `subject_alternates`:
+
+```yaml
+subject_alternates:
+  - source_type: construction_scope
+    source_path: sources/fictional-scope.pdf
+    verification_status: alternate_scope
+    values:
+      unit_count: 3
+      accessory_unit: true
+      accessory_unit_count: 2
+```
+
+Equivalent historical `subject_evidence` assertions remain readable. Explicit normalized disagreements produce open, scenario-specific conflicts with selected and alternate values, source paths, raw field names, verification states, and a review item. Source priority never resolves them automatically.
+
+Unit and accessory-unit assertions remain descriptive. The engine makes no conclusion about legality, zoning, permits, completion, highest and best use, GLA inclusion, feasibility, adjustments, or value.
 
 ## Schemas
 
@@ -145,7 +166,9 @@ The engine never assigns `appraiser_selected` or `appraiser_excluded` automatica
 
 ## Coverage and Bracketing
 
-Coverage is reported for property type, location, sale date, GLA, lot size, bed/bath, age, quality, condition, amenities, and special features.
+Coverage is reported for property type, location, sale date, GLA, lot size, bed/bath, age, quality, condition, unit/accessory-unit facts, garage, parking, pool, spa, view, effective age, design/style, location features, and other supported amenities.
+
+When an explicit subject baseline is conflicted, the available comparable coverage is still reported but labeled `conflicted`; it does not imply a definitive match or adjustment basis.
 
 Coverage levels:
 

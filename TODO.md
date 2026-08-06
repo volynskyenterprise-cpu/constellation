@@ -8,6 +8,7 @@
 - Comparable Scenario and Subject Resolution is complete in v7.3.1; keep as-is and ARV subject facts, universes, review state, history, and automation isolated.
 - Canonical Property-Type Normalization is complete in v7.3.2; keep canonical assignment ingestion and Comparable Intelligence on the shared deterministic alias policy.
 - Structured Address Equivalence is complete in v7.3.3; keep subject-address comparison component-based, deterministic, provenance-preserving, and conservative for directionals, units, and populated locality conflicts.
+- Expanded Scenario Subject Provenance is complete in v7.3.4; keep unit/accessory-unit assertions scenario-specific, source-backed, reviewable, and free of legality, GLA-treatment, adjustment, or valuation inference.
 - Keep Adjustment Intelligence as the next major Real Estate capability in v7.4.0.
 - Retain future MLS/export adapters as optional local connectors, not core requirements.
 - Keep automatic evening Smart Sync preview scheduling as a future optional enhancement; commit and push remain approval-gated.

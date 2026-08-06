@@ -87,6 +87,8 @@ class RealEstateDailyRun:
     comparable_scenario_records_added: int
     comparable_scenario_records_updated: int
     comparable_scenario_conflicts_opened: int
+    comparable_scenario_subject_conflicts_opened: list[str]
+    comparable_scenario_subject_conflicts_resolved: list[str]
     comparable_scenario_review_items: int
     limited_coverage_scenarios: int
     review_item_count: int
@@ -237,6 +239,8 @@ class RealEstateDailyEngine:
         comparable_records_added = 0
         comparable_records_updated = 0
         comparable_conflicts_opened = 0
+        comparable_subject_conflicts_opened: list[str] = []
+        comparable_subject_conflicts_resolved: list[str] = []
         comparable_review_items = 0
         limited_coverage_assignments = 0
         comparable_store = ComparableStore(self.root)
@@ -259,6 +263,8 @@ class RealEstateDailyEngine:
                 comparable_records_added += len(delta.get("new_candidates", []) or [])
                 comparable_records_updated += len(delta.get("updated_candidates", []) or [])
                 comparable_conflicts_opened += int(universe.counts.get("open_conflict_count", 0) or 0) - int(_map(before.get("counts")).get("open_conflict_count", 0) or 0)
+                comparable_subject_conflicts_opened.extend(f"{scenario_key}:{conflict_id}" for conflict_id in delta.get("subject_conflicts_opened", []) or [])
+                comparable_subject_conflicts_resolved.extend(f"{scenario_key}:{conflict_id}" for conflict_id in delta.get("subject_conflicts_resolved", []) or [])
                 comparable_review_items += int(universe.counts.get("review_item_count", 0) or 0)
                 if any(level in {"limited", "absent"} for level in universe.coverage.levels.values()):
                     limited_coverage_assignments += 1
@@ -274,6 +280,8 @@ class RealEstateDailyEngine:
                     "comparable_scenario_records_added": comparable_records_added,
                     "comparable_scenario_records_updated": comparable_records_updated,
                     "comparable_scenario_conflicts_opened": comparable_conflicts_opened,
+                    "comparable_scenario_subject_conflicts_opened": len(comparable_subject_conflicts_opened),
+                    "comparable_scenario_subject_conflicts_resolved": len(comparable_subject_conflicts_resolved),
                     "comparable_scenario_review_items": comparable_review_items,
                     "limited_coverage_scenarios": limited_coverage_assignments,
                     "comparable_inputs_changed": len(changed_comparable_scenarios),
@@ -344,6 +352,8 @@ class RealEstateDailyEngine:
             comparable_scenario_records_added=comparable_records_added if "comparable_records_added" in locals() else 0,
             comparable_scenario_records_updated=comparable_records_updated if "comparable_records_updated" in locals() else 0,
             comparable_scenario_conflicts_opened=comparable_conflicts_opened if "comparable_conflicts_opened" in locals() else 0,
+            comparable_scenario_subject_conflicts_opened=comparable_subject_conflicts_opened if "comparable_subject_conflicts_opened" in locals() else [],
+            comparable_scenario_subject_conflicts_resolved=comparable_subject_conflicts_resolved if "comparable_subject_conflicts_resolved" in locals() else [],
             comparable_scenario_review_items=comparable_review_items if "comparable_review_items" in locals() else 0,
             limited_coverage_scenarios=limited_coverage_assignments if "limited_coverage_assignments" in locals() else 0,
             review_item_count=len(review_queue) if "review_queue" in locals() else 0,
@@ -402,6 +412,8 @@ def render_real_estate_daily_report(run: RealEstateDailyRun, delta: JsonMap) -> 
         f"- Scenario records added: `{run.comparable_scenario_records_added}`",
         f"- Scenario records updated: `{run.comparable_scenario_records_updated}`",
         f"- Scenario conflicts opened: `{run.comparable_scenario_conflicts_opened}`",
+        f"- Scenario subject conflicts opened: `{len(run.comparable_scenario_subject_conflicts_opened)}`",
+        f"- Scenario subject conflicts resolved: `{len(run.comparable_scenario_subject_conflicts_resolved)}`",
         f"- Scenario review items: `{run.comparable_scenario_review_items}`",
         f"- Limited coverage scenarios: `{run.limited_coverage_scenarios}`",
         f"- Comparable inputs changed: `{run.comparable_inputs_changed}`",

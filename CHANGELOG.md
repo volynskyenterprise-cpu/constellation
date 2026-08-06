@@ -2,6 +2,13 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.3.4 - Expanded Scenario Subject Provenance
+
+- Expanded scenario subject resolution to unit and accessory-unit configuration, garage and parking counts, pool and spa, view, design/style, effective age, year built, and location features with canonical aliases and raw-field provenance.
+- Added `subject_alternates` assertions and backward-compatible `subject_evidence` ingestion so explicit normalized disagreements become scenario-specific governed conflicts and review items without changing the governing scenario value.
+- Expanded coverage and reports with conflicted-baseline status, unit/accessory-unit evidence, administrative dashboard counts, and Assignment Intelligence summaries.
+- Preserved professional boundaries: no legality, permitting, completion, GLA-treatment, adjustment, feasibility, comparable-selection, or valuation conclusion is generated.
+
 ## 7.3.3 - Structured Address Equivalence
 
 - Added deterministic structured subject-address comparison for street number, directionals, street name, finite suffix aliases, units, and explicitly supplied locality.

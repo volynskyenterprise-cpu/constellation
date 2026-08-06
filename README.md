@@ -79,6 +79,10 @@ Canonical Assignment Intelligence and Comparable Intelligence share deterministi
 
 Subject-address equivalence uses structured street, unit, and locality components. Finite suffix aliases, punctuation, case, whitespace, `CA`/`California`, and five-digit/ZIP+4 formatting normalize deterministically. Locality omitted by one source is incomplete rather than contradictory; conflicting populated locality remains review-required. Directionals and unit identifiers remain identity-bearing, so a populated directional or unit never equals a blank or different value. Raw values and both source paths remain visible. No fuzzy matching, geocoding, parcel lookup, or external address validation occurs.
 
+Scenario subject resolution also supports explicit unit count, accessory-unit presence/count/type, garage and parking counts, separate pool and spa facts, view, design/style, effective age, year built, and location features. `subject_alternates` preserves additional source assertions with their raw field names, paths, verification status, and notes. Material normalized differences open scenario-specific review conflicts while the governing private scenario fact remains selected. Coverage is still reported when a subject baseline is conflicted, but it is labeled accordingly.
+
+Unit and accessory-unit evidence is descriptive only. Comparable Intelligence does not determine legality, permitting, completion, highest and best use, GLA treatment, feasibility, adjustments, or value.
+
 Legacy inputs remain readable as `default`. A legacy file is used for an explicitly requested scenario only as a recorded fallback, and multiple scenarios always require explicit selection. As-is and ARV facts, records, review state, reports, history, and daily fingerprints never mix.
 
 Comparable Intelligence does not select final comparables, generate a value opinion, create appraisal adjustments, or replace professional judgment. Appraiser selection and exclusion are explicit local review-state actions.
@@ -855,6 +859,9 @@ Extend Constellation's deterministic evidence-first operating model into valuati
 - v7.2.0 - Canonical Assignment Model
 - v7.3.0 - Comparable Intelligence
 - v7.3.1 - Comparable Scenario and Subject Resolution
+- v7.3.2 - Canonical Property-Type Normalization
+- v7.3.3 - Structured Address Equivalence
+- v7.3.4 - Expanded Scenario Subject Provenance
 
 Primary question answered:
 
