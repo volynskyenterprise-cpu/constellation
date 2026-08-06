@@ -2,6 +2,13 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.3.5 - Nested Subject Evidence Compatibility
+
+- Added backward-compatible ingestion of `subject_evidence.fields.<field>.alternate_values` alongside the three existing alternate-evidence layouts without rewriting scenario inputs.
+- Added deterministic scalar, mapping, and field-keyed alternate parsing with field/document/alternate provenance inheritance, schema paths, exact deduplication, and reviewable malformed-structure limitations.
+- Preserved scenario-first governing values and the existing conflict, coverage, review, isolation, and history pipeline while prohibiting cross-field inference from descriptive text.
+- Preserved professional boundaries: no legality, permitting, completion, GLA-treatment, adjustment, comparable-selection, or valuation conclusion is generated.
+
 ## 7.3.4 - Expanded Scenario Subject Provenance
 
 - Expanded scenario subject resolution to unit and accessory-unit configuration, garage and parking counts, pool and spa, view, design/style, effective age, year built, and location features with canonical aliases and raw-field provenance.

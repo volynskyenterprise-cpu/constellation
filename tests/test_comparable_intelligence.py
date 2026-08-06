@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from constellation.comparable_intelligence import (
+    _parse_alternate_assertions,
     ComparableIntelligenceError,
     ComparableIntelligenceEngine,
     ComparableStore,
@@ -617,6 +618,237 @@ comparables:
         conflict = next(item for item in universe.conflicts if item.comparable_id == "subject" and item.field_name == "unit_count")
         self.assertEqual(conflict.normalized_values, [1, 3])
         self.assertEqual(conflict.alternate_source, "fictional_scope")
+
+    def test_all_alternate_evidence_schemas_normalize_equivalently(self) -> None:
+        document = {
+            "source_type": "construction_budget",
+            "source_path": "sources/fictional-budget.pdf",
+            "verification_status": "alternate_scope",
+            "values": {"unit_count": 3},
+        }
+        field = {
+            "alternate_values": [
+                {
+                    "value": 3,
+                    "source_type": "construction_budget",
+                    "source_path": "sources/fictional-budget.pdf",
+                    "verification_status": "alternate_scope",
+                }
+            ]
+        }
+        layouts = [
+            {"subject_alternates": [document]},
+            {"subject_evidence": {"alternates": [document]}},
+            {"subject_evidence": {"unit_count": field}},
+            {"subject_evidence": {"fields": {"unit_count": field}}},
+        ]
+        normalized = []
+        for layout in layouts:
+            assertions, limitations, _ = _parse_alternate_assertions(layout)
+            self.assertEqual(limitations, [])
+            self.assertEqual(len(assertions["unit_count"]), 1)
+            assertion = assertions["unit_count"][0]
+            normalized.append(
+                (
+                    assertion["normalized_value"],
+                    assertion["source"],
+                    assertion["source_path"],
+                    assertion["verification_status"],
+                    assertion["raw_source_field_name"],
+                )
+            )
+        self.assertEqual(len(set(normalized)), 1)
+
+    def test_nested_field_alternates_support_shapes_aliases_and_provenance_inheritance(self) -> None:
+        scenario = {
+            "subject_evidence": {
+                "source_type": "document_source",
+                "source_path": "sources/document.txt",
+                "verification_status": "document_review",
+                "fields": {
+                    "total_units": {
+                        "selected_value": 1,
+                        "source_type": "field_source",
+                        "alternate_values": [
+                            3,
+                            {
+                                "value": 4,
+                                "source_type": "alternate_source",
+                                "source_path": "sources/alternate.txt",
+                                "verification_status": "alternate_verified",
+                                "notes": "Distinct fictional scope.",
+                            },
+                        ],
+                    },
+                    "garage_spaces": {
+                        "alternate_values": {
+                            "proposed_scope": {
+                                "value": 2,
+                                "source_path": "sources/fictional-garage.txt",
+                            }
+                        }
+                    },
+                },
+            }
+        }
+        assertions, limitations, _ = _parse_alternate_assertions(scenario)
+        self.assertEqual(limitations, [])
+        self.assertEqual([item["normalized_value"] for item in assertions["unit_count"]], [3, 4])
+        inherited, overridden = assertions["unit_count"]
+        self.assertEqual(inherited["raw_source_field_name"], "total_units")
+        self.assertEqual(inherited["source"], "field_source")
+        self.assertEqual(inherited["source_path"], "sources/document.txt")
+        self.assertEqual(inherited["provenance_inheritance"]["source_type"], "field")
+        self.assertEqual(inherited["provenance_inheritance"]["source_path"], "document")
+        self.assertEqual(inherited["field_selected_value"], 1)
+        self.assertEqual(overridden["source"], "alternate_source")
+        self.assertEqual(overridden["source_path"], "sources/alternate.txt")
+        self.assertEqual(overridden["schema_origin"], "subject_evidence.fields")
+        self.assertIn("subject_evidence.fields.total_units.alternate_values[1]", overridden["schema_path"])
+        garage = assertions["garage_count"][0]
+        self.assertEqual(garage["source_identifier"], "proposed_scope")
+        self.assertEqual(garage["normalized_value"], 2)
+
+    def test_nested_alternate_deduplication_is_exact_and_source_sensitive(self) -> None:
+        assertion = {"value": 3, "source_type": "scope", "source_path": "sources/scope.txt", "verification_status": "alternate_scope"}
+        scenario = {
+            "subject_alternates": [{"source_type": "scope", "source_path": "sources/scope.txt", "verification_status": "alternate_scope", "values": {"unit_count": 3}}],
+            "subject_evidence": {
+                "fields": {
+                    "total_units": {
+                        "alternate_values": [assertion, {**assertion, "source_path": "sources/second-scope.txt"}]
+                    }
+                }
+            },
+        }
+        assertions, limitations, duplicates = _parse_alternate_assertions(scenario)
+        self.assertEqual(limitations, [])
+        self.assertEqual(len(assertions["unit_count"]), 2)
+        self.assertEqual(len(duplicates), 1)
+        kept = next(item for item in assertions["unit_count"] if item["source_path"] == "sources/scope.txt")
+        self.assertEqual(len(kept["duplicate_schema_paths"]), 1)
+
+    def test_nested_malformed_evidence_is_reviewable_and_non_fabricating(self) -> None:
+        scenarios = [
+            {"subject_evidence": {"fields": "not-a-mapping"}},
+            {"subject_evidence": {"fields": {"unit_count": "not-a-field-node"}}},
+            {"subject_evidence": {"fields": {"unit_count": {"alternate_values": [{"notes": "missing value"}]}}}},
+        ]
+        for scenario in scenarios:
+            with self.subTest(scenario=scenario):
+                assertions, limitations, _ = _parse_alternate_assertions(scenario)
+                self.assertTrue(limitations)
+                self.assertEqual(assertions["unit_count"], [])
+                self.assertTrue(all(item["status"] == "review_required" for item in limitations))
+        assertions, limitations, _ = _parse_alternate_assertions({"subject_evidence": {"fields": {"unit_count": {"selected_value": 1}}}})
+        self.assertEqual(assertions["unit_count"], [])
+        self.assertEqual(limitations, [])
+
+    def test_nested_malformed_evidence_reaches_resolution_and_review_queue(self) -> None:
+        engine = ComparableIntelligenceEngine(self.tmp)
+        scenario_path = engine.store.input_dir(self.assignment_id, "arv") / "comparables.yaml"
+        original = scenario_path.read_text(encoding="utf-8")
+        without_alternates = original.split("subject_alternates:", 1)[0] + "comparables:" + original.split("comparables:", 1)[1]
+        scenario_path.write_text(without_alternates.replace("comparables:", "subject_evidence:\n  fields: malformed\ncomparables:", 1), encoding="utf-8")
+
+        universe = engine.build(self.assignment_id, scenario="arv", overwrite=True)
+
+        parsing = universe.subject_resolution["alternate_evidence_parsing"]
+        self.assertEqual(parsing["status"], "review_required")
+        self.assertEqual(parsing["limitations"][0]["schema_path"], "subject_evidence.fields")
+        self.assertTrue(any(item["item_type"] == "subject_alternate_evidence_parse_review" for item in universe.review_queue))
+
+    def test_nested_descriptive_text_does_not_create_cross_field_assertions(self) -> None:
+        scenario = {
+            "subject_evidence": {
+                "fields": {
+                    "property_type": {"alternate_values": ["SFR plus two ADUs"]},
+                    "accessory_unit": {"alternate_values": ["two proposed ADUs"]},
+                }
+            }
+        }
+        assertions, limitations, _ = _parse_alternate_assertions(scenario)
+        self.assertEqual(limitations, [])
+        self.assertEqual(assertions["unit_count"], [])
+        self.assertEqual(assertions["accessory_unit_count"], [])
+        self.assertEqual(assertions["bedroom_count"], [])
+        self.assertEqual(assertions["bathroom_count"], [])
+        self.assertEqual(assertions["accessory_unit"][0]["normalization_status"], "review_required")
+
+    def test_nested_schema_build_surfaces_conflicts_without_tier_or_review_state_mutation(self) -> None:
+        engine = ComparableIntelligenceEngine(self.tmp)
+        scenario_path = engine.store.input_dir(self.assignment_id, "arv") / "comparables.yaml"
+        original = scenario_path.read_text(encoding="utf-8")
+        without_alternates = original.split("subject_alternates:", 1)[0] + "comparables:" + original.split("comparables:", 1)[1]
+        scenario_path.write_text(without_alternates, encoding="utf-8")
+        baseline = engine.build(self.assignment_id, scenario="arv", overwrite=True)
+        tier_keys = ["primary_candidate", "secondary_candidate", "contextual_candidate", "review_required", "insufficient_data", "potential_duplicate"]
+        baseline_tiers = {key: baseline.counts.get(key, 0) for key in tier_keys}
+        nested = """subject_evidence:
+  source_type: proposed_scope_review
+  source_path: sources/fictional-scope-review.txt
+  verification_status: alternate_scope
+  fields:
+    unit_count:
+      selected_value: 1
+      alternate_values:
+        - value: 3
+          source_type: construction_budget
+          source_path: sources/fictional-budget.pdf
+    accessory_unit:
+      alternate_values:
+        - value: true
+          source_type: construction_budget
+          source_path: sources/fictional-budget.pdf
+    bedrooms:
+      alternate_values:
+        - value: 5
+          source_type: proposed_plans
+          source_path: sources/fictional-plans.pdf
+    bathrooms:
+      alternate_values:
+        - value: 5.1
+          source_type: proposed_plans
+          source_path: sources/fictional-plans.pdf
+"""
+        scenario_path.write_text(without_alternates.replace("comparables:", nested + "comparables:", 1), encoding="utf-8")
+        review_path = engine.store.review_state_path(self.assignment_id, "arv")
+        review_before = review_path.read_bytes() if review_path.exists() else b""
+        as_is_before = engine.build(self.assignment_id, scenario="as_is", overwrite=True).to_dict()
+        first = engine.build(self.assignment_id, scenario="arv", overwrite=True)
+        history_path = engine.store.output_dir(self.assignment_id, "arv") / "comparable-history.json"
+        history_before = json.loads(history_path.read_text(encoding="utf-8"))
+        second = engine.build(self.assignment_id, scenario="arv", overwrite=True)
+        history_after = json.loads(history_path.read_text(encoding="utf-8"))
+        review_after = review_path.read_bytes() if review_path.exists() else b""
+        as_is_after = json.loads((engine.store.output_dir(self.assignment_id, "as_is") / "comparable-universe.json").read_text(encoding="utf-8"))
+
+        subject_conflicts = {item.field_name: item for item in first.conflicts if item.comparable_id == "subject"}
+        nested_conflict_fields = {"unit_count", "accessory_unit", "bedroom_count", "bathroom_count"}
+        self.assertTrue(nested_conflict_fields.issubset(subject_conflicts))
+        self.assertNotIn("accessory_unit_count", subject_conflicts)
+        for field_name in nested_conflict_fields:
+            conflict = subject_conflicts[field_name]
+            assertion = conflict.source_assertions[-1]
+            self.assertEqual(assertion["schema_origin"], "subject_evidence.fields")
+            self.assertTrue(assertion["schema_path"].startswith("subject_evidence.fields."))
+        self.assertEqual(first.subject["unit_count"], 1)
+        self.assertFalse(first.subject["accessory_unit"])
+        self.assertEqual(first.coverage.bracketing["unit_count"]["subject_baseline_status"], "conflicted")
+        self.assertEqual(first.coverage.bracketing["accessory_unit"]["subject_baseline_status"], "conflicted")
+        self.assertNotEqual(first.coverage.levels["accessory_unit"], "unavailable")
+        review_types = {item["item_type"] for item in first.review_queue}
+        self.assertTrue({"conflicting_unit_count", "conflicting_accessory_unit_presence"}.issubset(review_types))
+        self.assertEqual({key: first.counts.get(key, 0) for key in tier_keys}, baseline_tiers)
+        self.assertEqual(first.counts, second.counts)
+        self.assertEqual(len(history_before["snapshots"]), len(history_after["snapshots"]))
+        self.assertEqual(review_before, review_after)
+        self.assertEqual(as_is_before["counts"], as_is_after["counts"])
+        self.assertEqual(as_is_before["conflicts"], as_is_after["conflicts"])
+        report = (engine.store.output_dir(self.assignment_id, "arv") / "comparable-universe.md").read_text(encoding="utf-8")
+        self.assertIn("subject_evidence.fields.unit_count.alternate_values[0]", report)
+        self.assertIn("No legality, permitting, completion, GLA, adjustment, or valuation determination", report)
+        self.assertNotIn("legally correct", report.lower())
 
     def test_expanded_conflicts_remain_scenario_specific_and_idempotent(self) -> None:
         engine = ComparableIntelligenceEngine(self.tmp)

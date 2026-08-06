@@ -983,66 +983,301 @@ def _canonical_raw_field_name(assignment: JsonMap, field_name: str, aliases: lis
     return aliases[0]
 
 
-def _alternate_documents(scenario_document: JsonMap) -> list[JsonMap]:
-    """Read the v7.3.4 alternate schema plus prior explicit subject-evidence shapes."""
-    documents = list(_map_list(scenario_document.get("subject_alternates", [])))
-    evidence = scenario_document.get("subject_evidence")
-    if isinstance(evidence, list):
-        documents.extend(_map_list(evidence))
-    elif isinstance(evidence, dict):
-        documents.extend(_map_list(evidence.get("alternates", [])))
-        for raw_field, raw_evidence in evidence.items():
-            if raw_field == "alternates":
+_SUBJECT_EVIDENCE_METADATA_KEYS = {
+    "alternates",
+    "fields",
+    "governing_source",
+    "notes",
+    "source",
+    "source_path",
+    "source_paths",
+    "source_sections",
+    "source_type",
+    "verification_status",
+}
+
+
+def _canonical_subject_field(raw_field: Any) -> str:
+    token = re.sub(r"[\s-]+", "_", _str(raw_field).lower())
+    for field_name, aliases in SUBJECT_FIELD_ALIASES.items():
+        if token in aliases:
+            return field_name
+    return ""
+
+
+def _alternate_metadata(alternate: JsonMap, field_evidence: JsonMap, evidence: JsonMap) -> tuple[JsonMap, JsonMap]:
+    metadata: JsonMap = {}
+    inheritance: JsonMap = {}
+    aliases = {
+        "source_type": ["source_type", "source"],
+        "source_path": ["source_path"],
+        "verification_status": ["verification_status"],
+        "notes": ["notes"],
+        "source_identifier": ["source_identifier", "source_id"],
+    }
+    for output_key, input_keys in aliases.items():
+        for level_name, level in (("alternate", alternate), ("field", field_evidence), ("document", evidence)):
+            raw_key, value = _available_entry(level, input_keys)
+            if raw_key:
+                metadata[output_key] = value
+                inheritance[output_key] = level_name
+                break
+    document_paths = _string_list(evidence.get("source_paths"))
+    if document_paths:
+        metadata["document_source_paths"] = document_paths
+    return metadata, inheritance
+
+
+def _alternate_value_entries(value: Any, schema_path: str) -> tuple[list[tuple[Any, JsonMap, str]], list[JsonMap]]:
+    entries: list[tuple[Any, JsonMap, str]] = []
+    limitations: list[JsonMap] = []
+    if isinstance(value, list):
+        raw_entries = [(item, f"{schema_path}[{index}]") for index, item in enumerate(value)]
+    elif isinstance(value, dict):
+        if "value" in value or "raw_value" in value:
+            raw_entries = [(value, schema_path)]
+        else:
+            raw_entries = [(dict(item, source_identifier=key) if isinstance(item, dict) else {"value": item, "source_identifier": key}, f"{schema_path}.{key}") for key, item in value.items()]
+    else:
+        limitations.append(
+            {
+                "schema_path": schema_path,
+                "reason": "alternate_values must be a list or mapping; no alternate assertion was fabricated.",
+                "status": "review_required",
+            }
+        )
+        return entries, limitations
+    for raw_entry, entry_path in raw_entries:
+        if isinstance(raw_entry, dict):
+            alternate = raw_entry
+            if "raw_value" in alternate:
+                raw_value = alternate.get("raw_value")
+            elif "value" in alternate:
+                raw_value = alternate.get("value")
+            else:
+                limitations.append(
+                    {
+                        "schema_path": entry_path,
+                        "reason": "Alternate evidence mapping has no value or raw_value; no alternate assertion was fabricated.",
+                        "status": "review_required",
+                    }
+                )
                 continue
-            entries = raw_evidence if isinstance(raw_evidence, list) else [raw_evidence]
-            for entry in entries:
-                item = _map(entry)
-                for alternate in _map_list(item.get("alternate_values", [])):
-                    documents.append(
-                        {
-                            "source_type": alternate.get("source_type") or alternate.get("source") or item.get("source_type") or item.get("source"),
-                            "source_path": alternate.get("source_path") or item.get("source_path"),
-                            "verification_status": alternate.get("verification_status") or item.get("verification_status") or "alternate_assertion",
-                            "notes": alternate.get("notes") or item.get("notes"),
-                            "values": {raw_field: alternate.get("raw_value", alternate.get("value"))},
-                        }
-                    )
-                if "alternate_value" in item:
-                    documents.append(
-                        {
-                            "source_type": item.get("source_type") or item.get("source"),
-                            "source_path": item.get("source_path"),
-                            "verification_status": item.get("verification_status") or "alternate_assertion",
-                            "notes": item.get("notes"),
-                            "values": {raw_field: item.get("alternate_value")},
-                        }
-                    )
-    return documents
+        else:
+            alternate = {}
+            raw_value = raw_entry
+        entries.append((raw_value, alternate, entry_path))
+    return entries, limitations
+
+
+def _field_evidence_documents(
+    raw_field: Any,
+    raw_evidence: Any,
+    *,
+    evidence: JsonMap,
+    schema_origin: str,
+    schema_path: str,
+) -> tuple[list[JsonMap], list[JsonMap]]:
+    documents: list[JsonMap] = []
+    limitations: list[JsonMap] = []
+    if not _canonical_subject_field(raw_field):
+        limitations.append(
+            {
+                "schema_origin": schema_origin,
+                "schema_path": schema_path,
+                "reason": f"Unsupported subject evidence field '{raw_field}' was preserved as a parsing limitation.",
+                "status": "review_required",
+            }
+        )
+        return documents, limitations
+    nodes = raw_evidence if isinstance(raw_evidence, list) else [raw_evidence]
+    for node_index, raw_node in enumerate(nodes):
+        node_path = f"{schema_path}[{node_index}]" if isinstance(raw_evidence, list) else schema_path
+        if not isinstance(raw_node, dict):
+            limitations.append(
+                {
+                    "schema_origin": schema_origin,
+                    "schema_path": node_path,
+                    "reason": "Subject field evidence must be a mapping; no alternate assertion was fabricated.",
+                    "status": "review_required",
+                }
+            )
+            continue
+        field_evidence = raw_node
+        alternate_sources: list[tuple[Any, str]] = []
+        if "alternate_values" in field_evidence:
+            alternate_sources.append((field_evidence.get("alternate_values"), f"{node_path}.alternate_values"))
+        if "alternate_value" in field_evidence:
+            alternate_sources.append(([field_evidence.get("alternate_value")], f"{node_path}.alternate_value"))
+        for alternate_values, alternate_path in alternate_sources:
+            parsed_entries, entry_limitations = _alternate_value_entries(alternate_values, alternate_path)
+            for limitation in entry_limitations:
+                limitation["schema_origin"] = schema_origin
+            limitations.extend(entry_limitations)
+            for raw_value, alternate, entry_path in parsed_entries:
+                metadata, inheritance = _alternate_metadata(alternate, field_evidence, evidence)
+                selected_raw = field_evidence.get("selected_raw_value", field_evidence.get("selected_value"))
+                documents.append(
+                    {
+                        **metadata,
+                        "values": {_str(raw_field): raw_value},
+                        "raw_source_field_name": _str(raw_field),
+                        "schema_origin": schema_origin,
+                        "schema_path": entry_path,
+                        "provenance_inheritance": inheritance,
+                        "field_selected_value": selected_raw,
+                        "field_selected_normalized_value": field_evidence.get("normalized_value"),
+                    }
+                )
+    return documents, limitations
+
+
+def _document_alternates(value: Any, *, schema_origin: str, schema_path: str) -> tuple[list[JsonMap], list[JsonMap]]:
+    documents: list[JsonMap] = []
+    limitations: list[JsonMap] = []
+    if value is None or value == "":
+        return documents, limitations
+    if not isinstance(value, list):
+        return documents, [{"schema_origin": schema_origin, "schema_path": schema_path, "reason": "Document-level alternates must be a list of mappings.", "status": "review_required"}]
+    for index, item in enumerate(value):
+        item_path = f"{schema_path}[{index}]"
+        if not isinstance(item, dict) or not isinstance(item.get("values"), dict):
+            limitations.append({"schema_origin": schema_origin, "schema_path": item_path, "reason": "Alternate document must be a mapping with a values mapping.", "status": "review_required"})
+            continue
+        documents.append({**item, "schema_origin": schema_origin, "schema_path": item_path})
+    return documents, limitations
+
+
+def _parse_alternate_documents(scenario_document: JsonMap) -> tuple[list[JsonMap], list[JsonMap]]:
+    documents, limitations = _document_alternates(
+        scenario_document.get("subject_alternates"),
+        schema_origin="subject_alternates",
+        schema_path="subject_alternates",
+    )
+    evidence_value = scenario_document.get("subject_evidence")
+    if evidence_value is None or evidence_value == "":
+        return documents, limitations
+    if isinstance(evidence_value, list):
+        more, issues = _document_alternates(evidence_value, schema_origin="subject_evidence", schema_path="subject_evidence")
+        return documents + more, limitations + issues
+    if not isinstance(evidence_value, dict):
+        limitations.append({"schema_origin": "subject_evidence", "schema_path": "subject_evidence", "reason": "subject_evidence must be a mapping or list.", "status": "review_required"})
+        return documents, limitations
+    evidence = evidence_value
+    more, issues = _document_alternates(
+        evidence.get("alternates"),
+        schema_origin="subject_evidence.alternates",
+        schema_path="subject_evidence.alternates",
+    )
+    documents.extend(more)
+    limitations.extend(issues)
+    if "fields" in evidence:
+        nested_fields = evidence.get("fields")
+        if not isinstance(nested_fields, dict):
+            limitations.append({"schema_origin": "subject_evidence.fields", "schema_path": "subject_evidence.fields", "reason": "subject_evidence.fields must be a mapping.", "status": "review_required"})
+        else:
+            for raw_field, raw_evidence in nested_fields.items():
+                more, issues = _field_evidence_documents(
+                    raw_field,
+                    raw_evidence,
+                    evidence=evidence,
+                    schema_origin="subject_evidence.fields",
+                    schema_path=f"subject_evidence.fields.{raw_field}",
+                )
+                documents.extend(more)
+                limitations.extend(issues)
+    for raw_field, raw_evidence in evidence.items():
+        if raw_field in _SUBJECT_EVIDENCE_METADATA_KEYS:
+            continue
+        more, issues = _field_evidence_documents(
+            raw_field,
+            raw_evidence,
+            evidence=evidence,
+            schema_origin="subject_evidence.field",
+            schema_path=f"subject_evidence.{raw_field}",
+        )
+        documents.extend(more)
+        limitations.extend(issues)
+    return documents, limitations
+
+
+def _alternate_documents(scenario_document: JsonMap) -> list[JsonMap]:
+    """Return normalized documents for every supported alternate-evidence schema."""
+    return _parse_alternate_documents(scenario_document)[0]
+
+
+def _parse_alternate_assertions(scenario_document: JsonMap) -> tuple[dict[str, list[JsonMap]], list[JsonMap], list[JsonMap]]:
+    assertions: dict[str, list[JsonMap]] = {field_name: [] for field_name in SUBJECT_FIELD_ALIASES}
+    limitations: list[JsonMap]
+    documents, limitations = _parse_alternate_documents(scenario_document)
+    duplicates: list[JsonMap] = []
+    seen: dict[str, JsonMap] = {}
+    for document in documents:
+        values = _map(document.get("values"))
+        for raw_field, raw_value in values.items():
+            field_name = _canonical_subject_field(raw_field)
+            if not field_name:
+                limitations.append(
+                    {
+                        "schema_origin": document.get("schema_origin", "alternate_document"),
+                        "schema_path": f"{document.get('schema_path', 'alternate_document')}.values.{raw_field}",
+                        "reason": f"Unsupported alternate subject field '{raw_field}' was not normalized.",
+                        "status": "review_required",
+                    }
+                )
+                continue
+            normalized = normalize_subject_value(field_name, raw_value)
+            notes = _string_list(document.get("notes"))
+            source = _str(document.get("source_type") or document.get("source") or "alternate_source")
+            source_path = _str(document.get("source_path"))
+            verification_status = _str(document.get("verification_status") or "alternate_assertion")
+            schema_path = _str(document.get("schema_path") or "alternate_document")
+            if not document.get("raw_source_field_name"):
+                schema_path = f"{schema_path}.values.{raw_field}"
+            assertion = {
+                "value": raw_value,
+                "raw_value": raw_value,
+                "normalized_value": normalized,
+                "raw_source_field_name": _str(document.get("raw_source_field_name") or raw_field),
+                "source": source,
+                "source_path": source_path,
+                "verification_status": verification_status,
+                "notes": notes,
+                "normalization_status": "normalized" if _value_available(normalized) else "review_required",
+                "schema_origin": _str(document.get("schema_origin") or "alternate_document"),
+                "schema_path": schema_path,
+                "provenance_inheritance": _map(document.get("provenance_inheritance")),
+                "source_identifier": _str(document.get("source_identifier")),
+                "document_source_paths": _string_list(document.get("document_source_paths")),
+                "field_selected_value": document.get("field_selected_value"),
+                "field_selected_normalized_value": document.get("field_selected_normalized_value"),
+            }
+            normalized_key = json.dumps(normalized if _value_available(normalized) else raw_value, sort_keys=True, default=str)
+            dedupe_key = json.dumps(
+                {
+                    "field_name": field_name,
+                    "normalized_value": normalized_key,
+                    "source": source,
+                    "source_identifier": assertion["source_identifier"],
+                    "source_path": source_path,
+                    "document_source_paths": assertion["document_source_paths"],
+                    "verification_status": verification_status,
+                    "notes": notes,
+                },
+                sort_keys=True,
+            )
+            existing = seen.get(dedupe_key)
+            if existing is not None:
+                existing.setdefault("duplicate_schema_paths", []).append(schema_path)
+                duplicates.append({"field_name": field_name, "kept_schema_path": existing.get("schema_path"), "duplicate_schema_path": schema_path})
+                continue
+            seen[dedupe_key] = assertion
+            assertions[field_name].append(assertion)
+    return assertions, limitations, duplicates
 
 
 def _alternate_assertions(scenario_document: JsonMap) -> dict[str, list[JsonMap]]:
-    assertions: dict[str, list[JsonMap]] = {field_name: [] for field_name in SUBJECT_FIELD_ALIASES}
-    for document in _alternate_documents(scenario_document):
-        values = _map(document.get("values"))
-        for field_name, aliases in SUBJECT_FIELD_ALIASES.items():
-            raw_field, raw_value = _available_entry(values, aliases)
-            if not raw_field:
-                continue
-            normalized = normalize_subject_value(field_name, raw_value)
-            assertions[field_name].append(
-                {
-                    "value": raw_value,
-                    "raw_value": raw_value,
-                    "normalized_value": normalized,
-                    "raw_source_field_name": raw_field,
-                    "source": _str(document.get("source_type") or "alternate_source"),
-                    "source_path": _str(document.get("source_path")),
-                    "verification_status": _str(document.get("verification_status") or "alternate_assertion"),
-                    "notes": _string_list(document.get("notes")),
-                    "normalization_status": "normalized" if _value_available(normalized) else "review_required",
-                }
-            )
-    return assertions
+    return _parse_alternate_assertions(scenario_document)[0]
 
 
 def _subject_conflict_reason(field_name: str) -> str:
@@ -1062,7 +1297,7 @@ def resolve_subject_facts(
     canonical = canonical_subject_values(assignment)
     scenario_address = _scenario_address_evidence(scenario_subject)
     canonical_address = _canonical_address_evidence(assignment, canonical.get("address"))
-    alternate_assertions = _alternate_assertions(scenario_document)
+    alternate_assertions, alternate_parsing_limitations, duplicate_alternate_assertions = _parse_alternate_assertions(scenario_document)
     scenario_verification = _map(scenario_document.get("subject_verification"))
     resolved: JsonMap = {}
     fields: JsonMap = {}
@@ -1229,6 +1464,17 @@ def resolve_subject_facts(
         "canonical_fallback_fields_used": sorted(key for key, value in fields.items() if value["selected_source"] == "canonical_assignment"),
         "unavailable_fields": sorted(key for key, value in fields.items() if value["selected_source"] == "unavailable"),
         "subject_conflict_ids": [item.conflict_id for item in conflicts],
+        "alternate_evidence_parsing": {
+            "status": "review_required" if alternate_parsing_limitations else "ok",
+            "limitations": alternate_parsing_limitations,
+            "duplicate_assertions": duplicate_alternate_assertions,
+            "supported_schemas": [
+                "subject_alternates",
+                "subject_evidence.alternates",
+                "subject_evidence.<field>",
+                "subject_evidence.fields.<field>",
+            ],
+        },
         "unit_configuration_review_required": any(item.field_name in UNIT_CONFIGURATION_FIELDS for item in conflicts),
         "accessory_unit_review_required": any(item.field_name in {"accessory_unit", "accessory_unit_count", "accessory_unit_type"} for item in conflicts),
         "professional_judgment_limitation": "Unit and accessory-unit evidence is descriptive. No legality, permitting, completion, GLA treatment, adjustment, or valuation determination is generated.",
@@ -1405,6 +1651,19 @@ def build_review_queue(
         for assertion in _map_list(detail.get("alternate_values", [])):
             if assertion.get("source") not in {"private_scenario_input", "canonical_assignment"} and not assertion.get("source_path"):
                 queue.append(_review_item("subject", "unavailable_source_provenance", field_name, "medium", f"Alternate {field_name} evidence lacks source-path provenance."))
+            if assertion.get("source") not in {"private_scenario_input", "canonical_assignment"} and assertion.get("normalization_status") == "review_required":
+                queue.append(_review_item("subject", "subject_alternate_value_review_required", field_name, "medium", f"Alternate {field_name} evidence could not be deterministically normalized; appraiser review is required."))
+    parsing = _map(_map(subject_resolution).get("alternate_evidence_parsing"))
+    for limitation in _map_list(parsing.get("limitations", [])):
+        queue.append(
+            _review_item(
+                "subject",
+                "subject_alternate_evidence_parse_review",
+                _str(limitation.get("schema_path") or "subject_evidence"),
+                "medium",
+                _str(limitation.get("reason") or "Alternate subject evidence requires parsing review."),
+            )
+        )
     return sorted(queue, key=lambda item: (item["severity"], item["item_type"], item["comparable_id"]))
 
 
@@ -1920,6 +2179,7 @@ def render_universe_markdown(universe: ComparableUniverse) -> str:
         f"- Canonical fallback fields used: `{', '.join(_string_list(universe.subject_resolution.get('canonical_fallback_fields_used'))) or 'none'}`",
         f"- Unavailable fields: `{', '.join(_string_list(universe.subject_resolution.get('unavailable_fields'))) or 'none'}`",
         f"- Subject conflicts: `{len(_string_list(universe.subject_resolution.get('subject_conflict_ids')))}`",
+        f"- Alternate-evidence parsing: `{_map(universe.subject_resolution.get('alternate_evidence_parsing')).get('status', 'ok')}`",
         "",
         "### Resolved Subject Facts and Provenance",
         "",
@@ -1931,6 +2191,17 @@ def render_universe_markdown(universe: ComparableUniverse) -> str:
             f"raw_field=`{detail.get('raw_source_field_name')}` verification=`{detail.get('verification_status')}` "
             f"conflict=`{detail.get('conflict_status')}` alternates=`{len(_map_list(detail.get('alternate_values')))}`"
         )
+        for assertion in _map_list(detail.get("alternate_values", [])):
+            if assertion.get("source") in {"private_scenario_input", "canonical_assignment"}:
+                continue
+            lines.append(
+                f"  - alternate raw=`{assertion.get('raw_value')}` normalized=`{assertion.get('normalized_value')}` "
+                f"source=`{assertion.get('source')}` path=`{assertion.get('source_path')}` verification=`{assertion.get('verification_status')}` "
+                f"schema=`{assertion.get('schema_origin')}` schema_path=`{assertion.get('schema_path')}`"
+            )
+    parsing = _map(universe.subject_resolution.get("alternate_evidence_parsing"))
+    for limitation in _map_list(parsing.get("limitations", [])):
+        lines.append(f"- Parsing review required at `{limitation.get('schema_path')}`: {limitation.get('reason')}")
     lines.extend([
         "",
         "## Unit and Accessory-Unit Evidence",

@@ -1,4 +1,4 @@
-# Comparable Intelligence v7.3.4
+# Comparable Intelligence v7.3.5
 
 Comparable Intelligence is the deterministic comparable-sale evidence layer for Constellation Real Estate Intelligence.
 
@@ -66,7 +66,15 @@ subject_alternates:
       accessory_unit_count: 2
 ```
 
-Equivalent historical `subject_evidence` assertions remain readable. Explicit normalized disagreements produce open, scenario-specific conflicts with selected and alternate values, source paths, raw field names, verification states, and a review item. Source priority never resolves them automatically.
+The preferred current layout is `subject_alternates`. Three historical layouts remain readable without rewriting inputs:
+
+- `subject_evidence.alternates` for document-level assertions
+- `subject_evidence.<field>.alternate_values` for direct field evidence
+- `subject_evidence.fields.<field>.alternate_values` for prior nested field evidence
+
+Field alternates may be scalar list entries, mappings with `value` or `raw_value`, or documented field-keyed mappings. Missing provenance inherits narrowly from the alternate entry, then its field node, then the enclosing evidence document. Assertions retain canonical and raw field names, raw and normalized values, source metadata, verification status, notes, schema origin, and schema path. Deterministically exact duplicates are consolidated while distinct-source or materially different assertions remain separate. Malformed structures become reviewable parsing limitations and do not fabricate facts or crash otherwise valid scenarios.
+
+Explicit normalized disagreements produce open, scenario-specific conflicts with selected and alternate values, source paths, raw field names, verification states, and a review item. Source priority never resolves them automatically. Descriptive prose is preserved as raw evidence but is not parsed across fields: a property-type description mentioning accessory units does not create unit-count or accessory-unit-count facts.
 
 Unit and accessory-unit assertions remain descriptive. The engine makes no conclusion about legality, zoning, permits, completion, highest and best use, GLA inclusion, feasibility, adjustments, or value.
 

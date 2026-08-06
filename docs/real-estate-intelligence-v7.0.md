@@ -118,6 +118,12 @@ Private `subject_alternates` assertions are compared without changing the govern
 
 Unit/accessory-unit evidence remains descriptive. Constellation does not determine legality, permits, completion, zoning compliance, highest and best use, GLA treatment, feasibility, adjustments, or value.
 
+### v7.3.5 Nested Subject Evidence Compatibility
+
+Comparable Intelligence reads preferred `subject_alternates` documents and the historical `subject_evidence.alternates`, direct-field, and nested `subject_evidence.fields.<field>.alternate_values` layouts through one deterministic assertion adapter. Alternate, field, and document provenance is inherited only when explicitly supplied; schema origin/path and raw field names remain visible in assignment-specific reports.
+
+Scalar, structured mapping, and documented field-keyed alternates are supported. Exact duplicate assertions are consolidated without merging different sources or materially different metadata. Malformed nested evidence remains review-required, and descriptive text is never converted into structured unit, accessory-unit, bedroom, bathroom, legal, completion, GLA, adjustment, or valuation facts.
+
 Private assignment files use:
 
 ```text
