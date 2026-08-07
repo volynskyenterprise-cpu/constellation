@@ -1,4 +1,4 @@
-# Comparable Intelligence v7.3.5
+# Comparable Intelligence v7.3.6
 
 Comparable Intelligence is the deterministic comparable-sale evidence layer for Constellation Real Estate Intelligence.
 
@@ -73,6 +73,14 @@ The preferred current layout is `subject_alternates`. Three historical layouts r
 - `subject_evidence.fields.<field>.alternate_values` for prior nested field evidence
 
 Field alternates may be scalar list entries, mappings with `value` or `raw_value`, or documented field-keyed mappings. Missing provenance inherits narrowly from the alternate entry, then its field node, then the enclosing evidence document. Assertions retain canonical and raw field names, raw and normalized values, source metadata, verification status, notes, schema origin, and schema path. Deterministically exact duplicates are consolidated while distinct-source or materially different assertions remain separate. Malformed structures become reviewable parsing limitations and do not fabricate facts or crash otherwise valid scenarios.
+
+Valid empty alternate collections produce no assertion, conflict, limitation, or review item. This includes an actual empty list, null or blank absence, and the exact scalar `"[]"` representation produced by the local YAML reader in an alternate-list slot. Other non-empty scalar collection-like text remains review-required and is never parsed speculatively.
+
+Provenance follows alternate, field, then enclosing-document scope. A single inherited parent path may populate both `source_path` and `source_paths`; multiple parent paths remain together in `source_paths` and no arbitrary singular path is chosen. Parent-level paths count as usable provenance, so they do not create false unavailable-provenance reviews. Assertions expose inheritance status and scope while retaining backward-compatible fields.
+
+Appraiser review-state JSON uses deterministic byte-aware persistence. If proposed serialized bytes match the existing file, Comparable Intelligence performs no write and preserves its modification time. Meaningful review-state changes still write normally, and history snapshots continue to reflect meaningful universe changes only.
+
+Human-readable universe, coverage, conflict, and review-queue sections display concise source, verification, schema-origin, schema-path, and inherited-provenance details for alternate evidence. Schema internals remain confined to assignment-specific reports rather than global dashboards.
 
 Explicit normalized disagreements produce open, scenario-specific conflicts with selected and alternate values, source paths, raw field names, verification states, and a review item. Source priority never resolves them automatically. Descriptive prose is preserved as raw evidence but is not parsed across fields: a property-type description mentioning accessory units does not create unit-count or accessory-unit-count facts.
 

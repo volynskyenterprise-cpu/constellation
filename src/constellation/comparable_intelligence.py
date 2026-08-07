@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import html
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -25,6 +26,16 @@ from .simple_yaml import load_yaml
 
 class ComparableIntelligenceError(RuntimeError):
     pass
+
+
+def _write_json_if_changed(path: Path, record: JsonMap) -> bool:
+    """Write deterministic JSON only when its serialized bytes changed."""
+    payload = json.dumps(record, indent=2, sort_keys=True).replace("\n", os.linesep).encode("utf-8")
+    if path.exists() and path.read_bytes() == payload:
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+    return True
 
 
 CANDIDATE_STATUSES = {
@@ -475,7 +486,7 @@ class ComparableStore:
         return read_json(path) if path.exists() else {"comparables": {}}
 
     def save_review_state(self, assignment_id: str, state: JsonMap, scenario: str | None = None) -> None:
-        write_json(self.review_state_path(assignment_id, scenario), state)
+        _write_json_if_changed(self.review_state_path(assignment_id, scenario), state)
 
     def save(self, universe: ComparableUniverse, previous: JsonMap) -> None:
         directory = self.output_dir(universe.assignment_id, universe.valuation_scenario)
@@ -485,7 +496,7 @@ class ComparableStore:
         write_json(directory / "comparable-coverage.json", data["coverage"])
         write_json(directory / "comparable-conflicts.json", {"conflicts": data["conflicts"]})
         write_json(directory / "comparable-delta.json", delta)
-        write_json(
+        _write_json_if_changed(
             directory / "appraiser-review-state.json",
             {
                 "assignment_id": universe.assignment_id,
@@ -1010,7 +1021,6 @@ def _alternate_metadata(alternate: JsonMap, field_evidence: JsonMap, evidence: J
     inheritance: JsonMap = {}
     aliases = {
         "source_type": ["source_type", "source"],
-        "source_path": ["source_path"],
         "verification_status": ["verification_status"],
         "notes": ["notes"],
         "source_identifier": ["source_identifier", "source_id"],
@@ -1022,6 +1032,41 @@ def _alternate_metadata(alternate: JsonMap, field_evidence: JsonMap, evidence: J
                 metadata[output_key] = value
                 inheritance[output_key] = level_name
                 break
+
+    levels = (("alternate", alternate), ("field", field_evidence), ("document", evidence))
+    source_path = ""
+    source_path_level = ""
+    for level_name, level in levels:
+        raw_key, value = _available_entry(level, ["source_path"])
+        if raw_key:
+            source_path = _str(value)
+            source_path_level = level_name
+            break
+
+    source_paths: list[str] = []
+    source_paths_level = ""
+    for level_name, level in levels:
+        paths = _string_list(level.get("source_paths"))
+        if paths:
+            source_paths = paths
+            source_paths_level = level_name
+            break
+    if source_path:
+        metadata["source_path"] = source_path
+        inheritance["source_path"] = source_path_level
+        if not source_paths or source_paths_level != source_path_level:
+            source_paths = [source_path]
+            source_paths_level = source_path_level
+    elif len(source_paths) == 1:
+        metadata["source_path"] = source_paths[0]
+        inheritance["source_path"] = source_paths_level
+    if source_paths:
+        metadata["source_paths"] = source_paths
+        inheritance["source_paths"] = source_paths_level
+
+    inherited_from = sorted({level for level in inheritance.values() if level in {"field", "document"}})
+    metadata["provenance_inherited"] = bool(inherited_from)
+    metadata["provenance_inherited_from"] = inherited_from
     document_paths = _string_list(evidence.get("source_paths"))
     if document_paths:
         metadata["document_source_paths"] = document_paths
@@ -1031,7 +1076,9 @@ def _alternate_metadata(alternate: JsonMap, field_evidence: JsonMap, evidence: J
 def _alternate_value_entries(value: Any, schema_path: str) -> tuple[list[tuple[Any, JsonMap, str]], list[JsonMap]]:
     entries: list[tuple[Any, JsonMap, str]] = []
     limitations: list[JsonMap] = []
-    if isinstance(value, list):
+    if value is None or (isinstance(value, str) and value.strip() in {"", "[]"}):
+        return entries, limitations
+    if isinstance(value, (list, tuple)):
         raw_entries = [(item, f"{schema_path}[{index}]") for index, item in enumerate(value)]
     elif isinstance(value, dict):
         if "value" in value or "raw_value" in value:
@@ -1230,23 +1277,37 @@ def _parse_alternate_assertions(scenario_document: JsonMap) -> tuple[dict[str, l
             notes = _string_list(document.get("notes"))
             source = _str(document.get("source_type") or document.get("source") or "alternate_source")
             source_path = _str(document.get("source_path"))
+            source_paths = _string_list(document.get("source_paths"))
+            if source_path and not source_paths:
+                source_paths = [source_path]
+            elif not source_path and len(source_paths) == 1:
+                source_path = source_paths[0]
             verification_status = _str(document.get("verification_status") or "alternate_assertion")
             schema_path = _str(document.get("schema_path") or "alternate_document")
             if not document.get("raw_source_field_name"):
                 schema_path = f"{schema_path}.values.{raw_field}"
+            inheritance = _map(document.get("provenance_inheritance"))
+            inherited_from = _string_list(document.get("provenance_inherited_from"))
+            if not inherited_from:
+                inherited_from = sorted({str(level) for level in inheritance.values() if level in {"field", "document"}})
             assertion = {
+                "canonical_field": field_name,
                 "value": raw_value,
                 "raw_value": raw_value,
                 "normalized_value": normalized,
                 "raw_source_field_name": _str(document.get("raw_source_field_name") or raw_field),
                 "source": source,
+                "source_type": source,
                 "source_path": source_path,
+                "source_paths": source_paths,
                 "verification_status": verification_status,
                 "notes": notes,
                 "normalization_status": "normalized" if _value_available(normalized) else "review_required",
                 "schema_origin": _str(document.get("schema_origin") or "alternate_document"),
                 "schema_path": schema_path,
-                "provenance_inheritance": _map(document.get("provenance_inheritance")),
+                "provenance_inheritance": inheritance,
+                "provenance_inherited": bool(document.get("provenance_inherited", inherited_from)),
+                "provenance_inherited_from": inherited_from,
                 "source_identifier": _str(document.get("source_identifier")),
                 "document_source_paths": _string_list(document.get("document_source_paths")),
                 "field_selected_value": document.get("field_selected_value"),
@@ -1260,6 +1321,7 @@ def _parse_alternate_assertions(scenario_document: JsonMap) -> tuple[dict[str, l
                     "source": source,
                     "source_identifier": assertion["source_identifier"],
                     "source_path": source_path,
+                    "source_paths": source_paths,
                     "document_source_paths": assertion["document_source_paths"],
                     "verification_status": verification_status,
                     "notes": notes,
@@ -1610,6 +1672,15 @@ def comparable_counts(records: list[ComparableRecord], conflicts: list[Comparabl
     }
 
 
+def _assertion_has_usable_provenance(assertion: JsonMap) -> bool:
+    return bool(
+        _str(assertion.get("source_path"))
+        or _string_list(assertion.get("source_paths"))
+        or _string_list(assertion.get("document_source_paths"))
+        or _str(assertion.get("source_identifier"))
+    )
+
+
 def build_review_queue(
     records: list[ComparableRecord],
     assessments: list[ComparableAssessment],
@@ -1649,8 +1720,8 @@ def build_review_queue(
         if detail.get("normalization_status") == "review_required":
             queue.append(_review_item("subject", "subject_value_review_required", field_name, "medium", f"Explicit {field_name} evidence is unknown, ambiguous, or invalid; appraiser review is required."))
         for assertion in _map_list(detail.get("alternate_values", [])):
-            if assertion.get("source") not in {"private_scenario_input", "canonical_assignment"} and not assertion.get("source_path"):
-                queue.append(_review_item("subject", "unavailable_source_provenance", field_name, "medium", f"Alternate {field_name} evidence lacks source-path provenance."))
+            if assertion.get("source") not in {"private_scenario_input", "canonical_assignment"} and not _assertion_has_usable_provenance(assertion):
+                queue.append(_review_item("subject", "unavailable_source_provenance", field_name, "medium", f"Alternate {field_name} evidence lacks source-path or source-identifier provenance at every supported scope."))
             if assertion.get("source") not in {"private_scenario_input", "canonical_assignment"} and assertion.get("normalization_status") == "review_required":
                 queue.append(_review_item("subject", "subject_alternate_value_review_required", field_name, "medium", f"Alternate {field_name} evidence could not be deterministically normalized; appraiser review is required."))
     parsing = _map(_map(subject_resolution).get("alternate_evidence_parsing"))
@@ -2149,6 +2220,25 @@ def to_bool(value: Any) -> bool | None:
     return None
 
 
+def _alternate_schema_provenance(assertion: JsonMap) -> str:
+    source_paths = _string_list(assertion.get("source_paths")) or _string_list(assertion.get("document_source_paths"))
+    source_display = _str(assertion.get("source_path")) or "; ".join(source_paths) or "unavailable"
+    inherited_from = ", ".join(_string_list(assertion.get("provenance_inherited_from"))) or "none"
+    return (
+        f"source=`{assertion.get('source')}` source_path(s)=`{source_display}` verification=`{assertion.get('verification_status')}` "
+        f"schema_origin=`{assertion.get('schema_origin')}` schema_path=`{assertion.get('schema_path')}` inherited_from=`{inherited_from}`"
+    )
+
+
+def _external_subject_assertions(universe: ComparableUniverse, field_name: str) -> list[JsonMap]:
+    detail = _map(_map(universe.subject_resolution.get("fields")).get(field_name))
+    return [
+        assertion
+        for assertion in _map_list(detail.get("alternate_values"))
+        if assertion.get("source") not in {"private_scenario_input", "canonical_assignment"}
+    ]
+
+
 def render_universe_markdown(universe: ComparableUniverse) -> str:
     data = universe.to_dict()
     scenario = _map(universe.provenance.get("scenario_resolution"))
@@ -2196,12 +2286,14 @@ def render_universe_markdown(universe: ComparableUniverse) -> str:
                 continue
             lines.append(
                 f"  - alternate raw=`{assertion.get('raw_value')}` normalized=`{assertion.get('normalized_value')}` "
-                f"source=`{assertion.get('source')}` path=`{assertion.get('source_path')}` verification=`{assertion.get('verification_status')}` "
-                f"schema=`{assertion.get('schema_origin')}` schema_path=`{assertion.get('schema_path')}`"
+                f"{_alternate_schema_provenance(assertion)}"
             )
     parsing = _map(universe.subject_resolution.get("alternate_evidence_parsing"))
     for limitation in _map_list(parsing.get("limitations", [])):
-        lines.append(f"- Parsing review required at `{limitation.get('schema_path')}`: {limitation.get('reason')}")
+        lines.append(
+            f"- Parsing review required: schema_origin=`{limitation.get('schema_origin')}` "
+            f"schema_path=`{limitation.get('schema_path')}` reason={limitation.get('reason')}"
+        )
     lines.extend([
         "",
         "## Unit and Accessory-Unit Evidence",
@@ -2228,7 +2320,14 @@ def render_universe_markdown(universe: ComparableUniverse) -> str:
     for key, value in universe.coverage.bracketing.items():
         lines.append(f"- {key}: `{value.get('coverage')}` / `{value.get('bracketing', '')}`")
     lines.extend(["", "## Data Conflicts", ""])
-    lines.extend(f"- {item.field_name}: {', '.join(str(v) for v in item.values)} ({item.reason})" for item in universe.conflicts) or lines.append("None.")
+    if universe.conflicts:
+        for item in universe.conflicts:
+            lines.append(f"- {item.field_name}: {', '.join(str(v) for v in item.values)} ({item.reason})")
+            for assertion in _map_list(item.source_assertions):
+                if assertion.get("source") not in {"private_scenario_input", "canonical_assignment"}:
+                    lines.append(f"  - {_alternate_schema_provenance(assertion)}")
+    else:
+        lines.append("None.")
     lines.extend(["", "## Missing Data", ""])
     missing = [f"- {record.comparable_id}: {', '.join(record.missing_fields)}" for record in universe.comparables if record.missing_fields]
     lines.extend(missing or ["None."])
@@ -2259,6 +2358,9 @@ def render_coverage_markdown(universe: ComparableUniverse) -> str:
     for key, level in universe.coverage.levels.items():
         baseline = _map(universe.coverage.bracketing.get(key)).get("subject_baseline_status", "unavailable")
         lines.append(f"- {key}: `{level}` subject_baseline=`{baseline}`")
+        if baseline == "conflicted":
+            for assertion in _external_subject_assertions(universe, key):
+                lines.append(f"  - Conflicted baseline provenance: {_alternate_schema_provenance(assertion)}")
     for section in ["Recency", "Geography", "GLA", "Lot Size", "Bed/Bath", "Age", "Quality", "Condition", "Amenities", "Special Features"]:
         lines.extend(["", f"## {section}", ""])
         key = section.lower().replace("/", "_").replace(" ", "_")
@@ -2297,8 +2399,20 @@ def render_review_queue_markdown(universe: ComparableUniverse) -> str:
     ]
     for item in universe.review_queue:
         lines.append(f"- {item.get('severity')}: {item.get('item_type')} {item.get('comparable_id')} - {item.get('reason')}")
+        field_name = _str(item.get("field"))
+        if item.get("comparable_id") == "subject" and field_name:
+            for assertion in _external_subject_assertions(universe, field_name):
+                lines.append(f"  - {_alternate_schema_provenance(assertion)}")
     if not universe.review_queue:
         lines.append("None.")
+    parsing = _map(universe.subject_resolution.get("alternate_evidence_parsing"))
+    if _map_list(parsing.get("limitations")):
+        lines.extend(["", "## Alternate Evidence Parsing Provenance", ""])
+        for limitation in _map_list(parsing.get("limitations")):
+            lines.append(
+                f"- schema_origin=`{limitation.get('schema_origin')}` schema_path=`{limitation.get('schema_path')}` "
+                f"status=`{limitation.get('status')}` reason={limitation.get('reason')}"
+            )
     lines.extend(["", "## Unit and Accessory-Unit Evidence", "", *_unit_evidence_lines(universe)])
     return "\n".join(lines) + "\n"
 

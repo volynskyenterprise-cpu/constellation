@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
 import unittest
@@ -8,6 +9,7 @@ from pathlib import Path
 
 from constellation.comparable_intelligence import (
     _parse_alternate_assertions,
+    _write_json_if_changed,
     ComparableIntelligenceError,
     ComparableIntelligenceEngine,
     ComparableStore,
@@ -22,6 +24,7 @@ from constellation.comparable_intelligence import (
     to_number,
     validate_scenario_id,
 )
+from constellation.io import write_json
 from constellation.real_estate import RealEstateAssignmentStore, _render_comparable_section
 from constellation.real_estate_daily import _comparable_input_checksums
 
@@ -774,6 +777,152 @@ comparables:
         self.assertEqual(assertions["bedroom_count"], [])
         self.assertEqual(assertions["bathroom_count"], [])
         self.assertEqual(assertions["accessory_unit"][0]["normalization_status"], "review_required")
+
+    def test_empty_alternate_collections_are_valid_but_nonempty_scalars_remain_reviewable(self) -> None:
+        for empty_value in ([], (), None, "", "[]", "  []  "):
+            with self.subTest(empty_value=empty_value):
+                assertions, limitations, _ = _parse_alternate_assertions(
+                    {"subject_evidence": {"fields": {"garage_count": {"alternate_values": empty_value}}}}
+                )
+                self.assertEqual(assertions["garage_count"], [])
+                self.assertEqual(limitations, [])
+        assertions, limitations, _ = _parse_alternate_assertions(
+            {"subject_evidence": {"fields": {"garage_count": {"alternate_values": "[3]"}}}}
+        )
+        self.assertEqual(assertions["garage_count"], [])
+        self.assertEqual(len(limitations), 1)
+        self.assertEqual(limitations[0]["status"], "review_required")
+
+    def test_parent_source_path_inheritance_preserves_single_and_multiple_paths(self) -> None:
+        single, limitations, _ = _parse_alternate_assertions(
+            {
+                "subject_evidence": {
+                    "source_type": "proposed_scope_package",
+                    "source_paths": ["sources/fictional-scope-a.txt"],
+                    "fields": {"bedrooms": {"alternate_values": [{"value": 5}]}},
+                }
+            }
+        )
+        self.assertEqual(limitations, [])
+        assertion = single["bedroom_count"][0]
+        self.assertEqual(assertion["source_path"], "sources/fictional-scope-a.txt")
+        self.assertEqual(assertion["source_paths"], ["sources/fictional-scope-a.txt"])
+        self.assertTrue(assertion["provenance_inherited"])
+        self.assertIn("document", assertion["provenance_inherited_from"])
+
+        multiple, limitations, _ = _parse_alternate_assertions(
+            {
+                "subject_evidence": {
+                    "source_type": "proposed_scope_package",
+                    "source_paths": ["sources/fictional-scope-a.txt", "sources/fictional-scope-b.txt"],
+                    "fields": {"bedrooms": {"alternate_values": [{"value": 5}]}},
+                }
+            }
+        )
+        self.assertEqual(limitations, [])
+        assertion = multiple["bedroom_count"][0]
+        self.assertEqual(assertion["source_path"], "")
+        self.assertEqual(assertion["source_paths"], ["sources/fictional-scope-a.txt", "sources/fictional-scope-b.txt"])
+        self.assertEqual(assertion["canonical_field"], "bedroom_count")
+        self.assertEqual(assertion["source_type"], "proposed_scope_package")
+        self.assertTrue(assertion["provenance_inherited"])
+
+    def test_integrity_hardening_live_shape_removes_false_noise_and_renders_schema_provenance(self) -> None:
+        engine = ComparableIntelligenceEngine(self.tmp)
+        scenario_path = engine.store.input_dir(self.assignment_id, "arv") / "comparables.yaml"
+        original = scenario_path.read_text(encoding="utf-8")
+        without_alternates = original.split("subject_alternates:", 1)[0] + "comparables:" + original.split("comparables:", 1)[1]
+        scenario_path.write_text(without_alternates, encoding="utf-8")
+        baseline = engine.build(self.assignment_id, scenario="arv", overwrite=True)
+        tier_keys = ["primary_candidate", "secondary_candidate", "contextual_candidate", "review_required", "insufficient_data", "potential_duplicate"]
+        baseline_tiers = {key: baseline.counts.get(key, 0) for key in tier_keys}
+        evidence = """subject_evidence:
+  source_type: proposed_scope_package
+  source_paths:
+    - sources/fictional-scope-a.txt
+    - sources/fictional-scope-b.txt
+  fields:
+    property_type:
+      alternate_values:
+        - value: alternate residential configuration
+          verification_status: conflicting_source_values
+    bedrooms:
+      alternate_values:
+        - value: 5
+          verification_status: conflicting_source_values
+    bathrooms:
+      alternate_values:
+        - value: 5.1
+          verification_status: conflicting_source_values
+    accessory_unit:
+      alternate_values:
+        - value: alternate source describes accessory-unit work
+          verification_status: conflicting_source_values
+    garage_count:
+      alternate_values: []
+    parking_count:
+      alternate_values: []
+    pool:
+      alternate_values: []
+    spa:
+      alternate_values: []
+    view:
+      alternate_values: []
+    effective_age:
+      alternate_values: []
+"""
+        scenario_path.write_text(without_alternates.replace("comparables:", evidence + "comparables:", 1), encoding="utf-8")
+
+        universe = engine.build(self.assignment_id, scenario="arv", overwrite=True)
+
+        parsing = universe.subject_resolution["alternate_evidence_parsing"]
+        self.assertEqual(parsing["status"], "ok")
+        self.assertEqual(parsing["limitations"], [])
+        conflicts = {item.field_name for item in universe.conflicts if item.comparable_id == "subject"}
+        self.assertTrue({"property_type", "bedroom_count", "bathroom_count"}.issubset(conflicts))
+        self.assertNotIn("accessory_unit", conflicts)
+        self.assertNotIn("accessory_unit_count", conflicts)
+        accessory = universe.subject_resolution["fields"]["accessory_unit"]
+        self.assertEqual(accessory["alternate_values"][-1]["normalization_status"], "review_required")
+        accessory_count_assertions = universe.subject_resolution["fields"]["accessory_unit_count"]["alternate_values"]
+        self.assertFalse(any(item.get("source") not in {"private_scenario_input", "canonical_assignment"} for item in accessory_count_assertions))
+        review_types = [item["item_type"] for item in universe.review_queue]
+        self.assertNotIn("subject_alternate_evidence_parse_review", review_types)
+        self.assertNotIn("unavailable_source_provenance", review_types)
+        self.assertIn("subject_alternate_value_review_required", review_types)
+        self.assertEqual({key: universe.counts.get(key, 0) for key in tier_keys}, baseline_tiers)
+        for name in ["comparable-universe.md", "comparable-coverage.md", "comparable-review-queue.md"]:
+            report = (engine.store.output_dir(self.assignment_id, "arv") / name).read_text(encoding="utf-8")
+            self.assertIn("subject_evidence.fields", report)
+            self.assertIn("schema_path", report)
+
+    def test_review_state_persistence_is_byte_and_mtime_stable_on_noop_and_writes_changes(self) -> None:
+        compatibility_path = self.tmp / "existing-review-state.json"
+        compatibility_record = {"assignment_id": "fictional", "comparables": {}}
+        write_json(compatibility_path, compatibility_record)
+        fixed_ns = 1_600_000_000_000_000_000
+        os.utime(compatibility_path, ns=(fixed_ns, fixed_ns))
+        self.assertFalse(_write_json_if_changed(compatibility_path, compatibility_record))
+        self.assertEqual(compatibility_path.stat().st_mtime_ns, fixed_ns)
+
+        engine = ComparableIntelligenceEngine(self.tmp)
+        first = engine.build(self.assignment_id, scenario="arv", overwrite=True)
+        output_state = engine.store.output_dir(self.assignment_id, "arv") / "appraiser-review-state.json"
+        history_path = engine.store.output_dir(self.assignment_id, "arv") / "comparable-history.json"
+        os.utime(output_state, ns=(fixed_ns, fixed_ns))
+        before_bytes = output_state.read_bytes()
+        before_history = history_path.read_bytes()
+
+        engine.build(self.assignment_id, scenario="arv", overwrite=True)
+
+        self.assertEqual(output_state.read_bytes(), before_bytes)
+        self.assertEqual(output_state.stat().st_mtime_ns, fixed_ns)
+        self.assertEqual(history_path.read_bytes(), before_history)
+
+        engine.select(self.assignment_id, first.comparables[0].comparable_id, scenario="arv", reviewer="fictional-reviewer", confirm=True)
+        engine.build(self.assignment_id, scenario="arv", overwrite=True)
+        self.assertNotEqual(output_state.read_bytes(), before_bytes)
+        self.assertNotEqual(output_state.stat().st_mtime_ns, fixed_ns)
 
     def test_nested_schema_build_surfaces_conflicts_without_tier_or_review_state_mutation(self) -> None:
         engine = ComparableIntelligenceEngine(self.tmp)

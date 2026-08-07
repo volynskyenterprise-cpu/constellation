@@ -124,6 +124,14 @@ Comparable Intelligence reads preferred `subject_alternates` documents and the h
 
 Scalar, structured mapping, and documented field-keyed alternates are supported. Exact duplicate assertions are consolidated without merging different sources or materially different metadata. Malformed nested evidence remains review-required, and descriptive text is never converted into structured unit, accessory-unit, bedroom, bathroom, legal, completion, GLA, adjustment, or valuation facts.
 
+### v7.3.6 Alternate Evidence Integrity Hardening
+
+Valid empty alternate lists—including an exact scalar `"[]"` emitted by the local YAML reader—are treated as empty evidence without false parsing limitations or review items. Non-empty malformed or descriptive values remain reviewable and never produce cross-field facts.
+
+Alternate assertions inherit explicit provenance from alternate, field, then enclosing-document scope. One parent path can populate the compatible singular path, while multiple parent paths remain preserved together without an arbitrary choice. Usable parent provenance prevents false missing-source reviews. Assignment-specific Markdown reports show source, verification, schema origin, schema path, and inheritance details.
+
+Byte-aware appraiser review-state persistence skips writes when deterministic serialized bytes are unchanged, preserving modification timestamps on no-op builds. Meaningful state changes and history snapshots retain their existing governed behavior.
+
 Private assignment files use:
 
 ```text

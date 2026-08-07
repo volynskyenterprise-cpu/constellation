@@ -10,6 +10,7 @@
 - Structured Address Equivalence is complete in v7.3.3; keep subject-address comparison component-based, deterministic, provenance-preserving, and conservative for directionals, units, and populated locality conflicts.
 - Expanded Scenario Subject Provenance is complete in v7.3.4; keep unit/accessory-unit assertions scenario-specific, source-backed, reviewable, and free of legality, GLA-treatment, adjustment, or valuation inference.
 - Nested Subject Evidence Compatibility is complete in v7.3.5; keep all four alternate-evidence layouts readable without source rewrites or cross-field inference.
+- Alternate Evidence Integrity Hardening is complete in v7.3.6; keep valid empty alternates quiet, retain scoped multi-path provenance, preserve byte-stable review state on no-op builds, and expose schema provenance in assignment reports.
 - Keep Adjustment Intelligence as the next major Real Estate capability in v7.4.0.
 - Retain future MLS/export adapters as optional local connectors, not core requirements.
 - Keep automatic evening Smart Sync preview scheduling as a future optional enhancement; commit and push remain approval-gated.

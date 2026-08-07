@@ -2,6 +2,13 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.3.6 - Alternate Evidence Integrity Hardening
+
+- Treats valid empty alternate collections, including the local parser's scalar `"[]"` representation, as empty evidence without conflicts or parsing-review noise.
+- Completes alternate, field, and document provenance inheritance, preserves single or multiple source paths, and opens missing-provenance review only when no usable provenance exists at any supported scope.
+- Avoids byte-identical appraiser review-state rewrites so no-op builds preserve both content and modification time without changing history semantics.
+- Shows schema origin, schema path, verification, source, and inherited provenance consistently in assignment-specific Markdown conflict, coverage, and review reports.
+
 ## 7.3.5 - Nested Subject Evidence Compatibility
 
 - Added backward-compatible ingestion of `subject_evidence.fields.<field>.alternate_values` alongside the three existing alternate-evidence layouts without rewriting scenario inputs.
