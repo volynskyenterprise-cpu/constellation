@@ -10,6 +10,7 @@ from . import __version__
 from .canonical_assignments import CanonicalAssignmentStore
 from .canonical_operations import CanonicalOperationsEngine
 from .comparable_intelligence import ComparableStore
+from .adjustment_intelligence import AdjustmentStore
 from .io import read_json, write_json
 from .models import JsonMap
 from .real_estate import RealEstateAssignmentStore
@@ -179,6 +180,7 @@ class ExecutiveDashboardBuilder:
         real_estate_summary.update(_real_estate_canonical_summary(self.root))
         real_estate_summary.update(_real_estate_daily_summary(real_estate_daily))
         real_estate_summary.update(ComparableStore(self.root).summary())
+        real_estate_summary.update(AdjustmentStore(self.root).summary())
         connector_warning_summary = _connector_warning_summary(daily_run, workflow)
         risks_gaps = _risks_gaps(morning, theses)
         actions = _actions(morning, status, risks_gaps)
@@ -203,6 +205,8 @@ class ExecutiveDashboardBuilder:
             "real_estate_daily_status": real_estate_summary.get("daily_run_status", "unavailable"),
             "real_estate_comparable_scenarios": real_estate_summary.get("total_comparable_scenarios", 0),
             "real_estate_comparable_scenarios_needing_review": real_estate_summary.get("scenario_review_required_count", 0),
+            "real_estate_adjustment_scenarios": real_estate_summary.get("total_adjustment_scenarios", 0),
+            "real_estate_adjustment_conflicts_open": real_estate_summary.get("adjustment_conflicts_open", 0),
             "connector_warning_count": connector_warning_summary.get("connector_warning_count"),
             "next_files_to_inspect": [item["path"] for item in key_files[:5]],
         }

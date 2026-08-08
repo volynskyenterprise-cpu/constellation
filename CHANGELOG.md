@@ -2,6 +2,13 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.4.0 - Adjustment Intelligence
+
+- Added scenario-isolated Adjustment Intelligence that consumes resolved Comparable Intelligence facts, calculates factual subject-to-comparable differences, and organizes explicit paired-sale, grouped, extraction, study, sensitivity, and appraiser-entered evidence.
+- Added transparent indication arithmetic, descriptive aggregation, dispersion and coverage reporting, reviewable conflicts, sensitivity ranges, and gross/net mathematical diagnostics without automatic rate selection or value reconciliation.
+- Added explicit appraiser-controlled adjustment decisions with confirmation, rationale, independent scenario history, deterministic signed grid application, raw and rounded amounts, and no-op-stable persistence.
+- Added circular-evidence protection so appraisal-grid adjustments remain decision references rather than independent support, plus private scenario templates, CLI commands, assignment/Daily/dashboard summaries, fictional examples, and professional-boundary reports.
+
 ## 7.3.6 - Alternate Evidence Integrity Hardening
 
 - Treats valid empty alternate collections, including the local parser's scalar `"[]"` representation, as empty evidence without conflicts or parsing-review noise.

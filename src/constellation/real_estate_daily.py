@@ -10,6 +10,7 @@ from . import __version__
 from .assignment_consolidation import AssignmentConsolidationEngine
 from .canonical_assignments import CanonicalAssignmentEngine, CanonicalAssignmentStore
 from .canonical_operations import CanonicalOperationsEngine, CanonicalOperationsStore
+from .adjustment_intelligence import AdjustmentIntelligenceEngine, AdjustmentStore
 from .comparable_intelligence import ComparableIntelligenceEngine, ComparableStore
 from .dashboard import ExecutiveDashboardStore
 from .io import read_json, write_json
@@ -298,6 +299,52 @@ class RealEstateDailyEngine:
         )
         errors.extend(comparable_errors)
 
+        adjustment_store = AdjustmentStore(self.root)
+        previous_adjustment_checksums = _map(_map(previous.get("provenance")).get("adjustment_input_checksums"))
+        adjustment_input_checksums = _adjustment_input_checksums(adjustment_store, sorted(canonical_ids))
+        changed_adjustment_scenarios = [
+            scenario_key
+            for scenario_key, checksum in adjustment_input_checksums.items()
+            if full_refresh or previous_adjustment_checksums.get(scenario_key) != checksum
+        ]
+        adjustment_builds: list[str] = []
+        adjustment_errors: list[str] = []
+        adjustment_conflicts_opened: list[str] = []
+        adjustment_conflicts_resolved: list[str] = []
+        adjustment_indications_changed: list[str] = []
+        factors_lacking_support = 0
+        adjustment_engine = AdjustmentIntelligenceEngine(self.root)
+        for scenario_key in changed_adjustment_scenarios:
+            assignment_id, scenario = scenario_key.split("::", 1)
+            try:
+                analysis = adjustment_engine.build(assignment_id, scenario=scenario, overwrite=True)
+                delta_path = adjustment_store.output_dir(assignment_id, scenario) / "adjustment-delta.json"
+                delta = _map(read_json(delta_path)) if delta_path.exists() else {}
+                adjustment_builds.append(scenario_key)
+                adjustment_conflicts_opened.extend(f"{scenario_key}:{item}" for item in delta.get("conflicts_opened", []) or [])
+                adjustment_conflicts_resolved.extend(f"{scenario_key}:{item}" for item in delta.get("conflicts_resolved", []) or [])
+                adjustment_indications_changed.extend(f"{scenario_key}:{item}" for item in delta.get("indications_changed", []) or [])
+                factors_lacking_support += sum(1 for item in analysis.coverage.values() if _map(item).get("coverage") == "absent")
+            except Exception as exc:
+                adjustment_errors.append(f"{scenario_key}: {exc}")
+        stages.append(
+            _stage(
+                "Adjustment Intelligence",
+                {
+                    "adjustment_scenarios_detected": len(adjustment_input_checksums),
+                    "adjustment_scenarios_changed": len(changed_adjustment_scenarios),
+                    "adjustment_scenarios_built": len(adjustment_builds),
+                    "adjustment_conflicts_opened": len(adjustment_conflicts_opened),
+                    "adjustment_conflicts_resolved": len(adjustment_conflicts_resolved),
+                    "adjustment_indications_changed": len(adjustment_indications_changed),
+                    "factors_lacking_support": factors_lacking_support,
+                },
+                [f"Factors lacking adjustment support: {factors_lacking_support}"] if factors_lacking_support else [],
+                adjustment_errors,
+            )
+        )
+        errors.extend(adjustment_errors)
+
         try:
             operations = CanonicalOperationsEngine(self.root).build(save=True)
             operations_summary = operations.summary
@@ -360,7 +407,7 @@ class RealEstateDailyEngine:
             warning_count=len(warnings),
             error_count=len(errors),
             output_paths={**output_paths, "daily_report": str(self.store.report_md), "latest_run": str(self.store.latest_json)},
-            provenance={"engine": "RealEstateDailyEngine", "version": __version__, "canonical_counts": canonical_counts, "migration_applied": 0, "comparable_input_checksums": comparable_input_checksums if "comparable_input_checksums" in locals() else {}},
+            provenance={"engine": "RealEstateDailyEngine", "version": __version__, "canonical_counts": canonical_counts, "migration_applied": 0, "comparable_input_checksums": comparable_input_checksums if "comparable_input_checksums" in locals() else {}, "adjustment_input_checksums": adjustment_input_checksums if "adjustment_input_checksums" in locals() else {}, "adjustment_scenarios_built": adjustment_builds if "adjustment_builds" in locals() else [], "adjustment_conflicts_opened": adjustment_conflicts_opened if "adjustment_conflicts_opened" in locals() else [], "adjustment_conflicts_resolved": adjustment_conflicts_resolved if "adjustment_conflicts_resolved" in locals() else [], "adjustment_indications_changed": adjustment_indications_changed if "adjustment_indications_changed" in locals() else []},
             version=__version__,
         )
         delta = _delta(previous, run)
@@ -445,7 +492,7 @@ def render_real_estate_daily_report(run: RealEstateDailyRun, delta: JsonMap) -> 
     lines.append(f"- Canonical counts changed: `{delta.get('canonical_counts_changed', False)}`")
     lines.extend(["", "## Limitations", ""])
     lines.append("- This automation performs deterministic intake, identity, canonical, operations, and dashboard refresh only.")
-    lines.append("- It does not generate valuation opinions, select comparables, create adjustments, resolve conflicts, or apply migrations.")
+    lines.append("- It does not generate valuation opinions, select comparables or adjustment rates, resolve conflicts, change appraiser decisions, or apply migrations.")
     lines.extend(["", "## Provenance", ""])
     for key, value in run.output_paths.items():
         lines.append(f"- {key}: `{value}`")
@@ -528,6 +575,23 @@ def _comparable_input_checksums(store: ComparableStore, assignment_ids: list[str
                 except OSError:
                     parts.append(f"{path.name}:unreadable")
             checksums[f"{assignment_id}::{context.resolved_scenario}"] = _digest("|".join(parts))
+    return checksums
+
+
+def _adjustment_input_checksums(store: AdjustmentStore, assignment_ids: list[str]) -> JsonMap:
+    checksums: JsonMap = {}
+    for assignment_id in assignment_ids:
+        for scenario in store.scenario_ids(assignment_id):
+            paths = [store.input_path(assignment_id, scenario), store.decision_path(assignment_id, scenario)]
+            parts = []
+            for path in paths:
+                if not path.exists():
+                    continue
+                try:
+                    parts.append(f"{path.name}:{sha256(path.read_bytes()).hexdigest()}")
+                except OSError:
+                    parts.append(f"{path.name}:unreadable")
+            checksums[f"{assignment_id}::{scenario}"] = _digest("|".join(parts))
     return checksums
 
 

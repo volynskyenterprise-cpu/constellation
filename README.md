@@ -91,6 +91,28 @@ Legacy inputs remain readable as `default`. A legacy file is used for an explici
 
 Comparable Intelligence does not select final comparables, generate a value opinion, create appraisal adjustments, or replace professional judgment. Appraiser selection and exclusion are explicit local review-state actions.
 
+---
+
+# Adjustment Intelligence
+
+Adjustment Intelligence consumes one explicitly selected Comparable Intelligence scenario and calculates factual subject-to-comparable differences, governed market indications, descriptive ranges, coverage, conflicts, sensitivity, and review items.
+
+```bash
+python -m constellation real-estate adjustments create-template ASSIGNMENT_ID --scenario as_is
+python -m constellation real-estate adjustments build ASSIGNMENT_ID --scenario as_is --overwrite
+python -m constellation real-estate adjustments indications ASSIGNMENT_ID --scenario as_is
+python -m constellation real-estate adjustments select ASSIGNMENT_ID gross_living_area --scenario as_is --value 300 --unit dollars_per_square_foot --reason "Evidence reviewed." --confirm
+```
+
+Evidence and decisions remain isolated across `as_is`, `arv`, and safe custom scenarios. Governed matched pairs and grouped comparisons retain explicit arithmetic, provenance, unresolved differences, and limitations. Compatible indications receive descriptive range and dispersion statistics without outlier removal or automatic selection.
+
+The appraisal-grid sign convention is `subject value - comparable value`: an inferior comparable receives a positive application and a superior comparable receives a negative application. Application occurs only after an appraiser explicitly selects a rate. Raw arithmetic is retained separately from configured display rounding. Percentage and time-percentage calculations remain simple, transparent, and appraiser-selected.
+
+Adjustment values copied from an appraisal grid are classified as `appraiser_decision_reference`; they cannot circularly support themselves as independent market evidence. Sensitivity and gross/net percentages are mathematical diagnostics, not reconciliation rules.
+
+Adjustment Intelligence never selects a rate, final comparable, comparable weight, or value conclusion. It does not determine legality, permitting, completion, GLA treatment, feasibility, highest and best use, or USPAP compliance. See [Adjustment Intelligence v7.4](docs/adjustment-intelligence-v7.4.md).
+
+
 # Core Principles
 
 Constellation is built around six principles:
@@ -866,6 +888,7 @@ Extend Constellation's deterministic evidence-first operating model into valuati
 - v7.3.2 - Canonical Property-Type Normalization
 - v7.3.3 - Structured Address Equivalence
 - v7.3.4 - Expanded Scenario Subject Provenance
+- v7.4.0 - Adjustment Intelligence
 
 Primary question answered:
 

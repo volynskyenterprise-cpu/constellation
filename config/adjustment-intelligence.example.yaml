@@ -1,0 +1,17 @@
+adjustment_intelligence:
+  sign_convention: subject_minus_comparable
+  time_policy: simple_percentage_actual_days_365_2425
+  rate_rounding: none
+  adjustment_amount_nearest: 100
+  gross_review_threshold: 0.25
+  net_review_threshold: 0.15
+  methods:
+    - matched_pair
+    - grouped_comparison
+    - repeat_sale
+    - sensitivity_analysis
+    - market_extraction
+    - appraiser_entered_support
+    - external_study
+    - informational_reference
+  professional_boundary: Appraiser judgment is required; no rate, comparable weighting, reconciliation, or value conclusion is selected automatically.

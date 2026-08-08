@@ -881,3 +881,15 @@ Real Estate Intelligence
 Institutional Valuation Operating System
 
 Future domains may reuse the same architecture while preserving clear operational boundaries.
+
+### v7.4.0 Adjustment Intelligence
+
+Adjustment Intelligence implements the governed transition from comparable facts to adjustment support:
+
+`Assignment Intelligence → Comparable Intelligence → Adjustment Intelligence → Appraiser Decision → Deterministic Application → Appraiser Reconciliation`
+
+Each valuation scenario retains independent evidence, decisions, conflicts, history, fingerprints, and reports. The engine calculates factual subject-minus-comparable differences, transparent governed-pair and grouped indications, descriptive aggregation, coverage, sensitivity, and gross/net mathematical diagnostics. Appraisal-grid adjustment references are blocked from circularly serving as independent support.
+
+Only an explicitly confirmed appraiser decision may select a rate or record no adjustment. Deterministic application follows the appraisal-grid convention: an inferior comparable receives a positive adjustment and a superior comparable receives a negative adjustment. Raw arithmetic remains visible separately from presentation rounding.
+
+Adjustment Intelligence does not select rates, final comparables, weights, reconciliation, ARV, or market value. It makes no legality, permitting, completion, feasibility, GLA-treatment, highest-and-best-use, or USPAP determination. Full architecture, schema, CLI, outputs, privacy controls, and limitations are documented in `adjustment-intelligence-v7.4.md`.

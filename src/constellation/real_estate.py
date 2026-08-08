@@ -418,7 +418,8 @@ class RealEstateAssignmentStore:
         (directory / "assignment-brief.md").write_text(
             render_assignment_brief(snapshot)
             + _render_consolidation_section(self.root, snapshot.assignment.assignment_id)
-            + _render_comparable_section(self.root, snapshot.assignment.assignment_id),
+            + _render_comparable_section(self.root, snapshot.assignment.assignment_id)
+            + _render_adjustment_section(self.root, snapshot.assignment.assignment_id),
             encoding="utf-8",
         )
         (directory / "source-manifest.md").write_text(render_source_manifest(snapshot), encoding="utf-8")
@@ -631,6 +632,37 @@ def _render_comparable_section(root: Path, assignment_id: str) -> str:
             ]
         )
     lines.append("- Appraiser selection, adjustment development, reconciliation, and value conclusion remain outside automation.")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _render_adjustment_section(root: Path, assignment_id: str) -> str:
+    base = root / "outputs" / "real-estate" / "assignments" / assignment_id / "adjustments" / "scenarios"
+    paths = sorted(base.glob("*/adjustment-analysis.json")) if base.exists() else []
+    if not paths:
+        return "\n\n## Adjustment Intelligence\n\n- Adjustment Intelligence: unavailable\n- Appraiser-controlled decisions and market support remain scenario-specific.\n"
+    lines = ["", "## Adjustment Intelligence", ""]
+    for path in paths:
+        try:
+            data = read_json(path)
+        except Exception:
+            continue
+        counts = _map(data.get("counts"))
+        scenario = str(data.get("valuation_scenario") or path.parent.name)
+        lines.extend(
+            [
+                f"### {scenario.replace('_', ' ').title()}",
+                "",
+                f"- Factors with subject differences: `{counts.get('factors_with_differences', 0)}`",
+                f"- Factors with evidence: `{counts.get('factors_with_evidence', 0)}`",
+                f"- Factors with selected decisions: `{counts.get('factors_with_selected_decisions', 0)}`",
+                f"- Open conflicts: `{counts.get('open_conflicts', 0)}`",
+                f"- Review items: `{counts.get('review_items', 0)}`",
+                f"- Detailed report: `{path.with_suffix('.md')}`",
+                "",
+            ]
+        )
+    lines.append("- Adjustment Intelligence calculates evidence and deterministic applications only after explicit appraiser decisions; it does not reconcile value.")
     lines.append("")
     return "\n".join(lines)
 

@@ -1,0 +1,46 @@
+assignment_id: fictional-assignment-001
+valuation_scenario: as_is
+
+rounding:
+  adjustment_amount_nearest: 100
+
+adjustment_evidence:
+  gross_living_area:
+    candidate_rates:
+      - 250
+      - 300
+      - 350
+    evidence:
+      - evidence_id: fictional-gla-pair-001
+        method: matched_pair
+        source_type: appraiser_verified_pair
+        source_path: sources/fictional-pair-analysis.csv
+        evidence_classification: independent_market_evidence
+        verification_status: appraiser_verified
+        governed_pair: true
+        property_a: fictional-comp-001
+        property_b: fictional-comp-002
+        difference:
+          gross_living_area: 200
+        price_difference: 60000
+        unresolved_differences: []
+        notes: Fictional pair explicitly governed for this example.
+  pool:
+    evidence:
+      - evidence_id: fictional-pool-context-001
+        method: informational_reference
+        source_path: sources/fictional-pool-context.txt
+        evidence_classification: contextual_reference
+        verification_status: contextual_only
+        notes: Context only; this record cannot independently establish an adjustment.
+  condition:
+    evidence:
+      - evidence_id: fictional-grid-reference-001
+        method: appraiser_entered_support
+        source_type: appraisal_grid
+        source_path: sources/fictional-grid.csv
+        verification_status: decision_reference
+        indication:
+          value: 25000
+          unit: dollars_per_step
+        notes: Preserved as an appraiser decision reference, never circular independent support.

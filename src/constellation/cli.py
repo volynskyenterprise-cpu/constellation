@@ -10,6 +10,7 @@ from .ai_markets import AIMarketsBriefStore, AIMarketsCatalystStore, AIMarketsDe
 from .assignment_consolidation import AssignmentConsolidationEngine, AssignmentConsolidationError, AssignmentConsolidationStore
 from .canonical_assignments import MIGRATION_CATEGORIES, CanonicalAssignmentEngine, CanonicalAssignmentError, CanonicalAssignmentResolver, CanonicalAssignmentStore
 from .canonical_operations import CanonicalOperationsEngine, CanonicalOperationsError, CanonicalOperationsStore
+from .adjustment_intelligence import AdjustmentIntelligenceEngine, AdjustmentIntelligenceError, AdjustmentStore
 from .comparable_intelligence import ComparableIntelligenceEngine, ComparableIntelligenceError, ComparableStore
 from .cross_document import CrossDocumentAnalysisStore, CrossDocumentError
 from .daily import DailyPipelineError, DailyPipelineStore
@@ -481,6 +482,43 @@ def main(argv: list[str] | None = None) -> int:
     scenarios_initialize.add_argument("--from-legacy", action="store_true", help="Copy the preserved legacy input.")
     scenarios_initialize.add_argument("--confirm", action="store_true", help="Confirm the private local copy operation.")
     scenarios_initialize.add_argument("--overwrite-existing", action="store_true", help="Safely overwrite an existing target scenario input.")
+    real_estate_adjustments_parser = real_estate_subparsers.add_parser("adjustments", help="Build and inspect scenario-specific Adjustment Intelligence.")
+    real_estate_adjustments_subparsers = real_estate_adjustments_parser.add_subparsers(dest="real_estate_adjustments_command", required=True)
+    for command_name, help_text in [
+        ("build", "Build Adjustment Intelligence for one scenario."),
+        ("status", "Show Adjustment Intelligence status."),
+        ("factors", "List adjustment factors and coverage."),
+        ("evidence", "List governed adjustment evidence."),
+        ("indications", "List calculated adjustment indications."),
+        ("conflicts", "List adjustment conflicts."),
+        ("review-queue", "Show the adjustment review queue."),
+        ("export", "Print adjustment report paths."),
+        ("create-template", "Create a private adjustment-evidence template."),
+    ]:
+        adjustment_parser = real_estate_adjustments_subparsers.add_parser(command_name, help=help_text)
+        adjustment_parser.add_argument("assignment_id", help="Assignment ID or alias.")
+        adjustment_parser.add_argument("--scenario", required=True, help="Valuation scenario ID, such as as_is or arv.")
+        if command_name == "build":
+            adjustment_parser.add_argument("--overwrite", action="store_true", help="Overwrite generated adjustment outputs.")
+    adjustment_select = real_estate_adjustments_subparsers.add_parser("select", help="Record an explicit appraiser-selected adjustment rate.")
+    adjustment_select.add_argument("assignment_id", help="Assignment ID or alias.")
+    adjustment_select.add_argument("factor", help="Adjustment factor ID.")
+    adjustment_select.add_argument("--scenario", required=True, help="Valuation scenario ID.")
+    adjustment_select.add_argument("--value", type=float, required=True, help="Appraiser-selected rate or amount.")
+    adjustment_select.add_argument("--unit", required=True, help="Rate or amount unit.")
+    adjustment_select.add_argument("--reason", required=True, help="Appraiser rationale.")
+    adjustment_select.add_argument("--confirm", action="store_true", help="Confirm private decision-state mutation.")
+    adjustment_no = real_estate_adjustments_subparsers.add_parser("no-adjustment", help="Record an explicit appraiser no-adjustment decision.")
+    adjustment_no.add_argument("assignment_id", help="Assignment ID or alias.")
+    adjustment_no.add_argument("factor", help="Adjustment factor ID.")
+    adjustment_no.add_argument("--scenario", required=True, help="Valuation scenario ID.")
+    adjustment_no.add_argument("--reason", required=True, help="Appraiser rationale.")
+    adjustment_no.add_argument("--confirm", action="store_true", help="Confirm private decision-state mutation.")
+    adjustment_reset = real_estate_adjustments_subparsers.add_parser("reset-decision", help="Reset one private adjustment decision.")
+    adjustment_reset.add_argument("assignment_id", help="Assignment ID or alias.")
+    adjustment_reset.add_argument("factor", help="Adjustment factor ID.")
+    adjustment_reset.add_argument("--scenario", required=True, help="Valuation scenario ID.")
+    adjustment_reset.add_argument("--confirm", action="store_true", help="Confirm private decision-state mutation.")
     real_estate_intake_parser = real_estate_subparsers.add_parser("intake", help="Auto-ingest Real Estate assignments from structured local intake.")
     real_estate_intake_subparsers = real_estate_intake_parser.add_subparsers(dest="real_estate_intake_command", required=True)
     real_estate_intake_subparsers.add_parser("status", help="Show Real Estate intake status.")
@@ -1887,6 +1925,76 @@ def main(argv: list[str] | None = None) -> int:
                     if not state.conflicts:
                         print("No canonical identity conflicts.")
                     return 0
+            if args.real_estate_command == "adjustments":
+                resolution = _resolve_real_estate_assignment(args.root.resolve(), args.assignment_id)
+                if resolution.ambiguous:
+                    print(f"requested_alias: {args.assignment_id}")
+                    print("resolved: False")
+                    print("ambiguous: True")
+                    return 1
+                assignment_id = resolution.canonical_assignment_id if resolution.resolved else args.assignment_id
+                scenario = args.scenario
+                engine = AdjustmentIntelligenceEngine(args.root.resolve())
+                adjustment_store = AdjustmentStore(args.root.resolve())
+                command = args.real_estate_adjustments_command
+                if command == "create-template":
+                    path = adjustment_store.create_template(assignment_id, scenario)
+                    print(f"adjustment_template: {path}")
+                    print("warning: Private local adjustment evidence. Do not commit.")
+                    return 0
+                if command == "select":
+                    decision = engine.set_decision(assignment_id, args.factor, scenario=scenario, status="selected", value=args.value, unit=args.unit, reason=args.reason, confirm=bool(args.confirm))
+                    print(json.dumps(decision, indent=2, sort_keys=True))
+                    return 0
+                if command == "no-adjustment":
+                    decision = engine.set_decision(assignment_id, args.factor, scenario=scenario, status="no_adjustment", reason=args.reason, confirm=bool(args.confirm))
+                    print(json.dumps(decision, indent=2, sort_keys=True))
+                    return 0
+                if command == "reset-decision":
+                    decision = engine.reset_decision(assignment_id, args.factor, scenario=scenario, confirm=bool(args.confirm))
+                    print(json.dumps(decision, indent=2, sort_keys=True))
+                    return 0
+                if command == "build":
+                    data = engine.build(assignment_id, scenario=scenario, overwrite=bool(args.overwrite)).to_dict()
+                else:
+                    data = adjustment_store.load(assignment_id, scenario)
+                    if not data:
+                        raise AdjustmentIntelligenceError("No generated adjustment analysis exists; run adjustments build first.")
+                output = adjustment_store.output_dir(assignment_id, scenario)
+                if command in {"build", "status"}:
+                    counts = _map(data.get("counts"))
+                    print(f"assignment_id: {assignment_id}")
+                    print(f"valuation_scenario: {scenario}")
+                    for key in ("factors_with_differences", "factors_with_evidence", "indication_count", "factors_with_selected_decisions", "application_count", "open_conflicts", "review_items"):
+                        print(f"{key}: {counts.get(key, 0)}")
+                    print(f"report_path: {output / 'adjustment-analysis.md'}")
+                    return 0
+                if command == "factors":
+                    for factor in _map_list(data.get("factors", [])):
+                        coverage = _map(_map(data.get("coverage")).get(factor.get("factor_id")))
+                        print(f"{factor.get('factor_id')} basis={factor.get('adjustment_basis')} unit={factor.get('unit')} coverage={coverage.get('coverage')} decision={coverage.get('appraiser_decision_status')}")
+                    return 0
+                if command == "evidence":
+                    for item in _map_list(data.get("evidence", [])):
+                        print(f"{item.get('evidence_id')} factor={item.get('factor')} method={item.get('method')} classification={item.get('evidence_classification')} verification={item.get('verification_status')}")
+                    return 0
+                if command == "indications":
+                    for item in _map_list(data.get("indications", [])):
+                        print(f"{item.get('indication_id')} factor={item.get('factor')} amount={item.get('amount')} unit={item.get('unit')} method={item.get('method')} review={item.get('appraiser_review_status')}")
+                    return 0
+                if command == "conflicts":
+                    for item in _map_list(data.get("conflicts", [])):
+                        print(f"{item.get('severity')}: {item.get('conflict_type')} factor={item.get('factor')} status={item.get('status')} reason={item.get('reason')}")
+                    return 0
+                if command == "review-queue":
+                    for item in _map_list(data.get("review_queue", [])):
+                        print(f"{item.get('severity')}: {item.get('item_type')} factor={item.get('factor')} reason={item.get('reason')}")
+                    return 0
+                if command == "export":
+                    print(f"adjustment_analysis: {output / 'adjustment-analysis.md'}")
+                    print(f"adjustment_support: {output / 'adjustment-support.md'}")
+                    print(f"adjustment_review_queue: {output / 'adjustment-review-queue.md'}")
+                    return 0
             if args.real_estate_command == "comparables":
                 resolution = _resolve_real_estate_assignment(args.root.resolve(), args.assignment_id)
                 if resolution.ambiguous:
@@ -2084,7 +2192,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"source_manifest: {store.output_dir(assignment_id) / 'source-manifest.md'}")
                 print(f"evidence_index: {store.output_dir(assignment_id) / 'evidence-index.md'}")
                 return 0
-        except (RealEstateError, RealEstateDailyError, RealEstateIntakeError, AssignmentConsolidationError, CanonicalAssignmentError, CanonicalOperationsError, ComparableIntelligenceError) as exc:
+        except (RealEstateError, RealEstateDailyError, RealEstateIntakeError, AssignmentConsolidationError, CanonicalAssignmentError, CanonicalOperationsError, ComparableIntelligenceError, AdjustmentIntelligenceError) as exc:
             print(f"error: {exc}")
             return 1
     return 2
