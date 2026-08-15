@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .comparable_intelligence import ComparableStore, validate_scenario_id
+from .comparable_intelligence import ComparableStore, normalize_subject_value, subject_values_equivalent, validate_scenario_id
 from .io import read_json, write_json
 from .models import JsonMap
 from .real_estate import assignment_directory
@@ -37,9 +37,27 @@ DECISION_STATUSES = {"unreviewed", "selected", "deferred", "no_adjustment", "rej
 EVIDENCE_CLASSIFICATIONS = {
     "independent_market_evidence",
     "appraiser_decision_reference",
+    "derived_appraiser_decision_reference",
     "contextual_reference",
     "unsupported",
 }
+DECISION_REFERENCE_CLASSIFICATIONS = {"appraiser_decision_reference", "derived_appraiser_decision_reference"}
+SOURCE_GRID_FIELD_ALIASES = {
+    "gross_living_area": ["gross_living_area", "gla"],
+    "property_type": ["property_type"],
+    "lot_size": ["lot_size"],
+    "bedroom_count": ["bedroom_count", "bedrooms"],
+    "bathroom_count": ["bathroom_count", "bathrooms"],
+    "condition": ["condition"],
+    "quality": ["quality"],
+    "garage_count": ["garage_count", "garage_spaces"],
+    "parking_count": ["parking_count", "parking_spaces"],
+    "pool": ["pool"],
+    "accessory_unit": ["accessory_unit", "adu"],
+    "unit_count": ["unit_count", "units", "total_units"],
+}
+DEFAULT_SOURCE_RATE_ABSOLUTE_TOLERANCE = 1.0
+DEFAULT_SOURCE_RATE_RELATIVE_TOLERANCE_PERCENT = 1.0
 FACTOR_DEFINITIONS: JsonMap = {
     "market_conditions": {"field": "sale_date", "basis": "time_percentage", "unit": "percent_per_month"},
     "gross_living_area": {"field": "gross_living_area", "basis": "per_unit", "unit": "dollars_per_square_foot"},
@@ -229,7 +247,7 @@ class AdjustmentIntelligenceEngine:
         subject = _resolved_subject(comparable)
         factors = _factors(evidence_document, scenario)
         differences = _differences(subject, _list(comparable.get("comparables")), factors)
-        evidence, indications, evidence_reviews = _evidence_and_indications(evidence_document, comparable, scenario)
+        evidence, indications, evidence_reviews = _evidence_and_indications(evidence_document, comparable, scenario, subject)
         ranges, aggregation_conflicts, aggregation_reviews = _aggregate(indications)
         decisions = self.store.load_decisions(assignment_id, scenario)
         applications, diagnostics, application_reviews = _applications(subject, _list(comparable.get("comparables")), factors, decisions, evidence_document)
@@ -499,10 +517,13 @@ def _difference(factor: str, subject_value: Any, comparable_value: Any, subject:
     return None, "unavailable", "No deterministic difference rule is configured."
 
 
-def _evidence_and_indications(document: JsonMap, comparable: JsonMap, scenario: str) -> tuple[list[JsonMap], list[JsonMap], list[JsonMap]]:
+def _evidence_and_indications(document: JsonMap, comparable: JsonMap, scenario: str, subject: JsonMap | None = None) -> tuple[list[JsonMap], list[JsonMap], list[JsonMap]]:
     evidence_records: list[JsonMap] = []
     indications: list[JsonMap] = []
     reviews: list[JsonMap] = []
+    resolved_subject = subject if subject is not None else _resolved_subject(comparable)
+    governed_comparables = _list(comparable.get("comparables"))
+    rate_tolerance = _source_rate_tolerance(document)
     blocks = _map(document.get("adjustment_evidence"))
     for factor, block_value in blocks.items():
         if factor not in FACTOR_DEFINITIONS:
@@ -526,17 +547,27 @@ def _evidence_and_indications(document: JsonMap, comparable: JsonMap, scenario: 
                 "source_paths": source_paths,
                 "source_fingerprint": _digest(json.dumps(item, sort_keys=True, default=str)),
             }
+            if classification in DECISION_REFERENCE_CLASSIFICATIONS:
+                resolution, integrity_reviews = _decision_reference_integrity(
+                    record,
+                    resolved_subject,
+                    governed_comparables,
+                    scenario,
+                    rate_tolerance,
+                )
+                record["source_grid_resolution"] = resolution
+                record["decision_reference_usability"] = resolution["decision_reference_usability"]
+                reviews.extend(integrity_reviews)
             evidence_records.append(record)
             if method not in EVIDENCE_METHODS:
                 reviews.append(_review("unsupported_evidence_method", factor, f"Evidence {evidence_id} uses an unsupported method.", "medium", evidence_id=evidence_id))
                 continue
             if declared_scenario != scenario:
-                reviews.append(_review("scenario_mismatch", factor, f"Evidence {evidence_id} belongs to scenario '{declared_scenario}'.", "high", evidence_id=evidence_id))
                 continue
             if not source_paths:
                 reviews.append(_review("missing_provenance", factor, f"Evidence {evidence_id} has no source provenance.", "medium", evidence_id=evidence_id))
             if classification != "independent_market_evidence":
-                if classification == "appraiser_decision_reference":
+                if classification in DECISION_REFERENCE_CLASSIFICATIONS:
                     reviews.append(_review("circular_evidence_guard", factor, f"Evidence {evidence_id} is an appraiser decision reference and cannot independently support itself.", "medium", evidence_id=evidence_id))
                 continue
             indication, issue = _indication(record, comparable)
@@ -547,9 +578,340 @@ def _evidence_and_indications(document: JsonMap, comparable: JsonMap, scenario: 
     return evidence_records, indications, reviews
 
 
+def _source_rate_tolerance(document: JsonMap) -> JsonMap:
+    configured = _map(document.get("source_rate_consistency"))
+    absolute = _number(configured.get("absolute_tolerance"))
+    relative = _number(configured.get("relative_tolerance_percent"))
+    return {
+        "absolute_tolerance": absolute if absolute is not None and absolute >= 0 else DEFAULT_SOURCE_RATE_ABSOLUTE_TOLERANCE,
+        "relative_tolerance_percent": relative if relative is not None and relative >= 0 else DEFAULT_SOURCE_RATE_RELATIVE_TOLERANCE_PERCENT,
+    }
+
+
+def _decision_reference_integrity(
+    record: JsonMap,
+    resolved_subject: JsonMap,
+    governed_comparables: list[JsonMap],
+    scenario: str,
+    tolerance: JsonMap,
+) -> tuple[JsonMap, list[JsonMap]]:
+    source_grid, schema_origin = _source_grid_payload(record)
+    if not source_grid:
+        return {
+            "status": "unavailable",
+            "schema_origin": "unavailable",
+            "scenario_consistency": {"status": "unavailable", "field_comparisons": [], "mismatch_fields": []},
+            "comparable_set": {"status": "unavailable", "source_comparable_ids": [], "governed_comparable_ids": []},
+            "rate_consistency": {"status": "unavailable", "calculations": [], "tolerance": tolerance},
+            "decision_reference_usability": "clean_reference",
+        }, []
+
+    field_comparisons = _source_subject_comparisons(source_grid, resolved_subject)
+    grid_scenario = _text(source_grid.get("valuation_scenario"))
+    scenario_label_status = "unavailable" if not grid_scenario else "aligned" if grid_scenario == scenario else "mismatch"
+    mismatch_fields = [item["field"] for item in field_comparisons if item["status"] == "mismatch"]
+    comparable_set, comparable_reviews = _source_comparable_set(source_grid, governed_comparables, record)
+    rate_consistency, rate_reviews = _source_rate_consistency(record, source_grid, field_comparisons, tolerance)
+    scenario_mismatch = scenario_label_status == "mismatch" or bool(mismatch_fields)
+    if scenario_mismatch:
+        scenario_status = "mismatch"
+    elif scenario_label_status == "aligned" or any(item["status"] == "aligned" for item in field_comparisons):
+        scenario_status = "aligned"
+    elif field_comparisons:
+        scenario_status = "incomplete"
+    else:
+        scenario_status = "unavailable"
+    source_inconsistent = rate_consistency["status"] == "source_internal_inconsistency"
+    other_review = bool(comparable_reviews or rate_reviews)
+    if scenario_mismatch and source_inconsistent:
+        usability = "scenario_and_source_inconsistent"
+    elif scenario_mismatch:
+        usability = "scenario_inconsistent"
+    elif source_inconsistent:
+        usability = "internally_inconsistent"
+    elif other_review:
+        usability = "review_required"
+    else:
+        usability = "clean_reference"
+    resolution = {
+        "status": "review_required" if usability != "clean_reference" else "available",
+        "schema_origin": schema_origin,
+        "source_grid_scenario": grid_scenario,
+        "scenario_consistency": {
+            "status": scenario_status,
+            "source_scenario_label_status": scenario_label_status,
+            "requested_scenario": scenario,
+            "field_comparisons": field_comparisons,
+            "mismatch_fields": mismatch_fields,
+        },
+        "comparable_set": comparable_set,
+        "rate_consistency": rate_consistency,
+        "provenance": {
+            "source_paths": record.get("source_paths", []),
+            "source_page": record.get("source_page"),
+            "source_location": record.get("source_location") or record.get("grid_location"),
+            "source_checksum": record.get("source_checksum") or record.get("source_sha256"),
+            "verification_status": record.get("verification_status"),
+        },
+        "decision_reference_usability": usability,
+        "limitations": [
+            "Source-grid diagnostics describe the integrity of an existing decision reference; they are not independent market evidence.",
+            "No evidence is moved between scenarios and no rate is corrected or selected automatically.",
+        ],
+    }
+    return resolution, comparable_reviews + rate_reviews
+
+
+def _source_grid_payload(record: JsonMap) -> tuple[JsonMap, str]:
+    configured = _map(record.get("source_grid"))
+    if configured:
+        return configured, "source_grid"
+    legacy_subject = record.get("grid_subject_gross_living_area")
+    legacy_rows = _list(record.get("grid_entries"))
+    legacy_rate = record.get("explicit_displayed_rate")
+    if legacy_subject is None and not legacy_rows and legacy_rate is None:
+        return {}, "unavailable"
+    comparables = []
+    for index, value in enumerate(legacy_rows):
+        row = _map(value)
+        comparables.append(
+            {
+                "source_comparable_id": row.get("source_comparable_id") or row.get("comparable_display") or f"source-grid-row-{index + 1}",
+                "property_address": row.get("comparable_display"),
+                "gross_living_area": row.get("comparable_gross_living_area"),
+                "displayed_adjustment_amount": row.get("displayed_adjustment_amount"),
+                "raw_displayed_adjustment": row.get("raw_displayed_adjustment"),
+            }
+        )
+    return {
+        "valuation_scenario": record.get("valuation_scenario"),
+        "subject": {"gross_living_area": legacy_subject},
+        "comparables": comparables,
+        "displayed_adjustment": {
+            "factor": record.get("factor"),
+            "explicit_rate": legacy_rate,
+            "rate_unit": record.get("rate_unit"),
+        },
+    }, "legacy_top_level_grid_fields"
+
+
+def _source_subject_comparisons(source_grid: JsonMap, resolved_subject: JsonMap) -> list[JsonMap]:
+    source_subject = _map(source_grid.get("subject"))
+    comparisons = []
+    for canonical_field, aliases in SOURCE_GRID_FIELD_ALIASES.items():
+        raw_field_name = next((alias for alias in aliases if alias in source_subject), "")
+        if not raw_field_name:
+            continue
+        raw_source_value = source_subject.get(raw_field_name)
+        normalized_source = normalize_subject_value(canonical_field, raw_source_value)
+        raw_resolved = resolved_subject.get(canonical_field)
+        normalized_resolved = normalize_subject_value(canonical_field, raw_resolved)
+        if normalized_source is None or normalized_resolved is None:
+            status = "incomplete"
+            reason = "One explicit comparison value could not be normalized or the governed scenario value is unavailable."
+        elif subject_values_equivalent(canonical_field, normalized_source, normalized_resolved):
+            status = "aligned"
+            reason = "Explicit normalized source-grid and governed scenario values are equivalent."
+        else:
+            status = "mismatch"
+            reason = "Explicit normalized source-grid and governed scenario values differ materially."
+        comparisons.append(
+            {
+                "field": canonical_field,
+                "raw_source_field": raw_field_name,
+                "raw_source_value": raw_source_value,
+                "normalized_source_value": normalized_source,
+                "resolved_scenario_value": raw_resolved,
+                "normalized_resolved_scenario_value": normalized_resolved,
+                "status": status,
+                "reason": reason,
+            }
+        )
+    return comparisons
+
+
+def _source_comparable_set(source_grid: JsonMap, governed_comparables: list[JsonMap], record: JsonMap) -> tuple[JsonMap, list[JsonMap]]:
+    governed_ids = {_text(item.get("comparable_id")) for item in governed_comparables if _text(item.get("comparable_id"))}
+    source_rows = _list(source_grid.get("comparables"))
+    if not source_rows:
+        return {"status": "unavailable", "source_comparable_ids": [], "governed_comparable_ids": sorted(governed_ids), "resolved_links": [], "unresolved_claimed_links": []}, []
+    source_ids, resolved, unresolved_claims = [], [], []
+    normalized_rows = []
+    for index, value in enumerate(source_rows):
+        row = _map(value)
+        source_id = _text(row.get("source_comparable_id") or row.get("comparable_id") or f"source-grid-row-{index + 1}")
+        claimed = _text(row.get("governed_comparable_id") or row.get("comparable_id"))
+        source_ids.append(source_id)
+        if claimed and claimed in governed_ids:
+            resolved.append(claimed)
+        elif claimed:
+            unresolved_claims.append(claimed)
+        normalized_fields = {}
+        for field_name, aliases in SOURCE_GRID_FIELD_ALIASES.items():
+            raw_name = next((alias for alias in aliases if alias in row), "")
+            if raw_name:
+                normalized_fields[field_name] = {
+                    "raw_field_name": raw_name,
+                    "raw_value": row.get(raw_name),
+                    "normalized_value": normalize_subject_value(field_name, row.get(raw_name)),
+                }
+        normalized_rows.append(
+            {
+                "source_comparable_id": source_id,
+                "claimed_governed_comparable_id": claimed,
+                "property_address": row.get("property_address") or row.get("address"),
+                "normalized_fields": normalized_fields,
+                "displayed_adjustment_amount": row.get("displayed_adjustment_amount"),
+            }
+        )
+    incidental_matches = [source_id for source_id in source_ids if source_id in governed_ids]
+    all_matches = sorted(set(resolved + incidental_matches))
+    if all_matches and len(all_matches) == len(source_rows):
+        status = "aligned"
+    elif all_matches:
+        status = "partial_overlap"
+    else:
+        status = "distinct_source_set"
+    reviews = []
+    if unresolved_claims:
+        reviews.append(
+            _review(
+                "unresolved_governed_comparable_link",
+                _text(record.get("factor")),
+                f"Decision reference {record.get('evidence_id')} claims governed comparable linkage that does not resolve: {', '.join(sorted(set(unresolved_claims)))}.",
+                "medium",
+                evidence_id=record.get("evidence_id"),
+            )
+        )
+    return {
+        "status": status,
+        "source_comparable_ids": source_ids,
+        "governed_comparable_ids": sorted(governed_ids),
+        "resolved_links": all_matches,
+        "unresolved_claimed_links": sorted(set(unresolved_claims)),
+        "comparables": normalized_rows,
+        "automatic_import": False,
+    }, reviews
+
+
+def _source_rate_consistency(record: JsonMap, source_grid: JsonMap, field_comparisons: list[JsonMap], tolerance: JsonMap) -> tuple[JsonMap, list[JsonMap]]:
+    factor = _text(record.get("factor"))
+    field_name = _text(_map(FACTOR_DEFINITIONS.get(factor)).get("field"))
+    displayed = _map(source_grid.get("displayed_adjustment"))
+    explicit_rate = _number(displayed.get("explicit_rate"))
+    unit = _text(displayed.get("unit") or displayed.get("rate_unit") or _map(FACTOR_DEFINITIONS.get(factor)).get("unit"))
+    subject_comparison = next((item for item in field_comparisons if item.get("field") == field_name), {})
+    source_subject_value = _number(_map(subject_comparison).get("normalized_source_value"))
+    calculations, reviews, derived_rates = [], [], []
+    for index, value in enumerate(_list(source_grid.get("comparables"))):
+        row = _map(value)
+        raw_field_name = next((alias for alias in SOURCE_GRID_FIELD_ALIASES.get(field_name, [field_name]) if alias in row), "")
+        comparable_value = _number(normalize_subject_value(field_name, row.get(raw_field_name))) if raw_field_name else None
+        amount = _number(row.get("displayed_adjustment_amount"))
+        source_comparable_id = _text(row.get("source_comparable_id") or row.get("comparable_id") or f"source-grid-row-{index + 1}")
+        calculation = {
+            "source_comparable_id": source_comparable_id,
+            "raw_comparable_field": raw_field_name,
+            "source_subject_value": source_subject_value,
+            "source_comparable_value": comparable_value,
+            "displayed_adjustment_amount": amount,
+            "difference": None,
+            "derived_rate": None,
+            "difference_sign": "unavailable",
+            "adjustment_sign": "unavailable",
+            "status": "incomplete",
+            "diagnostic_classification": "derived_appraiser_decision_reference_diagnostic",
+        }
+        if source_subject_value is not None and comparable_value is not None and amount is not None:
+            difference = source_subject_value - comparable_value
+            calculation["difference"] = difference
+            calculation["difference_sign"] = _sign_name(difference)
+            calculation["adjustment_sign"] = _sign_name(amount)
+            if difference == 0:
+                calculation["status"] = "zero_difference"
+                reviews.append(
+                    _review(
+                        "source_grid_zero_difference",
+                        factor,
+                        f"Decision reference {record.get('evidence_id')} has a zero source-grid difference for {source_comparable_id}; no diagnostic rate was derived.",
+                        "medium",
+                        evidence_id=record.get("evidence_id"),
+                    )
+                )
+            else:
+                derived_rate = amount / difference
+                calculation["derived_rate"] = derived_rate
+                calculation["status"] = "calculated"
+                if explicit_rate is not None:
+                    calculation["explicit_rate_difference"] = derived_rate - explicit_rate
+                    calculation["within_tolerance"] = _rates_within_tolerance(derived_rate, explicit_rate, tolerance)
+                    calculation["amount_at_explicit_rate"] = difference * explicit_rate
+                    calculation["amount_variance_from_explicit_rate"] = amount - (difference * explicit_rate)
+                derived_rates.append(derived_rate)
+        calculations.append(calculation)
+    aggregate = {
+        "count": len(derived_rates),
+        "minimum": min(derived_rates) if derived_rates else None,
+        "maximum": max(derived_rates) if derived_rates else None,
+        "median": statistics.median(derived_rates) if derived_rates else None,
+        "mutually_consistent_within_tolerance": _derived_rates_consistent(derived_rates, tolerance),
+    }
+    explicit_consistent = None
+    if explicit_rate is not None and derived_rates:
+        explicit_consistent = all(_rates_within_tolerance(rate, explicit_rate, tolerance) for rate in derived_rates)
+    materially_inconsistent = bool(derived_rates) and (
+        explicit_consistent is False or aggregate["mutually_consistent_within_tolerance"] is False
+    )
+    if materially_inconsistent:
+        status = "source_internal_inconsistency"
+    elif explicit_rate is not None and derived_rates:
+        status = "aligned"
+    elif derived_rates:
+        status = "derived_only"
+    elif explicit_rate is not None:
+        status = "explicit_only"
+    elif calculations:
+        status = "incomplete"
+    else:
+        status = "unavailable"
+    return {
+        "status": status,
+        "factor": factor,
+        "explicit_rate": explicit_rate,
+        "unit": unit,
+        "calculations": calculations,
+        "derived_rate_summary": aggregate,
+        "explicit_rate_consistent_with_grid_arithmetic": explicit_consistent,
+        "tolerance": tolerance,
+        "independent_market_evidence": False,
+        "rate_selected": False,
+    }, reviews
+
+
+def _rates_within_tolerance(left: float, right: float, tolerance: JsonMap) -> bool:
+    absolute = float(tolerance["absolute_tolerance"])
+    relative = abs(float(right)) * float(tolerance["relative_tolerance_percent"]) / 100.0
+    return abs(float(left) - float(right)) <= max(absolute, relative)
+
+
+def _derived_rates_consistent(values: list[float], tolerance: JsonMap) -> bool | None:
+    if not values:
+        return None
+    if len(values) == 1:
+        return True
+    reference = statistics.median(values)
+    return all(_rates_within_tolerance(value, reference, tolerance) for value in values)
+
+
+def _sign_name(value: float) -> str:
+    return "positive" if value > 0 else "negative" if value < 0 else "zero"
+
+
 def _classification(item: JsonMap) -> str:
     declared = _text(item.get("evidence_classification"))
     source_type = _text(item.get("source_type")).lower()
+    if declared in DECISION_REFERENCE_CLASSIFICATIONS:
+        return declared
     if source_type in {"appraisal_grid", "appraisal_grid_export", "subject_appraisal", "current_appraisal_adjustment"}:
         return "appraiser_decision_reference"
     if declared in EVIDENCE_CLASSIFICATIONS:
@@ -755,8 +1117,56 @@ def _sensitivity(subject: JsonMap, comparables: list[JsonMap], document: JsonMap
 def _evidence_conflicts(evidence: list[JsonMap], indications: list[JsonMap], decisions: JsonMap, ranges: list[JsonMap], scenario: str) -> list[JsonMap]:
     conflicts = []
     for item in evidence:
-        if item.get("valuation_scenario") != scenario:
-            conflicts.append(_conflict("scenario_mismatch", item["factor"], "Adjustment evidence belongs to a different scenario.", [item]))
+        resolution = _map(item.get("source_grid_resolution"))
+        scenario_detail = _map(resolution.get("scenario_consistency"))
+        declared_mismatch = item.get("valuation_scenario") != scenario
+        structured_mismatch = scenario_detail.get("status") == "mismatch"
+        if declared_mismatch or structured_mismatch:
+            mismatches = _list(scenario_detail.get("field_comparisons"))
+            mismatches = [value for value in mismatches if _map(value).get("status") == "mismatch"]
+            reason = (
+                f"Decision-reference source {item.get('evidence_id')} is labeled for scenario '{item.get('valuation_scenario')}', "
+                f"but its structured source-grid facts differ from the resolved '{scenario}' scenario. "
+                "Source/scenario consistency requires appraiser review; the evidence remains attached to its declared scenario."
+                if structured_mismatch
+                else f"Adjustment evidence {item.get('evidence_id')} belongs to scenario '{item.get('valuation_scenario')}', not '{scenario}'."
+            )
+            conflicts.append(
+                _source_integrity_conflict(
+                    "scenario_mismatch",
+                    item,
+                    scenario,
+                    reason,
+                    {
+                        "declared_evidence_scenario": item.get("valuation_scenario"),
+                        "source_grid_scenario": resolution.get("source_grid_scenario"),
+                        "field_comparisons": mismatches,
+                        "resolved_scenario_value": mismatches[0].get("normalized_resolved_scenario_value") if len(mismatches) == 1 else None,
+                        "source_grid_value": mismatches[0].get("normalized_source_value") if len(mismatches) == 1 else None,
+                    },
+                )
+            )
+        rate_detail = _map(resolution.get("rate_consistency"))
+        if rate_detail.get("status") == "source_internal_inconsistency":
+            conflicts.append(
+                _source_integrity_conflict(
+                    "source_internal_inconsistency",
+                    item,
+                    scenario,
+                    (
+                        f"Decision-reference source {item.get('evidence_id')} contains explicit rate or row arithmetic that is not mutually consistent within the configured tolerance. "
+                        "Appraiser review is required; no rate is corrected or selected."
+                    ),
+                    {
+                        "explicit_source_rate": rate_detail.get("explicit_rate"),
+                        "derived_diagnostic_rates": [value.get("derived_rate") for value in _list(rate_detail.get("calculations")) if _map(value).get("derived_rate") is not None],
+                        "unit": rate_detail.get("unit"),
+                        "calculations": rate_detail.get("calculations", []),
+                        "derived_rate_summary": rate_detail.get("derived_rate_summary", {}),
+                        "tolerance": rate_detail.get("tolerance", {}),
+                    },
+                )
+            )
     range_map = {item["factor"]: item for item in ranges}
     for factor, raw in _map(decisions.get("decisions")).items():
         decision = _map(raw)
@@ -820,7 +1230,7 @@ def _review_queue(factors: list[JsonMap], differences: list[JsonMap], evidence: 
         if has_difference and not _map(decision_map.get(factor_id)).get("status"):
             reviews.append(_review("adjustment_decision_unreviewed", factor_id, "Adjustment decision remains explicitly unreviewed.", "low"))
     for conflict in conflicts:
-        reviews.append(_review(_text(conflict.get("conflict_type")), _text(conflict.get("factor")), _text(conflict.get("reason")), _text(conflict.get("severity") or "medium"), conflict_id=conflict.get("conflict_id")))
+        reviews.append(_review(_text(conflict.get("conflict_type")), _text(conflict.get("factor")), _text(conflict.get("reason")), _text(conflict.get("severity") or "medium"), conflict_id=conflict.get("conflict_id"), evidence_id=conflict.get("evidence_id")))
     unique: dict[str, JsonMap] = {}
     for item in reviews:
         key = json.dumps({key: item.get(key) for key in ("item_type", "factor", "evidence_id", "conflict_id", "reason")}, sort_keys=True)
@@ -834,6 +1244,34 @@ def _review(item_type: str, factor: str, reason: str, severity: str, **extra: An
 
 def _conflict(conflict_type: str, factor: str, reason: str, assertions: list[JsonMap]) -> JsonMap:
     return {"conflict_id": f"adjustment_conflict_{_digest(conflict_type + factor + json.dumps(assertions, sort_keys=True, default=str))}", "conflict_type": conflict_type, "factor": factor, "reason": reason, "severity": "medium", "status": "open", "assertions": assertions}
+
+
+def _source_integrity_conflict(conflict_type: str, evidence: JsonMap, scenario: str, reason: str, details: JsonMap) -> JsonMap:
+    stable = {
+        "conflict_type": conflict_type,
+        "evidence_id": evidence.get("evidence_id"),
+        "factor": evidence.get("factor"),
+        "scenario": scenario,
+        "details": details,
+    }
+    return {
+        "conflict_id": f"adjustment_conflict_{_digest(json.dumps(stable, sort_keys=True, default=str))}",
+        "conflict_type": conflict_type,
+        "evidence_id": evidence.get("evidence_id"),
+        "factor": evidence.get("factor"),
+        "scenario": scenario,
+        "severity": "high",
+        "status": "open",
+        "reason": reason,
+        "source_path": _text(evidence.get("source_path")),
+        "source_paths": evidence.get("source_paths", []),
+        "source_page": evidence.get("source_page"),
+        "source_location": evidence.get("source_location") or evidence.get("grid_location"),
+        "verification_status": evidence.get("verification_status"),
+        "evidence_classification": evidence.get("evidence_classification"),
+        "limitations": _list(_map(evidence.get("source_grid_resolution")).get("limitations")),
+        **details,
+    }
 
 
 def adjustment_delta(previous: JsonMap, current: JsonMap) -> JsonMap:
@@ -885,6 +1323,30 @@ def render_analysis_markdown(data: JsonMap) -> str:
     lines.extend(["", "## 5. Market Evidence by Factor", ""])
     for item in _list(data.get("evidence")):
         lines.append(f"- {item.get('factor')} / `{item.get('evidence_id')}` method=`{item.get('method')}` classification=`{item.get('evidence_classification')}` source(s)=`{'; '.join(_strings(item.get('source_paths'))) or 'unavailable'}`")
+    decision_references = [item for item in _list(data.get("evidence")) if item.get("evidence_classification") in DECISION_REFERENCE_CLASSIFICATIONS]
+    lines.extend(["", "### Existing Appraisal Decision-Reference Integrity", ""])
+    if not decision_references:
+        lines.append("- No appraisal decision references are recorded.")
+    for item in decision_references:
+        resolution = _map(item.get("source_grid_resolution"))
+        scenario_detail = _map(resolution.get("scenario_consistency"))
+        comparable_detail = _map(resolution.get("comparable_set"))
+        rate_detail = _map(resolution.get("rate_consistency"))
+        derived = _map(rate_detail.get("derived_rate_summary"))
+        lines.extend(
+            [
+                f"- `{item.get('evidence_id')}` classification=`{item.get('evidence_classification')}` usability=`{item.get('decision_reference_usability', 'clean_reference')}`",
+                f"  - Scenario label: `{resolution.get('source_grid_scenario') or item.get('valuation_scenario') or 'unavailable'}`; source/scenario status: `{scenario_detail.get('status', 'unavailable')}`",
+                f"  - Comparable-set status: `{comparable_detail.get('status', 'unavailable')}`; no automatic import or pair approval",
+                f"  - Explicit source rate: `{rate_detail.get('explicit_rate')}` {rate_detail.get('unit') or ''}; grid arithmetic median: `{derived.get('median')}`; integrity status: `{rate_detail.get('status', 'unavailable')}`",
+                f"  - Source: `{'; '.join(_strings(item.get('source_paths'))) or 'unavailable'}` page=`{item.get('source_page')}` location=`{item.get('source_location') or item.get('grid_location')}`",
+                "  - Decision reference only; no independent market support, rate selection, source correction, or scenario move is generated.",
+            ]
+        )
+        for comparison in _list(scenario_detail.get("field_comparisons")):
+            detail = _map(comparison)
+            if detail.get("status") == "mismatch":
+                lines.append(f"  - {detail.get('field')}: resolved scenario=`{detail.get('normalized_resolved_scenario_value')}` source grid=`{detail.get('normalized_source_value')}` — review required")
     lines.extend(["", "## 6. Matched-Pair Evidence", ""])
     for item in _list(data.get("indications")):
         if item.get("method") == "matched_pair":
@@ -913,9 +1375,9 @@ def render_analysis_markdown(data: JsonMap) -> str:
     lines.extend(["", "## 13. Gross/Net Adjustment Diagnostics", ""])
     lines.extend(f"- {item.get('comparable_id')}: gross `{item.get('gross_adjustment_percentage')}` net `{item.get('net_adjustment_percentage')}` (mathematical diagnostic only)." for item in _list(data.get("diagnostics")))
     lines.extend(["", "## 14. Adjustment Conflicts", ""])
-    lines.extend(f"- {item.get('severity')}: {item.get('factor')} — {item.get('reason')}" for item in _list(data.get("conflicts")))
+    lines.extend(f"- {item.get('severity')}: {item.get('factor')} / `{item.get('conflict_type')}` evidence=`{item.get('evidence_id')}` — {item.get('reason')}" for item in _list(data.get("conflicts")))
     lines.extend(["", "## 15. Review Queue", ""])
-    lines.extend(f"- {item.get('severity')}: {item.get('item_type')} / {item.get('factor')} — {item.get('reason')}" for item in _list(data.get("review_queue")))
+    lines.extend(f"- {item.get('severity')}: {item.get('item_type')} / {item.get('factor')} evidence=`{item.get('evidence_id')}` — {item.get('reason')}" for item in _list(data.get("review_queue")))
     lines.extend(["", "## 16. Provenance", ""])
     for key, value in _map(data.get("provenance")).items():
         lines.append(f"- {key}: `{value}`")
@@ -938,6 +1400,18 @@ def _support_payload(data: JsonMap) -> JsonMap:
             }
             for factor, item in ranges.items()
         },
+        "decision_reference_integrity": [
+            {
+                "evidence_id": item.get("evidence_id"),
+                "factor": item.get("factor"),
+                "classification": item.get("evidence_classification"),
+                "usability": item.get("decision_reference_usability"),
+                "source_grid_resolution": item.get("source_grid_resolution"),
+                "independent_market_support_generated": False,
+            }
+            for item in _list(data.get("evidence"))
+            if item.get("evidence_classification") in DECISION_REFERENCE_CLASSIFICATIONS
+        ],
         "limitations": data.get("limitations", []),
     }
 
@@ -954,6 +1428,17 @@ def render_support_markdown(data: JsonMap) -> str:
     lines = ["# Adjustment Support", "", f"Assignment: `{data.get('assignment_id')}`", f"Scenario: `{data.get('valuation_scenario')}`", ""]
     for factor, detail in _map(payload.get("factors")).items():
         lines.extend([f"## {factor.replace('_', ' ').title()}", "", _text(_map(detail).get("support_statement")), ""])
+    lines.extend(["## Existing Appraisal Decision References", ""])
+    references = _list(payload.get("decision_reference_integrity"))
+    if not references:
+        lines.append("- None recorded.")
+    for reference in references:
+        item = _map(reference)
+        resolution = _map(item.get("source_grid_resolution"))
+        rate = _map(resolution.get("rate_consistency"))
+        scenario_detail = _map(resolution.get("scenario_consistency"))
+        lines.append(f"- `{item.get('evidence_id')}`: classification=`{item.get('classification')}`, usability=`{item.get('usability')}`, scenario integrity=`{scenario_detail.get('status', 'unavailable')}`, rate integrity=`{rate.get('status', 'unavailable')}`. No independent market support is generated from this source.")
+    lines.append("")
     lines.extend(["## Professional Boundary", "", "- Evidence summaries distinguish calculated market indications from explicit appraiser decisions.", "- No final rate, comparable weight, reconciliation, or value conclusion is generated."])
     return "\n".join(lines).rstrip() + "\n"
 
@@ -961,7 +1446,7 @@ def render_support_markdown(data: JsonMap) -> str:
 def render_review_markdown(data: JsonMap) -> str:
     lines = ["# Adjustment Review Queue", "", f"Assignment: `{data.get('assignment_id')}`", f"Scenario: `{data.get('valuation_scenario')}`", ""]
     for item in _list(data.get("review_queue")):
-        lines.append(f"- {item.get('severity')}: `{item.get('item_type')}` factor=`{item.get('factor')}` — {item.get('reason')}")
+        lines.append(f"- {item.get('severity')}: `{item.get('item_type')}` factor=`{item.get('factor')}` evidence=`{item.get('evidence_id')}` — {item.get('reason')}")
     lines.extend(["", "## Professional Boundary", "", "- Review items do not select adjustment rates or make legality, permitting, GLA-treatment, comparable-selection, reconciliation, or value conclusions."])
     return "\n".join(lines).rstrip() + "\n"
 
@@ -972,6 +1457,10 @@ valuation_scenario: {scenario}
 
 rounding:
   adjustment_amount_nearest: 100
+
+source_rate_consistency:
+  absolute_tolerance: 1.0
+  relative_tolerance_percent: 1.0
 
 adjustment_evidence:
   gross_living_area:

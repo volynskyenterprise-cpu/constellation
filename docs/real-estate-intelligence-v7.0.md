@@ -893,3 +893,11 @@ Each valuation scenario retains independent evidence, decisions, conflicts, hist
 Only an explicitly confirmed appraiser decision may select a rate or record no adjustment. Deterministic application follows the appraisal-grid convention: an inferior comparable receives a positive adjustment and a superior comparable receives a negative adjustment. Raw arithmetic remains visible separately from presentation rounding.
 
 Adjustment Intelligence does not select rates, final comparables, weights, reconciliation, ARV, or market value. It makes no legality, permitting, completion, feasibility, GLA-treatment, highest-and-best-use, or USPAP determination. Full architecture, schema, CLI, outputs, privacy controls, and limitations are documented in `adjustment-intelligence-v7.4.md`.
+
+### v7.4.1 Adjustment Source Scenario Consistency
+
+Adjustment decision references may preserve structured facts from the source grid separately from the governed scenario subject. Explicit source-grid facts are normalized and compared deterministically with the resolved scenario. Material differences open high-severity scenario-mismatch conflicts while the evidence remains attached to its source-declared scenario and remains a decision reference.
+
+Displayed source-grid amounts also receive transparent row arithmetic. Derived diagnostic rates are compared with an explicitly displayed rate using conservative absolute and relative tolerances. Material disagreements create a source-internal-consistency conflict; no number is corrected, selected, or treated as independent market evidence. Supplemental comparable sets are reported administratively and are never imported or approved automatically.
+
+These controls describe source integrity only. They do not determine which scenario the appraiser intended, alter appraisal data, approve paired sales, select rates or comparables, apply adjustments, reconcile value, or make legality, permitting, completion, feasibility, GLA-treatment, or valuation conclusions.

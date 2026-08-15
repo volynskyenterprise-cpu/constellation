@@ -12,6 +12,7 @@
 - Nested Subject Evidence Compatibility is complete in v7.3.5; keep all four alternate-evidence layouts readable without source rewrites or cross-field inference.
 - Alternate Evidence Integrity Hardening is complete in v7.3.6; keep valid empty alternates quiet, retain scoped multi-path provenance, preserve byte-stable review state on no-op builds, and expose schema provenance in assignment reports.
 - Adjustment Intelligence core is complete in v7.4.0; keep rate selection, comparable weighting, and reconciliation appraiser-controlled, and retain advanced statistical studies and MLS adapters as future work.
+- Adjustment Source Scenario Consistency is complete in v7.4.1; keep structured source-grid mismatches and arithmetic discrepancies reviewable without moving evidence, correcting source data, selecting rates, or creating market support.
 - Retain future MLS/export adapters as optional local connectors, not core requirements.
 - Keep automatic evening Smart Sync preview scheduling as a future optional enhancement; commit and push remain approval-gated.
 - Add connector warning history retention and comparison across Morning runs.

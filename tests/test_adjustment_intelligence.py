@@ -245,6 +245,72 @@ adjustment_evidence:
         )
         return path
 
+    def _write_source_grid_reference(
+        self,
+        *,
+        source_subject_gla: float | None = 1500,
+        explicit_rate: float | None = 325,
+        rows: list[tuple[str, float, float, str | None]] | None = None,
+        source_scenario: str = "as_is",
+        evidence_scenario: str = "as_is",
+        evidence_classification: str = "appraiser_decision_reference",
+        source_property_type: str | None = None,
+        absolute_tolerance: float = 1.0,
+        relative_tolerance_percent: float = 1.0,
+    ) -> Path:
+        rows = rows if rows is not None else [("supplemental-source-1", 1300, 65000, None)]
+        subject_lines = []
+        if source_subject_gla is not None:
+            subject_lines.append(f"            gross_living_area: {source_subject_gla}")
+        if source_property_type is not None:
+            subject_lines.append(f"            property_type: {source_property_type}")
+        row_lines = []
+        for source_id, gla, amount, governed_id in rows:
+            row_lines.extend(
+                [
+                    f"            - source_comparable_id: {source_id}",
+                    *( [f"              governed_comparable_id: {governed_id}"] if governed_id else [] ),
+                    f"              gross_living_area: {gla}",
+                    f"              displayed_adjustment_amount: {amount}",
+                ]
+            )
+        displayed_rate = f"            explicit_rate: {explicit_rate}" if explicit_rate is not None else ""
+        path = self.store.input_path(self.assignment_id, self.scenario)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            f"""assignment_id: {self.assignment_id}
+valuation_scenario: {self.scenario}
+source_rate_consistency:
+  absolute_tolerance: {absolute_tolerance}
+  relative_tolerance_percent: {relative_tolerance_percent}
+adjustment_evidence:
+  gross_living_area:
+    evidence:
+      - evidence_id: fictional-source-grid-reference
+        method: informational_reference
+        source_type: appraisal_grid_export
+        source_path: sources/fictional-grid.pdf
+        source_page: 12
+        source_location: Supplemental fictional grid, living area row
+        source_checksum: fictional-checksum
+        verification_status: source_reported
+        evidence_classification: {evidence_classification}
+        valuation_scenario: {evidence_scenario}
+        source_grid:
+          valuation_scenario: {source_scenario}
+          subject:
+{chr(10).join(subject_lines) if subject_lines else '            unavailable: null'}
+          comparables:
+{chr(10).join(row_lines)}
+          displayed_adjustment:
+            factor: gross_living_area
+{displayed_rate}
+            unit: dollars_per_square_foot
+""",
+            encoding="utf-8",
+        )
+        return path
+
     def test_numeric_differences_use_subject_minus_comparable_sign(self) -> None:
         positive = _difference("gross_living_area", 1500, 1300, {}, {})
         negative = _difference("gross_living_area", 1500, 1700, {}, {})
@@ -337,6 +403,164 @@ adjustment_evidence:
         self.assertEqual(grid["evidence_classification"], "appraiser_decision_reference")
         self.assertFalse(any(item["factor"] == "condition" for item in analysis["indications"]))
         self.assertTrue(any(item["item_type"] == "circular_evidence_guard" for item in analysis["review_queue"]))
+
+    def test_source_grid_mixed_scenario_and_rate_conflicts_remain_references(self) -> None:
+        self._write_source_grid_reference(
+            source_subject_gla=4600,
+            explicit_rate=150,
+            rows=[
+                ("fictional-grid-1", 3200, 455000, None),
+                ("fictional-grid-2", 2500, 682500, None),
+                ("fictional-grid-3", 2600, 650000, None),
+            ],
+        )
+        analysis = self.engine.build(self.assignment_id, scenario=self.scenario).to_dict()
+        reference = analysis["evidence"][0]
+        conflicts = {item["conflict_type"]: item for item in analysis["conflicts"]}
+        self.assertEqual(reference["evidence_classification"], "appraiser_decision_reference")
+        self.assertEqual(reference["decision_reference_usability"], "scenario_and_source_inconsistent")
+        self.assertEqual(reference["valuation_scenario"], "as_is")
+        self.assertEqual(reference["source_grid"]["subject"]["gross_living_area"], "4600")
+        self.assertEqual(set(conflicts), {"scenario_mismatch", "source_internal_inconsistency"})
+        self.assertEqual(conflicts["scenario_mismatch"]["severity"], "high")
+        self.assertEqual(conflicts["scenario_mismatch"]["resolved_scenario_value"], 1500)
+        self.assertEqual(conflicts["scenario_mismatch"]["source_grid_value"], 4600)
+        self.assertEqual(conflicts["source_internal_inconsistency"]["derived_diagnostic_rates"], [325, 325, 325])
+        self.assertEqual(analysis["counts"]["indication_count"], 0)
+        self.assertEqual(analysis["counts"]["factors_with_selected_decisions"], 0)
+        self.assertEqual(analysis["applications"], [])
+        self.assertNotIn("market_value", analysis)
+        self.assertTrue(all(item["evidence_id"] == "fictional-source-grid-reference" for item in analysis["conflicts"]))
+
+    def test_clean_and_rounded_source_rates_remain_conflict_free(self) -> None:
+        for amount, classification in ((65000, "appraiser_decision_reference"), (65040, "derived_appraiser_decision_reference")):
+            with self.subTest(amount=amount, classification=classification):
+                self._write_source_grid_reference(explicit_rate=325, rows=[("fictional-grid-1", 1300, amount, None)], evidence_classification=classification)
+                analysis = self.engine.build(self.assignment_id, scenario=self.scenario, overwrite=bool(self.store.load(self.assignment_id, self.scenario))).to_dict()
+                reference = analysis["evidence"][0]
+                self.assertEqual(reference["source_grid_resolution"]["scenario_consistency"]["status"], "aligned")
+                self.assertEqual(reference["source_grid_resolution"]["rate_consistency"]["status"], "aligned")
+                self.assertEqual(analysis["conflicts"], [])
+                self.assertEqual(reference["evidence_classification"], classification)
+
+    def test_property_type_mismatch_is_detected_without_inferred_missing_gla(self) -> None:
+        self._write_source_grid_reference(source_subject_gla=None, explicit_rate=None, rows=[], source_property_type="duplex")
+        analysis = self.engine.build(self.assignment_id, scenario=self.scenario).to_dict()
+        reference = analysis["evidence"][0]
+        comparisons = reference["source_grid_resolution"]["scenario_consistency"]["field_comparisons"]
+        self.assertEqual([item["field"] for item in comparisons], ["property_type"])
+        self.assertEqual(comparisons[0]["status"], "mismatch")
+        self.assertEqual([item["conflict_type"] for item in analysis["conflicts"]], ["scenario_mismatch"])
+        self.assertNotIn("gross_living_area", [item["field"] for item in comparisons])
+
+    def test_multiple_inconsistent_derived_rates_and_zero_denominator_are_reviewable(self) -> None:
+        self._write_source_grid_reference(
+            explicit_rate=325,
+            rows=[
+                ("fictional-grid-1", 1300, 65000, None),
+                ("fictional-grid-2", 1400, 40000, None),
+                ("fictional-grid-zero", 1500, 1000, None),
+            ],
+        )
+        analysis = self.engine.build(self.assignment_id, scenario=self.scenario).to_dict()
+        rate = analysis["evidence"][0]["source_grid_resolution"]["rate_consistency"]
+        self.assertEqual(rate["derived_rate_summary"]["count"], 2)
+        self.assertFalse(rate["derived_rate_summary"]["mutually_consistent_within_tolerance"])
+        self.assertEqual(rate["calculations"][2]["status"], "zero_difference")
+        self.assertTrue(any(item["item_type"] == "source_grid_zero_difference" for item in analysis["review_queue"]))
+        self.assertTrue(any(item["conflict_type"] == "source_internal_inconsistency" for item in analysis["conflicts"]))
+
+    def test_source_grid_sign_handling_preserves_negative_row_arithmetic(self) -> None:
+        self._write_source_grid_reference(explicit_rate=325, rows=[("fictional-grid-superior", 1700, -65000, None)])
+        analysis = self.engine.build(self.assignment_id, scenario=self.scenario).to_dict()
+        calculation = analysis["evidence"][0]["source_grid_resolution"]["rate_consistency"]["calculations"][0]
+        self.assertEqual(calculation["difference"], -200)
+        self.assertEqual(calculation["difference_sign"], "negative")
+        self.assertEqual(calculation["adjustment_sign"], "negative")
+        self.assertEqual(calculation["derived_rate"], 325)
+        self.assertEqual(analysis["conflicts"], [])
+
+    def test_distinct_supplemental_comparable_set_is_administrative_only(self) -> None:
+        self._write_source_grid_reference(rows=[("supplemental-a", 1300, 65000, None), ("supplemental-b", 1700, -65000, None)])
+        analysis = self.engine.build(self.assignment_id, scenario=self.scenario).to_dict()
+        comparable_set = analysis["evidence"][0]["source_grid_resolution"]["comparable_set"]
+        self.assertEqual(comparable_set["status"], "distinct_source_set")
+        self.assertFalse(comparable_set["automatic_import"])
+        self.assertFalse(any(item["item_type"] == "unresolved_governed_comparable_link" for item in analysis["review_queue"]))
+        self.assertEqual(analysis["indications"], [])
+        self._write_source_grid_reference(rows=[("supplemental-a", 1300, 65000, "missing-governed-id")])
+        claimed = self.engine.build(self.assignment_id, scenario=self.scenario, overwrite=True).to_dict()
+        self.assertTrue(any(item["item_type"] == "unresolved_governed_comparable_link" for item in claimed["review_queue"]))
+        self.assertEqual(claimed["indications"], [])
+
+    def test_declared_textual_scenario_mismatch_remains_conflict_and_review(self) -> None:
+        self._write_source_grid_reference(source_scenario="arv", evidence_scenario="arv")
+        analysis = self.engine.build(self.assignment_id, scenario=self.scenario).to_dict()
+        self.assertEqual([item["conflict_type"] for item in analysis["conflicts"]], ["scenario_mismatch"])
+        self.assertTrue(any(item["item_type"] == "scenario_mismatch" for item in analysis["review_queue"]))
+        self.assertEqual(analysis["indications"], [])
+
+    def test_legacy_top_level_grid_fields_receive_consistency_validation(self) -> None:
+        path = self.store.input_path(self.assignment_id, self.scenario)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            f"""assignment_id: {self.assignment_id}
+valuation_scenario: as_is
+adjustment_evidence:
+  gross_living_area:
+    evidence:
+      - evidence_id: fictional-legacy-grid
+        method: informational_reference
+        source_type: appraisal_grid_export
+        source_path: sources/fictional-legacy-grid.pdf
+        valuation_scenario: as_is
+        explicit_displayed_rate: 150
+        rate_unit: dollars_per_square_foot
+        grid_subject_gross_living_area: 4600
+        grid_entries:
+          - source_comparable_id: fictional-source-1
+            comparable_gross_living_area: 3200
+            displayed_adjustment_amount: 455000
+""",
+            encoding="utf-8",
+        )
+        analysis = self.engine.build(self.assignment_id, scenario=self.scenario).to_dict()
+        reference = analysis["evidence"][0]
+        self.assertEqual(reference["source_grid_resolution"]["schema_origin"], "legacy_top_level_grid_fields")
+        self.assertEqual(reference["decision_reference_usability"], "scenario_and_source_inconsistent")
+        self.assertEqual({item["conflict_type"] for item in analysis["conflicts"]}, {"scenario_mismatch", "source_internal_inconsistency"})
+
+    def test_decision_reference_integrity_is_reported_without_market_support(self) -> None:
+        self._write_source_grid_reference(source_subject_gla=4600, explicit_rate=150, rows=[("fictional-grid-1", 3200, 455000, None)])
+        self.engine.build(self.assignment_id, scenario=self.scenario)
+        output = self.store.output_dir(self.assignment_id, self.scenario)
+        analysis_text = (output / "adjustment-analysis.md").read_text(encoding="utf-8")
+        support_text = (output / "adjustment-support.md").read_text(encoding="utf-8")
+        review_text = (output / "adjustment-review-queue.md").read_text(encoding="utf-8")
+        conflicts = read_json(output / "adjustment-conflicts.json")["conflicts"]
+        self.assertIn("Existing Appraisal Decision-Reference Integrity", analysis_text)
+        self.assertIn("scenario_and_source_inconsistent", analysis_text)
+        self.assertIn("No independent market support is generated", support_text)
+        self.assertIn("scenario_mismatch", review_text)
+        self.assertTrue(all(item["status"] == "open" for item in conflicts))
+        self.assertNotIn("Recommended adjustment", analysis_text)
+
+    def test_source_integrity_conflicts_are_deterministic_and_noop_stable(self) -> None:
+        self._write_source_grid_reference(source_subject_gla=4600, explicit_rate=150, rows=[("fictional-grid-1", 3200, 455000, None)])
+        first = self.engine.build(self.assignment_id, scenario=self.scenario).to_dict()
+        output = self.store.output_dir(self.assignment_id, self.scenario)
+        first_ids = [item["conflict_id"] for item in first["conflicts"]]
+        history_before = (output / "adjustment-history.json").read_bytes()
+        decisions_before = (output / "adjustment-decisions.json").read_bytes()
+        decision_mtime_before = (output / "adjustment-decisions.json").stat().st_mtime_ns
+        second = self.engine.build(self.assignment_id, scenario=self.scenario, overwrite=True).to_dict()
+        self.assertEqual(first_ids, [item["conflict_id"] for item in second["conflicts"]])
+        self.assertEqual(len(first_ids), len(set(first_ids)))
+        self.assertEqual(history_before, (output / "adjustment-history.json").read_bytes())
+        self.assertEqual(decisions_before, (output / "adjustment-decisions.json").read_bytes())
+        self.assertEqual(decision_mtime_before, (output / "adjustment-decisions.json").stat().st_mtime_ns)
+        self.assertEqual(second["counts"]["factors_with_selected_decisions"], 0)
+        self.assertEqual(second["applications"], [])
 
     def test_explicit_selection_applies_positive_and_negative_signs(self) -> None:
         with self.assertRaises(AdjustmentIntelligenceError):

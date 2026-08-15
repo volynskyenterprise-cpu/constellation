@@ -2,6 +2,13 @@
 
 All notable changes to Constellation will be recorded here.
 
+## 7.4.1 - Adjustment Source Scenario Consistency
+
+- Added structured source-grid metadata for appraisal decision references, including explicit subject facts, supplemental comparable identities, displayed rates and amounts, source location, checksum, and verification provenance.
+- Added deterministic comparison of source-grid subject facts with the resolved Adjustment Intelligence scenario, producing high-severity scenario-mismatch conflicts without moving evidence between scenarios or changing its decision-reference classification.
+- Added source-grid arithmetic diagnostics with configurable conservative tolerances, row-level sign and rate calculations, multi-row summaries, and high-severity internal-source conflicts when explicit rates materially disagree with displayed adjustment arithmetic.
+- Added decision-reference usability states and assignment-specific report sections while preserving circular-evidence protection, appraiser-controlled decisions, scenario isolation, no-op history/state behavior, and all professional-judgment boundaries.
+
 ## 7.4.0 - Adjustment Intelligence
 
 - Added scenario-isolated Adjustment Intelligence that consumes resolved Comparable Intelligence facts, calculates factual subject-to-comparable differences, and organizes explicit paired-sale, grouped, extraction, study, sensitivity, and appraiser-entered evidence.

@@ -3,6 +3,14 @@ adjustment_intelligence:
   time_policy: simple_percentage_actual_days_365_2425
   rate_rounding: none
   adjustment_amount_nearest: 100
+  source_rate_consistency:
+    absolute_tolerance: 1.0
+    relative_tolerance_percent: 1.0
+  decision_reference_integrity:
+    compare_structured_source_subject: true
+    compare_source_rate_arithmetic: true
+    automatically_move_between_scenarios: false
+    automatically_import_source_comparables: false
   gross_review_threshold: 0.25
   net_review_threshold: 0.15
   methods:

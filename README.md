@@ -109,6 +109,10 @@ Evidence and decisions remain isolated across `as_is`, `arv`, and safe custom sc
 The appraisal-grid sign convention is `subject value - comparable value`: an inferior comparable receives a positive application and a superior comparable receives a negative application. Application occurs only after an appraiser explicitly selects a rate. Raw arithmetic is retained separately from configured display rounding. Percentage and time-percentage calculations remain simple, transparent, and appraiser-selected.
 
 Adjustment values copied from an appraisal grid are classified as `appraiser_decision_reference`; they cannot circularly support themselves as independent market evidence. Sensitivity and gross/net percentages are mathematical diagnostics, not reconciliation rules.
+Decision references may preserve a structured `source_grid` containing the source's own scenario label, explicit subject facts, supplemental comparable identities, displayed rate, and displayed adjustment amounts. Adjustment Intelligence compares explicit source-grid subject facts with the resolved scenario and reports material mismatches without moving the evidence to another scenario. It also calculates source-grid arithmetic diagnostics and reports material explicit-rate discrepancies using documented absolute and relative tolerances. Derived diagnostics remain decision-reference metadata, never independent market support.
+
+Supplemental comparable sets are reported administratively as aligned, partially overlapping, distinct, or unavailable. A distinct source set is not automatically a conflict and is never imported into Comparable Intelligence. Decision-reference usability states describe source integrity only; they do not select or correct a rate, approve a pair, or alter an appraiser decision.
+
 
 Adjustment Intelligence never selects a rate, final comparable, comparable weight, or value conclusion. It does not determine legality, permitting, completion, GLA treatment, feasibility, highest and best use, or USPAP compliance. See [Adjustment Intelligence v7.4](docs/adjustment-intelligence-v7.4.md).
 
@@ -969,3 +973,4 @@ See the LICENSE file for details.
 > **Professional judgment should become more transparent—not less.**
 
 Constellation exists to transform evidence into explainable institutional intelligence while preserving provenance, reproducibility, and human responsibility for every important decision.
+- v7.4.1 - Adjustment Source Scenario Consistency

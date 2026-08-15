@@ -54,9 +54,69 @@ Supported methods:
 - `external_study`
 - `informational_reference`
 
-Evidence classifications are `independent_market_evidence`, `appraiser_decision_reference`, `contextual_reference`, and `unsupported`.
+Evidence classifications are `independent_market_evidence`, `appraiser_decision_reference`, `derived_appraiser_decision_reference`, `contextual_reference`, and `unsupported`.
 
 An optional `evidence_sources` list may name local CSV, YAML, or JSON files relative to the private scenario directory. Only explicitly named structured files are read. Imported rows retain their configured path, checksum, record ID, classification, and verification status. The adapter does not scan workfiles, parse PDFs, use OCR, or access external systems. Appraisal-grid source types remain decision references and cannot become independent support through import.
+
+### Structured source-grid metadata
+
+An appraisal decision reference may include structured facts describing the source grid itself:
+
+```yaml
+source_rate_consistency:
+  absolute_tolerance: 1.0
+  relative_tolerance_percent: 1.0
+
+adjustment_evidence:
+  gross_living_area:
+    evidence:
+      - evidence_id: fictional-grid-reference
+        method: informational_reference
+        source_type: appraisal_grid_export
+        source_path: sources/fictional-grid.pdf
+        source_page: 18
+        source_location: Supplemental grid, living area row
+        source_checksum: fictional-checksum
+        verification_status: source_reported
+        evidence_classification: appraiser_decision_reference
+        valuation_scenario: as_is
+        source_grid:
+          valuation_scenario: as_is
+          subject:
+            gross_living_area: 2100
+          comparables:
+            - source_comparable_id: fictional-supplemental-comp-1
+              gross_living_area: 1700
+              displayed_adjustment_amount: 130000
+          displayed_adjustment:
+            factor: gross_living_area
+            explicit_rate: 150
+            unit: dollars_per_square_foot
+```
+
+Source-grid subject fields are optional. Supported deterministic comparisons include GLA, property type, lot size, bedrooms, bathrooms, condition, quality, garage, parking, pool, accessory-unit presence, and unit count. Missing facts are incomplete rather than contradictory. Raw source fields, normalized values, page/grid location, checksum, and verification provenance remain visible.
+
+The v7.4.0 top-level grid fields (`grid_subject_gross_living_area`, `grid_entries`, and `explicit_displayed_rate`) remain readable through a compatibility adapter. Inputs are not rewritten.
+
+### Decision-reference scenario consistency
+
+Explicit source-grid subject facts are compared with the resolved subject for the requested Adjustment Intelligence scenario. A material normalized difference creates one high-severity `scenario_mismatch` conflict and review item. The conflict preserves both values and source provenance.
+
+The evidence remains attached to its declared scenario. Constellation does not decide that the source was intended for ARV, move evidence automatically, correct appraisal data, or import supplemental comparables. A source comparable set is reported as `aligned`, `partial_overlap`, `distinct_source_set`, or `unavailable`. A distinct supplemental set is administrative information, not automatically a conflict. Only an explicit claimed link to a governed comparable that fails to resolve creates a review item.
+
+### Source-grid arithmetic diagnostics
+
+When the source supplies a subject value, comparable values, displayed adjustment amounts, and an explicit rate, each row receives deterministic arithmetic:
+
+`difference = source-grid subject value - source-grid comparable value`
+
+`derived diagnostic rate = displayed adjustment amount / difference`
+
+Row calculations retain signs, raw values, amount variance from the explicit rate, and zero-denominator limitations. Multiple derived rates receive count, minimum, maximum, median, and mutual-consistency status. Derived rates are classified only as `derived_appraiser_decision_reference_diagnostic`; they never enter market indications or evidence ranges.
+
+The default consistency tolerance is the greater of $1.00 in rate units or 1.0 percent of the explicit/reference rate. Exact matches and harmless rounding remain conflict-free. A material explicit-versus-derived disagreement, or materially inconsistent derived rows, creates one high-severity `source_internal_inconsistency` conflict with all calculations attached. No rate is corrected or selected.
+
+Decision-reference usability is administrative: `clean_reference`, `review_required`, `scenario_inconsistent`, `internally_inconsistent`, or `scenario_and_source_inconsistent`. It is not an appraiser adjustment decision.
 
 ## Matched-pair methodology
 
@@ -90,13 +150,15 @@ Candidate sensitivity rates are evaluated side by side. Effects, adjusted-price 
 
 An adjustment copied from the subject appraisal grid is classified as `appraiser_decision_reference`. It cannot serve as independent evidence supporting itself. Independent paired-sale or market evidence remains separate and traceable.
 
+Scenario or arithmetic inconsistency never changes that classification, increases the independent indication count, establishes a support range, approves a matched pair, selects a decision, or applies an adjustment.
+
 ## Conflicts, coverage, and review queue
 
-Conflicts include incompatible units, conflicting direction, scenario mismatch, unsupported pair designation, unresolved differences, missing sources, and a selected rate outside the evidence range.
+Conflicts include incompatible units, conflicting direction, textual or structured source-grid scenario mismatch, source internal inconsistency, unsupported pair designation, unresolved differences, missing sources, and a selected rate outside the evidence range.
 
 Coverage per factor is `strong`, `adequate`, `limited`, `absent`, `conflicted`, or `unavailable`. Coverage reports factual differences, evidence count, usable indications, decision status, application status, and limitations; it never selects a rate.
 
-Review items cover differences without evidence, missing provenance, unresolved pairs, thin samples, high dispersion, scenario mismatch, unreviewed decisions, missing rationale, circular references, and application anomalies. Ordinary missing optional evidence is not critical.
+Review items cover differences without evidence, missing provenance, unresolved pairs, thin samples, high dispersion, decision-reference scenario mismatch, source internal inconsistency, zero source-grid denominators, unresolved claimed comparable links, unreviewed decisions, missing rationale, circular references, and application anomalies. Ordinary missing optional source-grid facts are not critical.
 
 ## CLI
 

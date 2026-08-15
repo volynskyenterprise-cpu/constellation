@@ -4,6 +4,10 @@ valuation_scenario: as_is
 rounding:
   adjustment_amount_nearest: 100
 
+source_rate_consistency:
+  absolute_tolerance: 1.0
+  relative_tolerance_percent: 1.0
+
 adjustment_evidence:
   gross_living_area:
     candidate_rates:
@@ -25,6 +29,29 @@ adjustment_evidence:
         price_difference: 60000
         unresolved_differences: []
         notes: Fictional pair explicitly governed for this example.
+      - evidence_id: fictional-gla-grid-decision-reference
+        method: informational_reference
+        source_type: appraisal_grid_export
+        source_path: sources/fictional-appraisal-grid.pdf
+        source_page: 18
+        source_location: Supplemental grid, living area row
+        source_checksum: fictional-source-checksum
+        evidence_classification: appraiser_decision_reference
+        verification_status: source_reported
+        valuation_scenario: as_is
+        source_grid:
+          valuation_scenario: as_is
+          subject:
+            gross_living_area: 2100
+          comparables:
+            - source_comparable_id: fictional-supplemental-comp-1
+              gross_living_area: 1700
+              displayed_adjustment_amount: 130000
+          displayed_adjustment:
+            factor: gross_living_area
+            explicit_rate: 150
+            unit: dollars_per_square_foot
+        notes: Fictional decision reference demonstrating structured source-grid consistency review; it is never independent market evidence.
   pool:
     evidence:
       - evidence_id: fictional-pool-context-001
